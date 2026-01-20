@@ -2,7 +2,7 @@
 # Download and set up Ubuntu Minimal cloud image for VMs
 set -e
 
-BASE_IMAGES_DIR="${HOME}/.local/share/agentcontainers/base-images"
+BASE_IMAGES_DIR="${HOME}/.local/share/caisson/base-images"
 IMAGE_NAME="ubuntu-minimal-24.04"
 IMAGE_DIR="${BASE_IMAGES_DIR}/${IMAGE_NAME}"
 

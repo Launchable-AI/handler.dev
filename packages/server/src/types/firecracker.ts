@@ -42,9 +42,9 @@ export interface FirecrackerConfig {
  * Default Firecracker configuration
  */
 export const DEFAULT_FIRECRACKER_CONFIG: FirecrackerConfig = {
-  dataDir: path.join(os.homedir(), '.local/share/agentcontainers/firecracker-vms'),
-  baseImagesDir: path.join(os.homedir(), '.local/share/agentcontainers/base-images'),
-  sshKeysDir: path.join(os.homedir(), '.local/share/agentcontainers/ssh-keys'),
+  dataDir: path.join(os.homedir(), '.local/share/caisson/firecracker-vms'),
+  baseImagesDir: path.join(os.homedir(), '.local/share/caisson/base-images'),
+  sshKeysDir: path.join(os.homedir(), '.local/share/caisson/ssh-keys'),
   firecrackerBinary: '/usr/local/bin/firecracker',
   jailerBinary: '/usr/local/bin/jailer',
   sshPortRangeStart: 10122,  // Different range from cloud-hypervisor (10022-10122)

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Agent Containers Logo" width="128" height="128">
+  <img src="assets/logo.png" alt="Caisson Logo" width="128" height="128">
 </p>
 
-<h1 align="center">Agent Containers</h1>
+<h1 align="center">Caisson</h1>
 
 <p align="center">
   A web application for spawning and managing Docker containers and virtual machines, designed for isolated agentic coding environments.
@@ -14,8 +14,6 @@
   <a href="#usage">Usage</a> •
   <a href="#architecture">Architecture</a>
 </p>
-
-![Agent Containers Screenshot](docs/screenshot.png)
 
 ## Features
 
@@ -29,13 +27,14 @@
 - **Image Management**: Build custom images, pull from registries, and manage your image library
 - **Compose**: Visual composer for multi-container setups
 
-### Virtual Machines (cloud-hypervisor)
-- **VM Management**: Create, start, stop, and remove virtual machines using cloud-hypervisor
+### Virtual Machines
+- **VM Management**: Create, start, stop, and remove virtual machines
+- **Multiple Hypervisors**: Support for cloud-hypervisor and Firecracker
 - **SSH Access**: Auto-generated SSH keys with direct VM access via TAP networking
 - **Resource Configuration**: Configure vCPUs (1-32), memory (512MB-64GB), and disk (1-1000GB)
-- **QCOW2 Overlays**: Fast VM creation using copy-on-write disk images
+- **Copy-on-Write Disks**: Fast VM creation using QCOW2 overlays (cloud-hypervisor) or OverlayFS (Firecracker)
 - **Cloud-init Integration**: Automatic VM configuration with SSH keys and package installation
-- **Network Bridge**: Pre-configured TAP devices for VM networking with DHCP
+- **Network Bridge**: Pre-configured TAP devices for VM networking with NAT
 
 ### Shared Features
 - **MCP Servers**: Registry of Model Context Protocol servers for AI agent integration
@@ -45,21 +44,21 @@
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - pnpm
 - Docker
 
 #### For Virtual Machines (Optional)
 - Linux host with KVM support (`/dev/kvm` must exist)
 - Root access (for initial network setup)
-- All other dependencies are installed automatically by the setup script
+- Rust toolchain (for building TAP helper)
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/launchable-dev/agentcontainers-community.git
-cd agentcontainers-community
+git clone https://github.com/anthropics/caisson.git
+cd caisson
 
 # Install dependencies
 pnpm install
@@ -74,41 +73,50 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ### VM Setup (Optional)
 
-To use virtual machines, run the setup script which handles everything automatically:
+To enable virtual machine support, run the setup script:
 
 ```bash
-# Run the VM setup script (requires sudo)
-sudo ./scripts/setup-vm-network.sh
+# Basic setup (cloud-hypervisor support)
+sudo ./scripts/setup.sh
+
+# With Firecracker support
+sudo ./scripts/setup.sh --firecracker
+
+# Check installation status
+./scripts/status.sh
 ```
 
-This script automatically:
-- Installs cloud-hypervisor binary
-- Installs required tools (qemu-img, genisoimage, libguestfs-tools)
-- Downloads Ubuntu 24.04 cloud image (~600MB)
-- Extracts kernel and initrd for direct boot
-- Creates a network bridge (`agentc-br0`)
-- Creates 16 pre-allocated TAP devices for VMs
-- Configures DHCP server (dnsmasq) for guest IP assignment
-- Sets up NAT rules for internet access
-- Creates systemd service for auto-restore on reboot
+The setup script:
+- Installs the `caisson-tap-helper` binary with network capabilities
+- Creates a network bridge (`caisson-br0`) with NAT for VM internet access
+- Downloads Ubuntu 24.04 base image
+- Creates a systemd service for persistence across reboots
+- Optionally installs Firecracker
 
 **Options:**
 ```bash
-sudo ./scripts/setup-vm-network.sh --help           # Show all options
-sudo ./scripts/setup-vm-network.sh --skip-image     # Skip base image download
-sudo ./scripts/setup-vm-network.sh --skip-network   # Skip network setup
+sudo ./scripts/setup.sh --help           # Show all options
+sudo ./scripts/setup.sh --skip-image     # Skip base image download
+sudo ./scripts/setup.sh --firecracker    # Also install Firecracker
+sudo ./scripts/setup.sh --unattended     # Non-interactive mode
+```
+
+**Uninstalling:**
+```bash
+sudo ./scripts/uninstall.sh              # Remove all VM support
+sudo ./scripts/uninstall.sh --keep-data  # Keep VM images and data
 ```
 
 **Files created:**
 ```
-~/.local/share/agentcontainers/
-├── base-images/ubuntu-24.04/
-│   ├── image.qcow2    # Base disk image
-│   ├── kernel         # Extracted kernel
-│   └── initrd         # Extracted initrd
-├── vms/               # VM runtime data
-├── ssh-keys/          # SSH keys
-└── network.json       # Network configuration
+~/.local/share/caisson/
+├── base-images/
+│   └── ubuntu-24.04/
+│       ├── rootfs.ext4   # Firecracker rootfs
+│       └── vmlinux       # Kernel
+├── vms/                  # cloud-hypervisor VM data
+├── firecracker-vms/      # Firecracker VM data
+└── ssh-keys/             # SSH keys
 ```
 
 ## Usage
@@ -155,11 +163,11 @@ Volumes persist data across container restarts and rebuilds. Common uses:
 
 ### Creating Your First VM
 
-1. Ensure VM networking is set up (see [VM Network Setup](#vm-network-setup-optional))
+1. Ensure VM networking is set up: `sudo ./scripts/setup.sh`
 2. Click the **VMs** tab in the sidebar
 3. Click **+ New VM**
 4. Enter a name for your VM
-5. Select a base image (e.g., ubuntu-24.04)
+5. Select a base image and hypervisor (cloud-hypervisor or Firecracker)
 6. Configure resources (vCPUs, memory, disk size)
 7. Click **Create**
 
@@ -170,15 +178,16 @@ Volumes persist data across container restarts and rebuilds. Common uses:
 3. Use the provided SSH command:
 
 ```bash
-ssh -i ~/.ssh/vm-name.pem -p 10022 ubuntu@localhost
+ssh -i ~/.ssh/vm-name.pem agent@<vm-ip>
 ```
 
-*Note: VM SSH uses forwarded ports in the 10022-10122 range. The actual port is shown on the VM card.*
+*Note: VM IPs are assigned from the 172.31.0.0/24 subnet.*
 
 ## Architecture
 
 - **Backend**: Node.js with Hono framework, dockerode for Docker API
 - **Frontend**: React 19 + Vite + Tailwind CSS v4 + TanStack Query
+- **VM Networking**: Custom TAP helper with CAP_NET_ADMIN capabilities
 - **Monorepo**: pnpm workspaces
 
 ### Project Structure
@@ -196,8 +205,16 @@ ssh -i ~/.ssh/vm-name.pem -p 10022 ubuntu@localhost
 │           ├── api/     # API client
 │           ├── components/
 │           └── hooks/   # TanStack Query hooks
-├── scripts/             # Setup scripts
-│   └── setup-vm-network.sh  # VM networking setup
+├── helpers/
+│   └── tap-helper/      # Rust TAP device helper (caisson-tap-helper)
+├── scripts/
+│   ├── setup.sh         # Unified VM setup
+│   ├── uninstall.sh     # Clean uninstall
+│   ├── status.sh        # Check installation status
+│   ├── install-tap-helper.sh
+│   ├── install-firecracker.sh
+│   └── download-fc-image.sh
+├── guest-init/          # Scripts injected into VM images
 ├── assets/              # Logo and branding
 ├── data/                # Runtime data (gitignored)
 │   ├── ssh-keys/        # Generated SSH keypairs
@@ -209,22 +226,28 @@ ssh -i ~/.ssh/vm-name.pem -p 10022 ubuntu@localhost
 
 ### VM Data Storage
 
-VM data is stored separately from container data:
+VM data is stored in the user's home directory:
 
 ```
-~/.local/share/agentcontainers/
-├── vms/                 # VM runtime data
+~/.local/share/caisson/
+├── vms/                 # cloud-hypervisor VM data
 │   └── <vm-id>/
 │       ├── disk.qcow2   # VM disk overlay
 │       ├── cloud-init.iso
 │       ├── vm.pid       # cloud-hypervisor PID
 │       └── vm.log       # VM console log
-├── base-images/         # Base VM images
+├── firecracker-vms/     # Firecracker VM data
+│   └── <vm-id>/
+│       ├── overlay.ext4 # Writable overlay
+│       ├── vm.pid
+│       └── vm.log
+├── base-images/         # Base VM images (shared)
 │   └── ubuntu-24.04/
-│       ├── image.qcow2
-│       ├── kernel
-│       └── initrd
-└── ssh-keys/            # SSH keys (shared with containers)
+│       ├── rootfs.ext4  # Firecracker rootfs
+│       ├── vmlinux      # Kernel
+│       ├── image.qcow2  # cloud-hypervisor image
+│       └── kernel
+└── ssh-keys/            # SSH keys (shared)
 ```
 
 ## API Reference
@@ -274,6 +297,29 @@ VM data is stored separately from container data:
 |--------|----------|-------------|
 | GET | `/api/health` | Health check & Docker status |
 | GET | `/api/config` | Get current configuration |
+
+## Troubleshooting
+
+### Check VM Setup Status
+```bash
+./scripts/status.sh
+```
+
+### Common Issues
+
+**"KVM not available"**
+- Ensure virtualization is enabled in BIOS/UEFI
+- Check: `ls -la /dev/kvm`
+
+**"Permission denied" for KVM**
+- Add your user to the kvm group: `sudo usermod -aG kvm $USER`
+- Log out and back in
+
+**"Bridge not found"**
+- Run setup: `sudo ./scripts/setup.sh`
+
+**"TAP helper missing capabilities"**
+- Reinstall: `sudo ./scripts/install-tap-helper.sh --setup-bridge`
 
 ## Contributing
 

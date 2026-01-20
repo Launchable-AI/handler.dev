@@ -8,21 +8,21 @@
 #
 # Options:
 #   --setup-bridge    Also set up the network bridge and NAT rules
-#   --bridge-name     Bridge name (default: agentc-br0)
+#   --bridge-name     Bridge name (default: caisson-br0)
 #   --bridge-ip       Bridge IP in CIDR notation (default: 172.31.0.1/24)
 
 set -e
 
 # Configuration
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/lib/agentcontainers}"
-BINARY_NAME="agentc-tap-helper"
+INSTALL_DIR="${INSTALL_DIR:-/usr/local/lib/caisson}"
+BINARY_NAME="caisson-tap-helper"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 HELPER_DIR="$PROJECT_ROOT/helpers/tap-helper"
 
 # Default bridge settings
 SETUP_BRIDGE=false
-BRIDGE_NAME="agentc-br0"
+BRIDGE_NAME="caisson-br0"
 BRIDGE_IP="172.31.0.1/24"
 BRIDGE_SUBNET="172.31.0.0/24"
 
@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --setup-bridge    Also set up the network bridge and NAT rules"
-            echo "  --bridge-name     Bridge name (default: agentc-br0)"
+            echo "  --bridge-name     Bridge name (default: caisson-br0)"
             echo "  --bridge-ip       Bridge IP in CIDR notation (default: 172.31.0.1/24)"
             echo ""
             exit 0
@@ -84,7 +84,7 @@ else
     REAL_GID=$(id -g)
 fi
 
-echo -e "${GREEN}Installing TAP helper for agentcontainers${NC}"
+echo -e "${GREEN}Installing TAP helper for Caisson${NC}"
 echo ""
 
 # Check for required tools
@@ -158,11 +158,16 @@ if [ "$SETUP_BRIDGE" = true ]; then
     # Use the helper to create the bridge
     "/usr/local/bin/$BINARY_NAME" setup-bridge --name "$BRIDGE_NAME" --ip "$BRIDGE_IP"
 
-    # Enable IP forwarding
+    # Enable IP forwarding (use sysctl.d for clean uninstall)
     echo "Enabling IP forwarding..."
     sysctl -w net.ipv4.ip_forward=1 > /dev/null
-    if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf 2>/dev/null; then
-        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+    SYSCTL_FILE="/etc/sysctl.d/99-caisson.conf"
+    if [ ! -f "$SYSCTL_FILE" ]; then
+        cat > "$SYSCTL_FILE" << 'SYSCTL_EOF'
+# Caisson VM networking - enable IP forwarding
+net.ipv4.ip_forward=1
+SYSCTL_EOF
+        echo "Created $SYSCTL_FILE"
     fi
 
     # Setup NAT with nftables
@@ -173,13 +178,13 @@ if [ "$SETUP_BRIDGE" = true ]; then
 
     if command -v nft &> /dev/null; then
         # Use nftables
-        nft delete table ip agentcontainers 2>/dev/null || true
-        nft add table ip agentcontainers
-        nft add chain ip agentcontainers postrouting "{ type nat hook postrouting priority 100 ; }"
-        nft add rule ip agentcontainers postrouting ip saddr "$BRIDGE_SUBNET" oifname != "$BRIDGE_NAME" masquerade
-        nft add chain ip agentcontainers forward "{ type filter hook forward priority 0 ; policy accept ; }"
-        nft add rule ip agentcontainers forward iifname "$BRIDGE_NAME" accept
-        nft add rule ip agentcontainers forward oifname "$BRIDGE_NAME" ct state established,related accept
+        nft delete table ip caisson 2>/dev/null || true
+        nft add table ip caisson
+        nft add chain ip caisson postrouting "{ type nat hook postrouting priority 100 ; }"
+        nft add rule ip caisson postrouting ip saddr "$BRIDGE_SUBNET" oifname != "$BRIDGE_NAME" masquerade
+        nft add chain ip caisson forward "{ type filter hook forward priority 0 ; policy accept ; }"
+        nft add rule ip caisson forward iifname "$BRIDGE_NAME" accept
+        nft add rule ip caisson forward oifname "$BRIDGE_NAME" ct state established,related accept
         echo -e "${GREEN}NAT configured with nftables${NC}"
     elif command -v iptables &> /dev/null; then
         # Fallback to iptables
@@ -192,9 +197,9 @@ if [ "$SETUP_BRIDGE" = true ]; then
     fi
 
     # Create systemd service for persistence
-    cat > /etc/systemd/system/agentcontainers-bridge.service << EOF
+    cat > /etc/systemd/system/caisson-bridge.service << EOF
 [Unit]
-Description=Agent Containers Network Bridge
+Description=Caisson Network Bridge
 After=network-online.target
 Wants=network-online.target
 
@@ -209,7 +214,7 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable agentcontainers-bridge.service
+    systemctl enable caisson-bridge.service
     echo -e "${GREEN}Systemd service created and enabled${NC}"
 fi
 

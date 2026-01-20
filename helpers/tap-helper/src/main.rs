@@ -1,4 +1,4 @@
-//! agentc-tap-helper: Minimal privileged helper for TAP device creation
+//! caisson-tap-helper: Minimal privileged helper for TAP device creation
 //!
 //! This binary is designed to be installed with CAP_NET_ADMIN capability,
 //! allowing unprivileged processes to create TAP devices for VM networking.
@@ -83,7 +83,7 @@ impl IfReq {
 }
 
 #[derive(Parser)]
-#[command(name = "agentc-tap-helper")]
+#[command(name = "caisson-tap-helper")]
 #[command(about = "Minimal privileged helper for TAP device creation")]
 #[command(version)]
 struct Cli {
@@ -95,7 +95,7 @@ struct Cli {
 enum Commands {
     /// Create a new TAP device
     Create {
-        /// Name for the TAP device (e.g., "agentc-tap0")
+        /// Name for the TAP device (e.g., "caisson-tap0")
         #[arg(long)]
         name: String,
 
@@ -128,7 +128,7 @@ enum Commands {
 
     /// Setup bridge and basic networking infrastructure
     SetupBridge {
-        /// Name for the bridge (e.g., "agentc-br0")
+        /// Name for the bridge (e.g., "caisson-br0")
         #[arg(long)]
         name: String,
 

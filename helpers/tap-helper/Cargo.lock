@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "agentc-tap-helper"
+name = "caisson-tap-helper"
 version = "0.1.0"
 dependencies = [
  "clap",

@@ -277,8 +277,8 @@ export async function searchMCPServersWithAI(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://agentcontainers.dev',
-        'X-Title': 'Agent Containers',
+        'HTTP-Referer': 'https://caisson.dev',
+        'X-Title': 'Caisson',
       },
       body: JSON.stringify({
         model: getModel(),
@@ -351,8 +351,8 @@ export async function streamComposeAssistant(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://agentcontainers.dev',
-        'X-Title': 'Agent Containers',
+        'HTTP-Referer': 'https://caisson.dev',
+        'X-Title': 'Caisson',
       },
       body: JSON.stringify({
         model: getModel(),
@@ -466,8 +466,8 @@ export async function createComponentFromAI(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://agentcontainers.dev',
-        'X-Title': 'Agent Containers',
+        'HTTP-Referer': 'https://caisson.dev',
+        'X-Title': 'Caisson',
       },
       body: JSON.stringify({
         model: getModel(),
@@ -537,8 +537,8 @@ export async function streamDockerfileAssistant(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://agentcontainers.dev',
-        'X-Title': 'Agent Containers',
+        'HTTP-Referer': 'https://caisson.dev',
+        'X-Title': 'Caisson',
       },
       body: JSON.stringify({
         model: getModel(),
@@ -631,8 +631,8 @@ export async function streamMCPInstallInstructions(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://agentcontainers.dev',
-        'X-Title': 'Agent Containers',
+        'HTTP-Referer': 'https://caisson.dev',
+        'X-Title': 'Caisson',
       },
       body: JSON.stringify({
         model: getModel(),
