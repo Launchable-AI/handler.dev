@@ -13,6 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 GUEST_INIT_DIR="$PROJECT_DIR/guest-init"
 
+# Source OS utilities for cross-platform package management
+source "$SCRIPT_DIR/lib/os-utils.sh"
+
 # Handle sudo: use SUDO_USER's home if running as root via sudo
 if [ -n "$SUDO_USER" ]; then
     REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
@@ -76,7 +79,7 @@ fi
 
 # Check for required tools
 if ! command -v qemu-img &> /dev/null; then
-    error "qemu-img is required but not installed. Install with: sudo apt install qemu-utils"
+    error "qemu-img is required but not installed. Install with: $(pkg_install_hint qemu-utils)"
 fi
 
 # Step 1: Convert QCOW2 to raw
@@ -158,7 +161,7 @@ if [ "${USE_MOUNT:-0}" = "1" ]; then
     if [ "$EUID" -ne 0 ]; then
         warn "Guestfish not available and not running as root."
         warn "Please install guestfish or run with sudo:"
-        warn "  sudo apt install libguestfs-tools"
+        warn "  $(pkg_install_hint libguestfs-tools)"
         warn "  OR"
         warn "  sudo $0 $IMAGE_NAME"
         exit 1

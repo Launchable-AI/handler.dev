@@ -20,6 +20,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 HELPER_DIR="$PROJECT_ROOT/helpers/tap-helper"
 
+# Source OS utilities for cross-platform package management
+source "$SCRIPT_DIR/lib/os-utils.sh"
+
 # Default bridge settings
 SETUP_BRIDGE=false
 BRIDGE_NAME="caisson-br0"
@@ -78,10 +81,12 @@ if [ -n "$SUDO_USER" ]; then
     REAL_USER="$SUDO_USER"
     REAL_UID=$(id -u "$SUDO_USER")
     REAL_GID=$(id -g "$SUDO_USER")
+    REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 else
     REAL_USER="$USER"
     REAL_UID=$(id -u)
     REAL_GID=$(id -g)
+    REAL_HOME="$HOME"
 fi
 
 echo -e "${GREEN}Installing TAP helper for Caisson${NC}"
@@ -90,8 +95,9 @@ echo ""
 # Check for required tools
 echo "Checking requirements..."
 if ! command -v setcap &> /dev/null; then
-    echo -e "${YELLOW}Installing libcap2-bin...${NC}"
-    apt-get update -qq && apt-get install -y -qq libcap2-bin
+    echo -e "${YELLOW}Installing libcap utilities...${NC}"
+    pkg_update
+    pkg_install libcap2-bin
 fi
 
 # Check if Rust/Cargo is available for building
@@ -102,16 +108,32 @@ if [ -f "$HELPER_DIR/target/release/$BINARY_NAME" ]; then
 fi
 
 if [ "$BUILD_NEEDED" = true ]; then
-    if ! command -v cargo &> /dev/null; then
-        echo -e "${RED}Error: Rust/Cargo not found and no pre-built binary available${NC}"
-        echo "Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-        exit 1
+    # Check for cargo in PATH or in user's rustup installation
+    CARGO_CMD=""
+    if command -v cargo &> /dev/null; then
+        CARGO_CMD="cargo"
+    elif [ -f "$REAL_HOME/.cargo/bin/cargo" ]; then
+        CARGO_CMD="$REAL_HOME/.cargo/bin/cargo"
+    fi
+
+    # Install cargo if not found
+    if [ -z "$CARGO_CMD" ]; then
+        echo -e "${YELLOW}Installing Rust/Cargo...${NC}"
+        pkg_update
+        pkg_install cargo
+        # After install, cargo should be in PATH
+        if command -v cargo &> /dev/null; then
+            CARGO_CMD="cargo"
+        else
+            echo -e "${RED}Error: Failed to install Rust/Cargo${NC}"
+            exit 1
+        fi
     fi
 
     echo "Building TAP helper..."
     cd "$HELPER_DIR"
     # Build as the real user to avoid permission issues
-    sudo -u "$REAL_USER" cargo build --release
+    sudo -u "$REAL_USER" "$CARGO_CMD" build --release
 fi
 
 # Create install directory

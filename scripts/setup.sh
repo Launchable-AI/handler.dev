@@ -20,6 +20,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Source OS utilities for cross-platform package management
+source "$SCRIPT_DIR/lib/os-utils.sh"
+
 # Configuration
 BRIDGE_NAME="caisson-br0"
 BRIDGE_IP="172.31.0.1/24"
@@ -35,7 +38,8 @@ fi
 
 DATA_DIR="$REAL_HOME/.local/share/caisson"
 
-# Defaults
+# Defaults - both hypervisors optional, user chooses interactively
+INSTALL_CLOUD_HYPERVISOR=false
 INSTALL_FIRECRACKER=false
 SKIP_IMAGE=false
 UNATTENDED=false
@@ -52,31 +56,75 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 step() { echo -e "\n${BLUE}==>${NC} $*"; }
 
+# Prompt for yes/no with default
+# Usage: prompt_yn "Question?" [Y|N]
+# Returns 0 for yes, 1 for no
+prompt_yn() {
+    local prompt="$1"
+    local default="${2:-Y}"
+
+    if [ "$UNATTENDED" = true ]; then
+        [[ "$default" =~ ^[Yy]$ ]] && return 0 || return 1
+    fi
+
+    local yn_hint
+    if [[ "$default" =~ ^[Yy]$ ]]; then
+        yn_hint="[Y/n]"
+    else
+        yn_hint="[y/N]"
+    fi
+
+    read -p "$prompt $yn_hint " -n 1 -r
+    echo
+
+    if [[ -z "$REPLY" ]]; then
+        [[ "$default" =~ ^[Yy]$ ]] && return 0 || return 1
+    fi
+
+    [[ "$REPLY" =~ ^[Yy]$ ]] && return 0 || return 1
+}
+
 usage() {
     echo "Caisson Setup Script"
     echo ""
     echo "Usage: sudo $0 [options]"
     echo ""
     echo "Options:"
-    echo "  --firecracker    Also install Firecracker support"
-    echo "  --skip-image     Skip base image download"
-    echo "  --unattended     Non-interactive mode (auto-yes)"
-    echo "  -h, --help       Show this help"
+    echo "  --cloud-hypervisor  Pre-select Cloud-Hypervisor support"
+    echo "  --firecracker       Pre-select Firecracker support"
+    echo "  --all               Install both hypervisors"
+    echo "  --skip-image        Skip base image download"
+    echo "  --unattended        Non-interactive mode (use defaults)"
+    echo "  -h, --help          Show this help"
+    echo ""
+    echo "When run interactively (default), you will be prompted for:"
+    echo "  - Cloud-Hypervisor support (QCOW2 images, UEFI boot)"
+    echo "  - Firecracker support (lightweight microVMs)"
+    echo "  - Base image download"
     echo ""
     echo "This script installs:"
     echo "  - TAP helper binary with CAP_NET_ADMIN capability"
     echo "  - Network bridge ($BRIDGE_NAME) with NAT"
     echo "  - Systemd service for persistence"
-    echo "  - Ubuntu 24.04 base image for VMs"
+    echo "  - Base images for selected hypervisors (optional)"
     echo ""
-    echo "Data directory: $DATA_DIR"
+    echo "Data directory: \$HOME/.local/share/caisson"
     exit 0
 }
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --cloud-hypervisor)
+            INSTALL_CLOUD_HYPERVISOR=true
+            shift
+            ;;
         --firecracker)
+            INSTALL_FIRECRACKER=true
+            shift
+            ;;
+        --all)
+            INSTALL_CLOUD_HYPERVISOR=true
             INSTALL_FIRECRACKER=true
             shift
             ;;
@@ -106,11 +154,65 @@ echo "============================================"
 echo "  Caisson Setup"
 echo "============================================"
 echo ""
+echo "Detected: $OS_NAME ($PKG_MANAGER)"
+echo "Data directory: $DATA_DIR"
+echo ""
+
+#
+# Interactive configuration (unless --unattended)
+#
+if [ "$UNATTENDED" = false ]; then
+    echo -e "${BLUE}Select hypervisors to install:${NC}"
+    echo ""
+
+    # Ask about Cloud-Hypervisor if not already set via command line
+    if [ "$INSTALL_CLOUD_HYPERVISOR" = false ]; then
+        if prompt_yn "Install Cloud-Hypervisor support? (QCOW2 images, standard VMs)" Y; then
+            INSTALL_CLOUD_HYPERVISOR=true
+        fi
+    fi
+
+    # Ask about Firecracker if not already set via command line
+    if [ "$INSTALL_FIRECRACKER" = false ]; then
+        if prompt_yn "Install Firecracker support? (lightweight microVMs)" N; then
+            INSTALL_FIRECRACKER=true
+        fi
+    fi
+
+    # Warn if no hypervisor selected
+    if [ "$INSTALL_CLOUD_HYPERVISOR" = false ] && [ "$INSTALL_FIRECRACKER" = false ]; then
+        warn "No hypervisor selected. You'll need at least one to run VMs."
+        if ! prompt_yn "Continue anyway?" N; then
+            echo "Aborted."
+            exit 0
+        fi
+    fi
+
+    # Only ask about images if a hypervisor is selected and not skipped via command line
+    if [ "$SKIP_IMAGE" = false ]; then
+        if [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$INSTALL_FIRECRACKER" = true ]; then
+            if ! prompt_yn "Download base VM images?" Y; then
+                SKIP_IMAGE=true
+            fi
+        fi
+    fi
+
+    echo ""
+fi
+
 echo "Configuration:"
 echo "  Bridge: $BRIDGE_NAME ($BRIDGE_IP)"
-echo "  Data: $DATA_DIR"
+echo "  Cloud-Hypervisor: $INSTALL_CLOUD_HYPERVISOR"
 echo "  Firecracker: $INSTALL_FIRECRACKER"
+echo "  Download images: $([ "$SKIP_IMAGE" = false ] && echo "yes" || echo "no")"
 echo ""
+
+if [ "$UNATTENDED" = false ]; then
+    if ! prompt_yn "Proceed with installation?" Y; then
+        echo "Aborted."
+        exit 0
+    fi
+fi
 
 #
 # Step 1: Check prerequisites
@@ -125,37 +227,43 @@ fi
 KVM_GROUP=$(stat -c '%G' /dev/kvm 2>/dev/null || echo "kvm")
 if ! groups "$REAL_USER" | grep -qw "$KVM_GROUP"; then
     warn "User '$REAL_USER' not in '$KVM_GROUP' group"
-    if [ "$UNATTENDED" = true ]; then
+    if prompt_yn "Add $REAL_USER to $KVM_GROUP group?" Y; then
         usermod -aG "$KVM_GROUP" "$REAL_USER"
         log "Added $REAL_USER to $KVM_GROUP group (re-login required)"
-    else
-        read -p "Add $REAL_USER to $KVM_GROUP group? [Y/n] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            usermod -aG "$KVM_GROUP" "$REAL_USER"
-            log "Added $REAL_USER to $KVM_GROUP group (re-login required)"
-        fi
     fi
 fi
 
 # Check required packages
-MISSING_PKGS=""
-command -v setcap &> /dev/null || MISSING_PKGS="$MISSING_PKGS libcap2-bin"
-command -v qemu-img &> /dev/null || MISSING_PKGS="$MISSING_PKGS qemu-utils"
-command -v genisoimage &> /dev/null || MISSING_PKGS="$MISSING_PKGS genisoimage"
+MISSING_PKGS=()
+command -v setcap &> /dev/null || MISSING_PKGS+=("libcap2-bin")
+command -v qemu-img &> /dev/null || MISSING_PKGS+=("qemu-utils")
+# genisoimage or mkisofs (cdrtools) - both work for creating cloud-init ISOs
+command -v genisoimage &> /dev/null || command -v mkisofs &> /dev/null || MISSING_PKGS+=("genisoimage")
 
-if [ -n "$MISSING_PKGS" ]; then
-    log "Installing required packages:$MISSING_PKGS"
-    apt-get update -qq
-    apt-get install -y -qq $MISSING_PKGS
-fi
-
-# Check for Rust (needed to build tap-helper)
+# Check for Rust/Cargo (needed to build tap-helper if not pre-built)
 HELPER_BINARY="$PROJECT_ROOT/helpers/tap-helper/target/release/caisson-tap-helper"
 if [ ! -f "$HELPER_BINARY" ]; then
-    if ! command -v cargo &> /dev/null; then
-        error "Rust/Cargo required to build tap-helper. Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    # Check for cargo in PATH or in user's rustup installation
+    if ! command -v cargo &> /dev/null && [ ! -f "$REAL_HOME/.cargo/bin/cargo" ]; then
+        MISSING_PKGS+=("cargo")
     fi
+fi
+
+if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
+    log "Installing required packages: ${MISSING_PKGS[*]} (using $PKG_MANAGER)"
+    pkg_update
+    pkg_install "${MISSING_PKGS[@]}"
+fi
+
+# On systems with mkisofs but not genisoimage (e.g., Arch with cdrtools),
+# create a wrapper so that code expecting 'genisoimage' still works
+if ! command -v genisoimage &> /dev/null && command -v mkisofs &> /dev/null; then
+    log "Creating genisoimage wrapper for mkisofs compatibility"
+    cat > /usr/local/bin/genisoimage << 'EOF'
+#!/bin/sh
+exec mkisofs "$@"
+EOF
+    chmod +x /usr/local/bin/genisoimage
 fi
 
 log "Prerequisites OK"
@@ -169,42 +277,59 @@ step "Installing TAP helper..."
 "$SCRIPT_DIR/install-tap-helper.sh" --setup-bridge --bridge-name "$BRIDGE_NAME" --bridge-ip "$BRIDGE_IP"
 
 #
-# Step 3: Download base image
+# Step 3: Download base images
 #
-if [ "$SKIP_IMAGE" = false ]; then
-    step "Setting up base image..."
+if [ "$SKIP_IMAGE" = false ] && { [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$INSTALL_FIRECRACKER" = true ]; }; then
+    step "Setting up base images..."
 
     # Create data directory
     mkdir -p "$DATA_DIR/base-images"
     chown -R "$REAL_USER:$(id -gn $REAL_USER)" "$DATA_DIR"
 
-    # Check if image already exists
-    if [ -f "$DATA_DIR/base-images/ubuntu-24.04/rootfs.ext4" ] && [ -f "$DATA_DIR/base-images/ubuntu-24.04/vmlinux" ]; then
-        log "Firecracker image already exists, skipping download"
-    elif [ -f "$DATA_DIR/base-images/ubuntu-minimal-24.04/image.qcow2" ]; then
-        log "Cloud-hypervisor image already exists"
-        # Check if we need FC image
-        if [ "$INSTALL_FIRECRACKER" = true ]; then
-            log "Downloading Firecracker-ready image..."
-            sudo -u "$REAL_USER" "$SCRIPT_DIR/download-fc-image.sh"
-        fi
-    else
-        # Download the appropriate image
-        if [ "$INSTALL_FIRECRACKER" = true ]; then
-            log "Downloading Firecracker-ready image..."
-            sudo -u "$REAL_USER" "$SCRIPT_DIR/download-fc-image.sh"
+    # Download Cloud-Hypervisor image if selected
+    if [ "$INSTALL_CLOUD_HYPERVISOR" = true ]; then
+        if [ -f "$DATA_DIR/base-images/ubuntu-minimal-24.04/image.qcow2" ]; then
+            log "Cloud-Hypervisor image already exists"
         else
-            log "Downloading cloud-hypervisor image..."
-            sudo -u "$REAL_USER" "$SCRIPT_DIR/download-ubuntu-minimal.sh"
+            log "Downloading Cloud-Hypervisor image..."
+            sudo -H -u "$REAL_USER" env CAISSON_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/download-ubuntu-minimal.sh"
+        fi
+    fi
+
+    # Download Firecracker image if selected
+    if [ "$INSTALL_FIRECRACKER" = true ]; then
+        if [ -f "$DATA_DIR/base-images/ubuntu-24.04/rootfs.ext4" ] && [ -f "$DATA_DIR/base-images/ubuntu-24.04/vmlinux" ]; then
+            log "Firecracker image already exists"
+        else
+            log "Downloading Firecracker image..."
+            sudo -H -u "$REAL_USER" env CAISSON_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/download-fc-image.sh"
         fi
     fi
 else
-    log "Skipping image download (--skip-image)"
+    if [ "$SKIP_IMAGE" = true ]; then
+        log "Skipping image download (--skip-image)"
+    fi
 fi
 
 #
-# Step 4: Install Firecracker (optional)
+# Step 4: Install hypervisor binaries
 #
+
+# Install Cloud-Hypervisor if selected
+if [ "$INSTALL_CLOUD_HYPERVISOR" = true ]; then
+    step "Checking Cloud-Hypervisor..."
+
+    if command -v cloud-hypervisor &> /dev/null; then
+        CH_VERSION=$(cloud-hypervisor --version 2>&1 | head -1)
+        log "Cloud-Hypervisor already installed: $CH_VERSION"
+    else
+        warn "Cloud-Hypervisor not installed"
+        log "Install from: https://github.com/cloud-hypervisor/cloud-hypervisor/releases"
+        log "Or use your package manager: $(pkg_install_hint cloud-hypervisor 2>/dev/null || echo 'check your distro')"
+    fi
+fi
+
+# Install Firecracker if selected
 if [ "$INSTALL_FIRECRACKER" = true ]; then
     step "Installing Firecracker..."
 

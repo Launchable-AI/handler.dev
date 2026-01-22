@@ -213,6 +213,17 @@ if [ -d "$INSTALL_DIR" ]; then
     log "Removed: $INSTALL_DIR"
 fi
 
+# genisoimage wrapper (created on Arch Linux for mkisofs compatibility)
+if [ -f "/usr/local/bin/genisoimage" ]; then
+    # Only remove if it's our wrapper script (not a real package binary)
+    if head -1 /usr/local/bin/genisoimage 2>/dev/null | grep -q "^#!/bin/sh"; then
+        if grep -q "exec mkisofs" /usr/local/bin/genisoimage 2>/dev/null; then
+            rm -f /usr/local/bin/genisoimage
+            log "Removed genisoimage wrapper"
+        fi
+    fi
+fi
+
 # Firecracker (only if in standard location)
 if [ -f "/usr/local/bin/firecracker" ]; then
     read -p "Remove Firecracker binaries? [y/N] " -n 1 -r

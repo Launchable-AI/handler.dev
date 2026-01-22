@@ -2,7 +2,17 @@
 # Download and set up Ubuntu Minimal cloud image for VMs
 set -e
 
-BASE_IMAGES_DIR="${HOME}/.local/share/caisson/base-images"
+# Handle data directory: prefer explicit env var, then check for sudo context
+if [ -n "$CAISSON_DATA_DIR" ]; then
+    DATA_DIR="$CAISSON_DATA_DIR"
+elif [ -n "$SUDO_USER" ]; then
+    REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    DATA_DIR="$REAL_HOME/.local/share/caisson"
+else
+    DATA_DIR="${HOME}/.local/share/caisson"
+fi
+
+BASE_IMAGES_DIR="$DATA_DIR/base-images"
 IMAGE_NAME="ubuntu-minimal-24.04"
 IMAGE_DIR="${BASE_IMAGES_DIR}/${IMAGE_NAME}"
 
@@ -24,84 +34,124 @@ else
     echo "Image already exists, skipping download."
 fi
 
-# We need to extract kernel and initrd from the image
-# Cloud-hypervisor requires them as separate files for direct kernel boot
-echo "Extracting kernel and initrd from image..."
-
-# Create a temporary mount point
-MOUNT_DIR=$(mktemp -d)
-NBD_DEVICE=""
-
-cleanup() {
-    if [ -n "$NBD_DEVICE" ]; then
-        sudo umount "${MOUNT_DIR}" 2>/dev/null || true
-        sudo qemu-nbd --disconnect "$NBD_DEVICE" 2>/dev/null || true
-    fi
-    rmdir "${MOUNT_DIR}" 2>/dev/null || true
-}
-trap cleanup EXIT
+# Cloud-hypervisor can boot QCOW2 images directly using the image's bootloader,
+# so kernel/initrd extraction is optional. We'll try to extract them for direct
+# kernel boot (faster startup) but won't fail if we can't.
+echo "Attempting to extract kernel and initrd (optional for cloud-hypervisor)..."
 
 # Check if kernel/initrd already exist
 if [ -f "${IMAGE_DIR}/kernel" ] && [ -f "${IMAGE_DIR}/initrd" ]; then
     echo "Kernel and initrd already extracted."
 else
-    # Load nbd module
-    sudo modprobe nbd max_part=8
+    EXTRACTION_FAILED=false
 
-    # Find available nbd device
-    for i in $(seq 0 15); do
-        if [ ! -e /sys/block/nbd${i}/pid ]; then
-            NBD_DEVICE="/dev/nbd${i}"
-            break
-        fi
-    done
-
-    if [ -z "$NBD_DEVICE" ]; then
-        echo "Error: No available NBD device found"
-        exit 1
-    fi
-
-    echo "Using NBD device: ${NBD_DEVICE}"
-
-    # Connect the QCOW2 image
-    sudo qemu-nbd --connect="${NBD_DEVICE}" "${IMAGE_DIR}/image.qcow2"
-    sleep 1
-
-    # Wait for partition to appear
-    for i in $(seq 1 10); do
-        if [ -e "${NBD_DEVICE}p1" ]; then
-            break
-        fi
-        sleep 0.5
-    done
-
-    # Mount the first partition (root filesystem)
-    sudo mount "${NBD_DEVICE}p1" "${MOUNT_DIR}"
-
-    # Copy kernel and initrd
-    KERNEL=$(ls "${MOUNT_DIR}/boot/vmlinuz-"* 2>/dev/null | sort -V | tail -1)
-    INITRD=$(ls "${MOUNT_DIR}/boot/initrd.img-"* 2>/dev/null | sort -V | tail -1)
-
-    if [ -z "$KERNEL" ] || [ -z "$INITRD" ]; then
-        echo "Error: Could not find kernel or initrd in image"
-        sudo umount "${MOUNT_DIR}"
-        sudo qemu-nbd --disconnect "${NBD_DEVICE}"
-        exit 1
-    fi
-
-    echo "Found kernel: ${KERNEL}"
-    echo "Found initrd: ${INITRD}"
-
-    sudo cp "${KERNEL}" "${IMAGE_DIR}/kernel"
-    sudo cp "${INITRD}" "${IMAGE_DIR}/initrd"
-    sudo chown $(id -u):$(id -g) "${IMAGE_DIR}/kernel" "${IMAGE_DIR}/initrd"
-
-    # Cleanup
-    sudo umount "${MOUNT_DIR}"
-    sudo qemu-nbd --disconnect "${NBD_DEVICE}"
+    # Create a temporary mount point
+    MOUNT_DIR=$(mktemp -d)
     NBD_DEVICE=""
 
-    echo "Kernel and initrd extracted successfully."
+    cleanup() {
+        if [ -n "$NBD_DEVICE" ]; then
+            sudo umount "${MOUNT_DIR}" 2>/dev/null || true
+            sudo qemu-nbd --disconnect "$NBD_DEVICE" 2>/dev/null || true
+            echo "${NBD_DEVICE} disconnected"
+        fi
+        rmdir "${MOUNT_DIR}" 2>/dev/null || true
+    }
+    trap cleanup EXIT
+
+    # Load nbd module
+    if ! sudo modprobe nbd max_part=8 2>/dev/null; then
+        echo "Warning: Could not load nbd module, skipping kernel extraction"
+        EXTRACTION_FAILED=true
+    fi
+
+    if [ "$EXTRACTION_FAILED" = false ]; then
+        # Find available nbd device
+        for i in $(seq 0 15); do
+            if [ ! -e /sys/block/nbd${i}/pid ]; then
+                NBD_DEVICE="/dev/nbd${i}"
+                break
+            fi
+        done
+
+        if [ -z "$NBD_DEVICE" ]; then
+            echo "Warning: No available NBD device found, skipping kernel extraction"
+            EXTRACTION_FAILED=true
+        fi
+    fi
+
+    if [ "$EXTRACTION_FAILED" = false ]; then
+        echo "Using NBD device: ${NBD_DEVICE}"
+
+        # Connect the QCOW2 image
+        if ! sudo qemu-nbd --connect="${NBD_DEVICE}" "${IMAGE_DIR}/image.qcow2" 2>/dev/null; then
+            echo "Warning: Could not connect NBD device, skipping kernel extraction"
+            EXTRACTION_FAILED=true
+        fi
+    fi
+
+    if [ "$EXTRACTION_FAILED" = false ]; then
+        sleep 1
+
+        # Wait for partitions to appear and find the root partition
+        ROOT_PARTITION=""
+        for i in $(seq 1 10); do
+            # Try common partition layouts
+            # GPT: p1 is usually EFI, p2 is usually root
+            # MBR: p1 is usually root
+            for part in "${NBD_DEVICE}p2" "${NBD_DEVICE}p1" "${NBD_DEVICE}p3"; do
+                if [ -e "$part" ]; then
+                    # Try to mount and check for /boot
+                    if sudo mount "$part" "${MOUNT_DIR}" 2>/dev/null; then
+                        if [ -d "${MOUNT_DIR}/boot" ]; then
+                            ROOT_PARTITION="$part"
+                            break 2
+                        fi
+                        sudo umount "${MOUNT_DIR}" 2>/dev/null || true
+                    fi
+                fi
+            done
+            sleep 0.5
+        done
+
+        if [ -z "$ROOT_PARTITION" ]; then
+            echo "Warning: Could not find root partition, skipping kernel extraction"
+            EXTRACTION_FAILED=true
+        fi
+    fi
+
+    if [ "$EXTRACTION_FAILED" = false ]; then
+        # Copy kernel and initrd
+        KERNEL=$(ls "${MOUNT_DIR}/boot/vmlinuz-"* 2>/dev/null | sort -V | tail -1)
+        INITRD=$(ls "${MOUNT_DIR}/boot/initrd.img-"* 2>/dev/null | sort -V | tail -1)
+
+        if [ -z "$KERNEL" ] || [ -z "$INITRD" ]; then
+            echo "Warning: Could not find kernel or initrd in image"
+            EXTRACTION_FAILED=true
+        else
+            echo "Found kernel: ${KERNEL}"
+            echo "Found initrd: ${INITRD}"
+
+            sudo cp "${KERNEL}" "${IMAGE_DIR}/kernel"
+            sudo cp "${INITRD}" "${IMAGE_DIR}/initrd"
+            sudo chown $(id -u):$(id -g) "${IMAGE_DIR}/kernel" "${IMAGE_DIR}/initrd"
+            echo "Kernel and initrd extracted successfully."
+        fi
+
+        # Cleanup
+        sudo umount "${MOUNT_DIR}" 2>/dev/null || true
+    fi
+
+    if [ -n "$NBD_DEVICE" ]; then
+        sudo qemu-nbd --disconnect "${NBD_DEVICE}" 2>/dev/null || true
+        NBD_DEVICE=""
+    fi
+
+    if [ "$EXTRACTION_FAILED" = true ]; then
+        echo ""
+        echo "Note: Kernel/initrd extraction skipped. Cloud-hypervisor will boot"
+        echo "      the image using its built-in bootloader (slightly slower startup)."
+    fi
 fi
 
 # Resize image to ensure it has enough space for QCOW2 overlays
