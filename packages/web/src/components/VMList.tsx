@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen } from 'lucide-react';
+import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen, Globe, ExternalLink } from 'lucide-react';
 import { useVms, useStartVm, useStopVm, useDeleteVm, useVmNetworkStatus, useCreateVm, useVmBaseImages, useConfig, useVolumes, useVmSnapshots, useCreateVmSnapshot, useDeleteVmSnapshot } from '../hooks/useContainers';
 import { VmInfo, downloadVmSshKey, VmSnapshotInfo, HypervisorType } from '../api/client';
 import { useConfirm } from './ConfirmModal';
@@ -145,6 +145,26 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
           </span>
         )}
       </div>
+
+      {/* Ports */}
+      {isRunning && vm.ports && vm.ports.length > 0 && vm.guestIp && (
+        <div className="flex items-center gap-2 text-[10px] mb-3 flex-wrap">
+          <Globe className="h-3 w-3 text-[hsl(var(--text-muted))]" />
+          {vm.ports.map((port, idx) => (
+            <a
+              key={idx}
+              href={`http://${vm.guestIp}:${port.container}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-0.5 text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan)/0.8)] transition-colors"
+              title={`Open port ${port.container} (mapped from host ${port.host})`}
+            >
+              :{port.container}
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          ))}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex items-center gap-1">
@@ -694,6 +714,31 @@ function VMCard({ vm }: { vm: VmInfo }) {
         </div>
       )}
 
+      {/* Ports */}
+      {isRunning && vm.ports && vm.ports.length > 0 && vm.guestIp && (
+        <div className="mb-3">
+          <div className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--text-muted))] mb-1.5">
+            <Globe className="h-3 w-3" />
+            <span>Exposed Ports</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {vm.ports.map((port, idx) => (
+              <a
+                key={idx}
+                href={`http://${vm.guestIp}:${port.container}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] hover:bg-[hsl(var(--cyan)/0.2)] transition-colors group"
+                title={`Open http://${vm.guestIp}:${port.container}`}
+              >
+                <span>:{port.container}</span>
+                <ExternalLink className="h-2.5 w-2.5 opacity-60 group-hover:opacity-100" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Error */}
       {hasError && vm.error && (
         <div className="text-[10px] text-[hsl(var(--red))] mb-3 bg-[hsl(var(--red)/0.1)] p-2 border border-[hsl(var(--red)/0.3)]">
@@ -945,6 +990,11 @@ interface VolumeEntry {
   readOnly: boolean;
 }
 
+interface PortEntry {
+  container: number;
+  host: number;
+}
+
 function CreateVMForm({ onClose }: { onClose: () => void }) {
   const createVm = useCreateVm();
   const { data: baseImages } = useVmBaseImages();
@@ -955,6 +1005,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
   const [memoryMb, setMemoryMb] = useState(1024);
   const [diskGb, setDiskGb] = useState(5);
   const [volumes, setVolumes] = useState<VolumeEntry[]>([]);
+  const [ports, setPorts] = useState<PortEntry[]>([]);
   const [hypervisor, setHypervisor] = useState<HypervisorType>('firecracker');
 
   // Auto-select the first available base image
@@ -976,6 +1027,18 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
     setVolumes(volumes.map((v, i) => i === index ? { ...v, [field]: value } : v));
   };
 
+  const addPort = () => {
+    setPorts([...ports, { container: 3000, host: 3000 }]);
+  };
+
+  const removePort = (index: number) => {
+    setPorts(ports.filter((_, i) => i !== index));
+  };
+
+  const updatePort = (index: number, field: keyof PortEntry, value: number) => {
+    setPorts(ports.map((p, i) => i === index ? { ...p, [field]: value } : p));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -992,6 +1055,9 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
           };
         });
 
+      // Filter valid ports (both container and host must be set)
+      const validPorts = ports.filter(p => p.container > 0 && p.host > 0);
+
       await createVm.mutateAsync({
         name,
         baseImage: baseImage || undefined,
@@ -999,6 +1065,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
         memoryMb,
         diskGb,
         volumes: volumeMounts.length > 0 ? volumeMounts : undefined,
+        ports: validPorts.length > 0 ? validPorts : undefined,
         autoStart: true,
         hypervisor,
       });
@@ -1178,6 +1245,72 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Ports Section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="flex items-center gap-1.5 text-xs text-[hsl(var(--text-muted))]">
+                <Globe className="h-3 w-3" />
+                Exposed Ports
+              </label>
+              <button
+                type="button"
+                onClick={addPort}
+                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
+              >
+                <Plus className="h-3 w-3" />
+                Add
+              </button>
+            </div>
+
+            {ports.length === 0 ? (
+              <p className="text-[10px] text-[hsl(var(--text-muted))] italic">
+                No ports exposed. Click "Add" to expose a port from the VM.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {ports.map((port, index) => (
+                  <div key={index} className="flex items-center gap-2 p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+                    <div className="flex-1 flex items-center gap-2">
+                      <label className="text-[10px] text-[hsl(var(--text-muted))]">VM:</label>
+                      <input
+                        type="number"
+                        value={port.container}
+                        onChange={e => updatePort(index, 'container', Number(e.target.value))}
+                        className="w-20 px-2 py-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] text-xs text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
+                        min={1}
+                        max={65535}
+                        placeholder="3000"
+                      />
+                    </div>
+                    <span className="text-[10px] text-[hsl(var(--text-muted))]">→</span>
+                    <div className="flex-1 flex items-center gap-2">
+                      <label className="text-[10px] text-[hsl(var(--text-muted))]">Host:</label>
+                      <input
+                        type="number"
+                        value={port.host}
+                        onChange={e => updatePort(index, 'host', Number(e.target.value))}
+                        className="w-20 px-2 py-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] text-xs text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
+                        min={1}
+                        max={65535}
+                        placeholder="3000"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removePort(index)}
+                      className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)]"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[9px] text-[hsl(var(--text-muted))] mt-1">
+              Access via http://[VM-IP]:[VM-Port] when running
+            </p>
           </div>
 
           <div className="flex gap-2 pt-4">
