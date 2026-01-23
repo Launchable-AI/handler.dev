@@ -1285,6 +1285,30 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
+   * Update port shortcuts for a VM
+   * These are just UI shortcuts - all VM ports are directly accessible via the guest IP
+   */
+  updateVmPorts(id: string, ports: Array<{ container: number; host: number }>): VmInfo {
+    const vm = this.vms.get(id);
+    if (!vm) {
+      throw new Error(`VM ${id} not found`);
+    }
+
+    vm.portMappings = ports.map(p => ({
+      container: p.container,
+      host: p.host,
+      protocol: 'tcp' as const,
+    }));
+
+    // Save state synchronously (fire and forget the async version)
+    this.saveVmState(vm).catch(err => {
+      console.error(`[FirecrackerService] Failed to save VM state after port update:`, err);
+    });
+
+    return this.vmToInfo(vm);
+  }
+
+  /**
    * Get SSH connection info for a VM
    */
   getSshInfo(id: string): { host: string; port: number; user: string; command: string } | null {

@@ -525,6 +525,23 @@ export function useDeleteVm() {
   });
 }
 
+export function useUpdateVmPorts() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ vmId, ports }: { vmId: string; ports: Array<{ container: number; host: number }> }) =>
+      api.updateVmPorts(vmId, ports),
+    onSuccess: (updatedVm) => {
+      queryClient.setQueryData<api.VmInfo[]>(['vms'], (old) =>
+        old?.map(vm => vm.id === updatedVm.id ? updatedVm : vm)
+      );
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['vms'] });
+    },
+  });
+}
+
 export function useVmStats() {
   return useQuery({
     queryKey: ['vms', 'stats'],

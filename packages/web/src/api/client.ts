@@ -1340,6 +1340,13 @@ export async function deleteVm(id: string): Promise<void> {
   await fetchAPI(`/vms/${id}`, { method: 'DELETE' });
 }
 
+export async function updateVmPorts(id: string, ports: Array<{ container: number; host: number }>): Promise<VmInfo> {
+  return fetchAPI(`/vms/${id}/ports`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ports }),
+  });
+}
+
 export async function getVmStats(): Promise<VmStats> {
   return fetchAPI('/vms/stats');
 }

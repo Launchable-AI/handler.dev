@@ -466,6 +466,33 @@ vms.delete('/:id', async (c) => {
   }
 });
 
+// Update VM port shortcuts
+vms.patch('/:id/ports', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { ports } = body as { ports: Array<{ container: number; host: number }> };
+
+    if (!Array.isArray(ports)) {
+      return c.json({ error: 'ports must be an array' }, 400);
+    }
+
+    // Get the appropriate service
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      const vm = firecracker.updateVmPorts(id, ports);
+      return c.json(vm);
+    }
+
+    const hypervisor = await ensureCloudHypervisorInitialized();
+    const vm = hypervisor.updateVmPorts(id, ports);
+    return c.json(vm);
+  } catch (error) {
+    console.error('[VMs API] Failed to update VM ports:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
 // List snapshots for a VM
 vms.get('/:id/snapshots', async (c) => {
   try {

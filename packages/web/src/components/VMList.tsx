@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen, Globe, ExternalLink } from 'lucide-react';
-import { useVms, useStartVm, useStopVm, useDeleteVm, useVmNetworkStatus, useCreateVm, useVmBaseImages, useConfig, useVolumes, useVmSnapshots, useCreateVmSnapshot, useDeleteVmSnapshot } from '../hooks/useContainers';
+import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen, Globe, ExternalLink, Pencil, X } from 'lucide-react';
+import { useVms, useStartVm, useStopVm, useDeleteVm, useVmNetworkStatus, useCreateVm, useVmBaseImages, useConfig, useVolumes, useVmSnapshots, useCreateVmSnapshot, useDeleteVmSnapshot, useUpdateVmPorts } from '../hooks/useContainers';
 import { VmInfo, downloadVmSshKey, VmSnapshotInfo, HypervisorType } from '../api/client';
 import { useConfirm } from './ConfirmModal';
 import { LogViewer } from './LogViewer';
@@ -19,12 +19,15 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
   const startVm = useStartVm();
   const stopVm = useStopVm();
   const deleteVm = useDeleteVm();
+  const updatePorts = useUpdateVmPorts();
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
   const { data: config } = useConfig();
   const [showLogs, setShowLogs] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingPorts, setEditingPorts] = useState(false);
+  const [editPorts, setEditPorts] = useState<Array<{ container: number; host: number }>>([]);
 
   const isRunning = vm.status === 'running';
   const isBooting = vm.status === 'booting' || vm.status === 'creating';
@@ -146,23 +149,104 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
         )}
       </div>
 
-      {/* Ports */}
-      {isRunning && vm.ports && vm.ports.length > 0 && vm.guestIp && (
-        <div className="flex items-center gap-2 text-[10px] mb-3 flex-wrap">
-          <Globe className="h-3 w-3 text-[hsl(var(--text-muted))]" />
-          {vm.ports.map((port, idx) => (
-            <a
-              key={idx}
-              href={`http://${vm.guestIp}:${port.container}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-0.5 text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan)/0.8)] transition-colors"
-              title={`Open port ${port.container} (mapped from host ${port.host})`}
-            >
-              :{port.container}
-              <ExternalLink className="h-2.5 w-2.5" />
-            </a>
-          ))}
+      {/* Port Shortcuts */}
+      {isRunning && vm.guestIp && (
+        <div className="mb-3">
+          {editingPorts ? (
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-[hsl(var(--text-muted))]">Port Shortcuts</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setEditPorts([...editPorts, { container: 8080, host: 8080 }])}
+                    className="p-0.5 text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)]"
+                    title="Add port"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      updatePorts.mutate({ vmId: vm.id, ports: editPorts });
+                      setEditingPorts(false);
+                    }}
+                    disabled={updatePorts.isPending}
+                    className="p-0.5 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)]"
+                    title="Save"
+                  >
+                    <Check className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => setEditingPorts(false)}
+                    className="p-0.5 text-[hsl(var(--text-muted))] hover:bg-[hsl(var(--bg-elevated))]"
+                    title="Cancel"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                {editPorts.map((port, idx) => (
+                  <div key={idx} className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      value={port.container}
+                      onChange={e => {
+                        const newPorts = [...editPorts];
+                        newPorts[idx] = { ...port, container: Number(e.target.value), host: Number(e.target.value) };
+                        setEditPorts(newPorts);
+                      }}
+                      className="w-16 px-1 py-0.5 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] text-[10px] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
+                      min={1}
+                      max={65535}
+                    />
+                    <button
+                      onClick={() => setEditPorts(editPorts.filter((_, i) => i !== idx))}
+                      className="p-0.5 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)]"
+                      title="Remove"
+                    >
+                      <Trash2 className="h-2.5 w-2.5" />
+                    </button>
+                  </div>
+                ))}
+                {editPorts.length === 0 && (
+                  <p className="text-[9px] text-[hsl(var(--text-muted))] italic">No shortcuts. Click + to add.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-[10px] flex-wrap">
+              <Globe className="h-3 w-3 text-[hsl(var(--text-muted))]" />
+              {vm.ports && vm.ports.length > 0 ? (
+                <>
+                  {vm.ports.map((port, idx) => (
+                    <a
+                      key={idx}
+                      href={`http://${vm.guestIp}:${port.container}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-0.5 text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan)/0.8)] transition-colors"
+                      title={`Open http://${vm.guestIp}:${port.container}`}
+                    >
+                      :{port.container}
+                      <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  ))}
+                </>
+              ) : (
+                <span className="text-[hsl(var(--text-muted))] italic">No shortcuts</span>
+              )}
+              <button
+                onClick={() => {
+                  setEditPorts(vm.ports || []);
+                  setEditingPorts(true);
+                }}
+                className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
+                title="Edit port shortcuts"
+              >
+                <Pencil className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -490,6 +574,7 @@ function VMCard({ vm }: { vm: VmInfo }) {
   const startVm = useStartVm();
   const stopVm = useStopVm();
   const deleteVm = useDeleteVm();
+  const updatePorts = useUpdateVmPorts();
   const confirm = useConfirm();
   const { data: config } = useConfig();
   const terminalPanel = useTerminalPanel();
@@ -500,6 +585,8 @@ function VMCard({ vm }: { vm: VmInfo }) {
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('remote');
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [snapshotName, setSnapshotName] = useState('');
+  const [editingPorts, setEditingPorts] = useState(false);
+  const [editPorts, setEditPorts] = useState<Array<{ container: number; host: number }>>([]);
 
   // Snapshot hooks
   const { data: snapshots, isLoading: snapshotsLoading } = useVmSnapshots(vm.id);
@@ -714,28 +801,113 @@ function VMCard({ vm }: { vm: VmInfo }) {
         </div>
       )}
 
-      {/* Ports */}
-      {isRunning && vm.ports && vm.ports.length > 0 && vm.guestIp && (
+      {/* Port Shortcuts */}
+      {isRunning && vm.guestIp && (
         <div className="mb-3">
-          <div className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--text-muted))] mb-1.5">
-            <Globe className="h-3 w-3" />
-            <span>Exposed Ports</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {vm.ports.map((port, idx) => (
-              <a
-                key={idx}
-                href={`http://${vm.guestIp}:${port.container}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] hover:bg-[hsl(var(--cyan)/0.2)] transition-colors group"
-                title={`Open http://${vm.guestIp}:${port.container}`}
-              >
-                <span>:{port.container}</span>
-                <ExternalLink className="h-2.5 w-2.5 opacity-60 group-hover:opacity-100" />
-              </a>
-            ))}
-          </div>
+          {editingPorts ? (
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--text-muted))]">
+                  <Globe className="h-3 w-3" />
+                  <span>Port Shortcuts</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setEditPorts([...editPorts, { container: 8080, host: 8080 }])}
+                    className="p-1 text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
+                    title="Add port"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      updatePorts.mutate({ vmId: vm.id, ports: editPorts });
+                      setEditingPorts(false);
+                    }}
+                    disabled={updatePorts.isPending}
+                    className="p-1 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]"
+                    title="Save"
+                  >
+                    <Check className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => setEditingPorts(false)}
+                    className="p-1 text-[hsl(var(--text-muted))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]"
+                    title="Cancel"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                {editPorts.map((port, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <label className="text-[10px] text-[hsl(var(--text-muted))]">Port:</label>
+                    <input
+                      type="number"
+                      value={port.container}
+                      onChange={e => {
+                        const newPorts = [...editPorts];
+                        newPorts[idx] = { ...port, container: Number(e.target.value), host: Number(e.target.value) };
+                        setEditPorts(newPorts);
+                      }}
+                      className="w-20 px-2 py-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] text-[10px] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
+                      min={1}
+                      max={65535}
+                    />
+                    <button
+                      onClick={() => setEditPorts(editPorts.filter((_, i) => i !== idx))}
+                      className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)]"
+                      title="Remove"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                {editPorts.length === 0 && (
+                  <p className="text-[10px] text-[hsl(var(--text-muted))] italic">No shortcuts. Click + to add.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--text-muted))]">
+                  <Globe className="h-3 w-3" />
+                  <span>Port Shortcuts</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditPorts(vm.ports || []);
+                    setEditingPorts(true);
+                  }}
+                  className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
+                  title="Edit port shortcuts"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              </div>
+              {vm.ports && vm.ports.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {vm.ports.map((port, idx) => (
+                    <a
+                      key={idx}
+                      href={`http://${vm.guestIp}:${port.container}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] hover:bg-[hsl(var(--cyan)/0.2)] transition-colors group"
+                      title={`Open http://${vm.guestIp}:${port.container}`}
+                    >
+                      <span>:{port.container}</span>
+                      <ExternalLink className="h-2.5 w-2.5 opacity-60 group-hover:opacity-100" />
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] text-[hsl(var(--text-muted))] italic">No shortcuts configured</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1005,7 +1177,11 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
   const [memoryMb, setMemoryMb] = useState(1024);
   const [diskGb, setDiskGb] = useState(5);
   const [volumes, setVolumes] = useState<VolumeEntry[]>([]);
-  const [ports, setPorts] = useState<PortEntry[]>([]);
+  const [ports, setPorts] = useState<PortEntry[]>([
+    { container: 3000, host: 3000 },
+    { container: 5173, host: 5173 },
+    { container: 8080, host: 8080 },
+  ]);
   const [hypervisor, setHypervisor] = useState<HypervisorType>('firecracker');
 
   // Auto-select the first available base image
@@ -1247,12 +1423,12 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          {/* Ports Section */}
+          {/* Port Shortcuts Section */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="flex items-center gap-1.5 text-xs text-[hsl(var(--text-muted))]">
                 <Globe className="h-3 w-3" />
-                Exposed Ports
+                Port Shortcuts
               </label>
               <button
                 type="button"
@@ -1266,41 +1442,30 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
 
             {ports.length === 0 ? (
               <p className="text-[10px] text-[hsl(var(--text-muted))] italic">
-                No ports exposed. Click "Add" to expose a port from the VM.
+                No shortcuts. Click "Add" to add a port shortcut.
               </p>
             ) : (
-              <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
                 {ports.map((port, index) => (
-                  <div key={index} className="flex items-center gap-2 p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-                    <div className="flex-1 flex items-center gap-2">
-                      <label className="text-[10px] text-[hsl(var(--text-muted))]">VM:</label>
-                      <input
-                        type="number"
-                        value={port.container}
-                        onChange={e => updatePort(index, 'container', Number(e.target.value))}
-                        className="w-20 px-2 py-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] text-xs text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
-                        min={1}
-                        max={65535}
-                        placeholder="3000"
-                      />
-                    </div>
-                    <span className="text-[10px] text-[hsl(var(--text-muted))]">→</span>
-                    <div className="flex-1 flex items-center gap-2">
-                      <label className="text-[10px] text-[hsl(var(--text-muted))]">Host:</label>
-                      <input
-                        type="number"
-                        value={port.host}
-                        onChange={e => updatePort(index, 'host', Number(e.target.value))}
-                        className="w-20 px-2 py-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] text-xs text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
-                        min={1}
-                        max={65535}
-                        placeholder="3000"
-                      />
-                    </div>
+                  <div key={index} className="flex items-center gap-1 px-2 py-1 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+                    <span className="text-[10px] text-[hsl(var(--text-muted))]">:</span>
+                    <input
+                      type="number"
+                      value={port.container}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        updatePort(index, 'container', val);
+                        updatePort(index, 'host', val);
+                      }}
+                      className="w-16 px-1 py-0.5 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] text-xs text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
+                      min={1}
+                      max={65535}
+                      placeholder="3000"
+                    />
                     <button
                       type="button"
                       onClick={() => removePort(index)}
-                      className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)]"
+                      className="p-0.5 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)]"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -1309,7 +1474,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
               </div>
             )}
             <p className="text-[9px] text-[hsl(var(--text-muted))] mt-1">
-              Access via http://[VM-IP]:[VM-Port] when running
+              Quick access links to services running in the VM
             </p>
           </div>
 
