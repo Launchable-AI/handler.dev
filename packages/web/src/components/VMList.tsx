@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud } from 'lucide-react';
+import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen } from 'lucide-react';
 import { useVms, useStartVm, useStopVm, useDeleteVm, useVmNetworkStatus, useCreateVm, useVmBaseImages, useConfig, useVolumes, useVmSnapshots, useCreateVmSnapshot, useDeleteVmSnapshot } from '../hooks/useContainers';
 import { VmInfo, downloadVmSshKey, VmSnapshotInfo, HypervisorType } from '../api/client';
 import { useConfirm } from './ConfirmModal';
 import { LogViewer } from './LogViewer';
+import { VMFileBrowser } from './VMFileBrowser';
 import { useTerminalPanel } from './TerminalPanel';
 
 interface VMListProps {
@@ -22,6 +23,7 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
   const terminalPanel = useTerminalPanel();
   const { data: config } = useConfig();
   const [showLogs, setShowLogs] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const isRunning = vm.status === 'running';
@@ -177,13 +179,22 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
         )}
 
         {isRunning && vm.guestIp && (
-          <button
-            onClick={() => terminalPanel.openTerminal(vm.id, vm.name, vm.guestIp!)}
-            className="p-1.5 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]"
-            title="Open terminal"
-          >
-            <TerminalSquare className="h-3 w-3" />
-          </button>
+          <>
+            <button
+              onClick={() => terminalPanel.openTerminal(vm.id, vm.name, vm.guestIp!)}
+              className="p-1.5 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]"
+              title="Open terminal"
+            >
+              <TerminalSquare className="h-3 w-3" />
+            </button>
+            <button
+              onClick={() => setShowFiles(true)}
+              className="p-1.5 text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
+              title="Browse files"
+            >
+              <FolderOpen className="h-3 w-3" />
+            </button>
+          </>
         )}
 
         {sshCommand && (
@@ -219,6 +230,28 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
           title={vm.name}
           onClose={() => setShowLogs(false)}
         />
+      )}
+
+      {/* File Browser Modal */}
+      {showFiles && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] w-full max-w-3xl h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between p-3 border-b border-[hsl(var(--border))]">
+              <h3 className="font-medium text-[hsl(var(--text-primary))]">
+                Files - {vm.name}
+              </h3>
+              <button
+                onClick={() => setShowFiles(false)}
+                className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <VMFileBrowser vmId={vm.id} vmName={vm.name} isRunning={isRunning} />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

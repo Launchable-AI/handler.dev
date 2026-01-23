@@ -488,4 +488,19 @@ export class NetworkPool extends EventEmitter {
     const config = this.load();
     return config?.gateway || null;
   }
+
+  /**
+   * Register an existing VM's IP address (for VMs restored from disk)
+   * This prevents IP collisions when new VMs are created
+   */
+  registerExistingVm(vmId: string, guestIp: string, tapInfo?: { tapName?: string; gateway?: string; macAddress?: string; bridgeName?: string }): void {
+    if (this.mode === 'helper' && guestIp) {
+      this.tapHelper.registerExistingIp(vmId, guestIp, tapInfo ? {
+        name: tapInfo.tapName,
+        gateway: tapInfo.gateway,
+        macAddress: tapInfo.macAddress,
+        bridgeName: tapInfo.bridgeName,
+      } : undefined);
+    }
+  }
 }

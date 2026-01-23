@@ -658,11 +658,166 @@ export function useWarmupLogs(baseImage: string, enabled: boolean = true) {
   });
 }
 
+// VM File Operations
+export function useVmFiles(vmId: string, path: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['vms', vmId, 'files', path],
+    queryFn: () => api.listVmFiles(vmId, path),
+    enabled,
+  });
+}
+
+export function useUploadFileToVm() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ vmId, file, destPath }: { vmId: string; file: File; destPath: string }) =>
+      api.uploadFileToVm(vmId, file, destPath),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['vms', variables.vmId, 'files'] });
+    },
+  });
+}
+
+export function useDeleteVmFile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ vmId, filePath }: { vmId: string; filePath: string }) =>
+      api.deleteVmFile(vmId, filePath),
+    onSuccess: (_data, variables) => {
+      // Invalidate the parent directory
+      const parentPath = variables.filePath.split('/').slice(0, -1).join('/') || '/';
+      queryClient.invalidateQueries({ queryKey: ['vms', variables.vmId, 'files', parentPath] });
+    },
+  });
+}
+
 // Host Stats
 export function useHostStats() {
   return useQuery({
     queryKey: ['host-stats'],
     queryFn: api.getHostStats,
     refetchInterval: 3000, // Refresh every 3 seconds
+  });
+}
+
+// ========== VM Volumes ==========
+
+export function useVmVolumes() {
+  return useQuery({
+    queryKey: ['vm-volumes'],
+    queryFn: api.listVmVolumes,
+    refetchInterval: 10000,
+  });
+}
+
+export function useVmVolume(id: string) {
+  return useQuery({
+    queryKey: ['vm-volumes', id],
+    queryFn: () => api.getVmVolume(id),
+    enabled: !!id,
+  });
+}
+
+export function useCreateVmVolume() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: api.createVmVolume,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vm-volumes'] });
+    },
+  });
+}
+
+export function useDeleteVmVolume() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: api.deleteVmVolume,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vm-volumes'] });
+    },
+  });
+}
+
+export function useAttachVmVolume() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ volumeId, vmId }: { volumeId: string; vmId: string }) =>
+      api.attachVmVolume(volumeId, vmId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vm-volumes'] });
+      queryClient.invalidateQueries({ queryKey: ['vms'] });
+    },
+  });
+}
+
+export function useDetachVmVolume() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: api.detachVmVolume,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vm-volumes'] });
+      queryClient.invalidateQueries({ queryKey: ['vms'] });
+    },
+  });
+}
+
+export function useResizeVmVolume() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ volumeId, sizeGb }: { volumeId: string; sizeGb: number }) =>
+      api.resizeVmVolume(volumeId, sizeGb),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vm-volumes'] });
+    },
+  });
+}
+
+export function useVmAttachedVolumes(vmId: string) {
+  return useQuery({
+    queryKey: ['vm-volumes', 'vm', vmId],
+    queryFn: () => api.getVmAttachedVolumes(vmId),
+    enabled: !!vmId,
+  });
+}
+
+// VM Volume File Operations
+export function useVmVolumeFiles(volumeId: string, path: string = '/') {
+  return useQuery({
+    queryKey: ['vm-volumes', volumeId, 'files', path],
+    queryFn: () => api.listVmVolumeFiles(volumeId, path),
+    enabled: !!volumeId,
+  });
+}
+
+export function useUploadFileToVmVolume() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ volumeId, file, destPath }: { volumeId: string; file: File; destPath: string }) =>
+      api.uploadFileToVmVolume(volumeId, file, destPath),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['vm-volumes', variables.volumeId, 'files'] });
+      queryClient.invalidateQueries({ queryKey: ['vm-volumes'] });
+    },
+  });
+}
+
+export function useDeleteVmVolumeFile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ volumeId, filePath }: { volumeId: string; filePath: string }) =>
+      api.deleteVmVolumeFile(volumeId, filePath),
+    onSuccess: (_data, variables) => {
+      const parentPath = variables.filePath.split('/').slice(0, -1).join('/') || '/';
+      queryClient.invalidateQueries({ queryKey: ['vm-volumes', variables.volumeId, 'files', parentPath] });
+    },
   });
 }

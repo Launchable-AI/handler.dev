@@ -250,3 +250,39 @@ export interface WarmupStatus {
   error?: string;
   vmId?: string; // ID of warmup VM (for logs access)
 }
+
+// Standalone VM Volume types
+export interface VmVolume {
+  id: string;
+  name: string;
+  sizeGb: number;
+  actualSizeMb: number; // Actual disk usage (sparse file)
+  format: 'ext4' | 'xfs';
+  mountPath?: string; // Default mount path in VMs
+  attachedTo?: string; // VM ID if currently attached
+  createdAt: string;
+  lastAttachedAt?: string;
+}
+
+export interface VmVolumeInfo {
+  id: string;
+  name: string;
+  sizeGb: number;
+  actualSizeMb: number;
+  format: 'ext4' | 'xfs';
+  mountPath?: string;
+  attachedTo?: string;
+  attachedToVmName?: string;
+  createdAt: string;
+  lastAttachedAt?: string;
+}
+
+export const CreateVmVolumeSchema = z.object({
+  name: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/,
+    'Volume name must start with alphanumeric and contain only alphanumeric, underscore, period, or hyphen'),
+  sizeGb: z.number().min(1).max(500).default(10),
+  format: z.enum(['ext4', 'xfs']).default('ext4'),
+  mountPath: z.string().optional(),
+});
+
+export type CreateVmVolumeRequest = z.infer<typeof CreateVmVolumeSchema>;

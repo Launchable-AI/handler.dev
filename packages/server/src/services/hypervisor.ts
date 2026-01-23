@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import * as net from 'net';
 import * as crypto from 'crypto';
 import {
@@ -74,6 +75,9 @@ export class HypervisorService extends EventEmitter {
 
     // Initialize network pool (detects helper vs pool mode)
     await this.networkPool.initialize();
+
+    // Register existing VMs' IPs with the network pool (prevents IP collisions)
+    this.registerExistingVmIps();
 
     // Check network health
     await this.checkNetworkHealth();
@@ -336,6 +340,23 @@ export class HypervisorService extends EventEmitter {
             console.error(`[HypervisorService] Failed to load VM state from ${statePath}:`, error);
           }
         }
+      }
+    }
+  }
+
+  /**
+   * Register existing VMs' IP addresses with the network pool
+   * This prevents IP collisions when creating new VMs
+   */
+  private registerExistingVmIps(): void {
+    for (const [vmId, vm] of this.vms) {
+      if (vm.guestIp && vm.networkConfig) {
+        this.networkPool.registerExistingVm(vmId, vm.guestIp, {
+          tapName: vm.networkConfig.tapDevice,
+          gateway: vm.networkConfig.gateway,
+          macAddress: vm.networkConfig.macAddress,
+          bridgeName: vm.networkConfig.bridgeName,
+        });
       }
     }
   }
@@ -1580,6 +1601,142 @@ ethernets:
       return undefined;
     }
     return path.join(this.config.dataDir, vmId, 'console.log');
+  }
+
+  /**
+   * List files in a VM directory via SSH
+   */
+  async listVmFiles(vmId: string, dirPath: string): Promise<{ name: string; type: 'file' | 'directory'; size: number; modified: string }[]> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    if (vm.status !== 'running') {
+      throw new Error(`VM ${vmId} is not running`);
+    }
+
+    const sshKeyPath = this.getSshKeyPath();
+    const host = vm.networkConfig.guestIp || '127.0.0.1';
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const user = 'agent';
+
+    const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes ${user}@${host} -p ${port} "ls -la --time-style=long-iso '${dirPath.replace(/'/g, "'\\''")}'"`;
+
+    try {
+      const output = execSync(sshCmd, { encoding: 'utf-8', timeout: 30000 });
+      const lines = output.trim().split('\n').slice(1);
+
+      const files: { name: string; type: 'file' | 'directory'; size: number; modified: string }[] = [];
+
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 8) continue;
+
+        const permissions = parts[0];
+        const size = parseInt(parts[4], 10) || 0;
+        const date = parts[5];
+        const time = parts[6];
+        const name = parts.slice(7).join(' ');
+
+        if (name === '.' || name === '..') continue;
+
+        files.push({
+          name,
+          type: permissions.startsWith('d') ? 'directory' : 'file',
+          size,
+          modified: `${date} ${time}`,
+        });
+      }
+
+      return files;
+    } catch (error) {
+      throw new Error(`Failed to list files: ${error}`);
+    }
+  }
+
+  /**
+   * Upload a file to a VM via SCP
+   */
+  async uploadFileToVm(vmId: string, fileName: string, content: Buffer, destPath: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    if (vm.status !== 'running') {
+      throw new Error(`VM ${vmId} is not running`);
+    }
+
+    const sshKeyPath = this.getSshKeyPath();
+    const host = vm.networkConfig.guestIp || '127.0.0.1';
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const user = 'agent';
+
+    const tmpFile = path.join(os.tmpdir(), `vm-upload-${Date.now()}-${fileName}`);
+    fs.writeFileSync(tmpFile, content);
+
+    try {
+      const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -P ${port} "${tmpFile}" ${user}@${host}:"${destPath}/${fileName}"`;
+      execSync(scpCmd, { timeout: 60000 });
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  }
+
+  /**
+   * Download a file from a VM via SCP
+   */
+  async downloadFileFromVm(vmId: string, filePath: string): Promise<Buffer> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    if (vm.status !== 'running') {
+      throw new Error(`VM ${vmId} is not running`);
+    }
+
+    const sshKeyPath = this.getSshKeyPath();
+    const host = vm.networkConfig.guestIp || '127.0.0.1';
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const user = 'agent';
+
+    const tmpFile = path.join(os.tmpdir(), `vm-download-${Date.now()}`);
+
+    try {
+      const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -P ${port} ${user}@${host}:"${filePath}" "${tmpFile}"`;
+      execSync(scpCmd, { timeout: 60000 });
+
+      return fs.readFileSync(tmpFile);
+    } finally {
+      if (fs.existsSync(tmpFile)) {
+        fs.unlinkSync(tmpFile);
+      }
+    }
+  }
+
+  /**
+   * Delete a file in a VM via SSH
+   */
+  async deleteVmFile(vmId: string, filePath: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    if (vm.status !== 'running') {
+      throw new Error(`VM ${vmId} is not running`);
+    }
+
+    const sshKeyPath = this.getSshKeyPath();
+    const host = vm.networkConfig.guestIp || '127.0.0.1';
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const user = 'agent';
+
+    const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes ${user}@${host} -p ${port} "rm -rf '${filePath.replace(/'/g, "'\\''")}'"`;
+
+    execSync(sshCmd, { timeout: 30000 });
   }
 
   /**

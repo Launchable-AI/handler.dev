@@ -555,4 +555,117 @@ vms.delete('/quick-launch/default', async (c) => {
   }
 });
 
+// List files in a VM directory (via SSH)
+vms.get('/:id/files', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const path = c.req.query('path') || '/home/agent';
+
+    // Get the appropriate service
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      const files = await firecracker.listVmFiles(id, path);
+      return c.json({ files, path });
+    }
+
+    const hypervisor = await ensureHypervisorInitialized();
+    const files = await hypervisor.listVmFiles(id, path);
+    return c.json({ files, path });
+  } catch (error) {
+    console.error('[VMs API] Failed to list VM files:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Upload a file to a VM (via SCP)
+vms.post('/:id/files/upload', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const formData = await c.req.formData();
+    const file = formData.get('file') as File;
+    const destPath = formData.get('path') as string || '/home/agent';
+
+    if (!file) {
+      return c.json({ error: 'No file provided' }, 400);
+    }
+
+    // Get file content as buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const content = Buffer.from(arrayBuffer);
+
+    // Get the appropriate service
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      await firecracker.uploadFileToVm(id, file.name, content, destPath);
+      return c.json({ success: true, path: `${destPath}/${file.name}` });
+    }
+
+    const hypervisor = await ensureHypervisorInitialized();
+    await hypervisor.uploadFileToVm(id, file.name, content, destPath);
+    return c.json({ success: true, path: `${destPath}/${file.name}` });
+  } catch (error) {
+    console.error('[VMs API] Failed to upload file to VM:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Download a file from a VM (via SCP)
+vms.get('/:id/files/download', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const filePath = c.req.query('path');
+
+    if (!filePath) {
+      return c.json({ error: 'File path is required' }, 400);
+    }
+
+    // Get the appropriate service
+    let content: Buffer;
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      content = await firecracker.downloadFileFromVm(id, filePath);
+    } else {
+      const hypervisor = await ensureHypervisorInitialized();
+      content = await hypervisor.downloadFileFromVm(id, filePath);
+    }
+
+    const fileName = filePath.split('/').pop() || 'file';
+    return new Response(new Uint8Array(content), {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+      },
+    });
+  } catch (error) {
+    console.error('[VMs API] Failed to download file from VM:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Delete a file in a VM (via SSH)
+vms.delete('/:id/files', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const filePath = c.req.query('path');
+
+    if (!filePath) {
+      return c.json({ error: 'File path is required' }, 400);
+    }
+
+    // Get the appropriate service
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      await firecracker.deleteVmFile(id, filePath);
+      return c.json({ success: true });
+    }
+
+    const hypervisor = await ensureHypervisorInitialized();
+    await hypervisor.deleteVmFile(id, filePath);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('[VMs API] Failed to delete file in VM:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
 export default vms;

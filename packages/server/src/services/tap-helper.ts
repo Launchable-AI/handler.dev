@@ -59,7 +59,7 @@ export class TapHelper {
   private bridgeName: string;
   private gateway: string;
   private subnetPrefix: string;
-  private nextIpSuffix: number = 2; // Start at .2 (gateway is .1)
+  private usedIpSuffixes: Set<number> = new Set(); // Track all used IPs
   private allocatedTaps: Map<string, TapInfo> = new Map(); // vmId -> TapInfo
 
   constructor(options?: {
@@ -106,13 +106,52 @@ export class TapHelper {
   /**
    * Get the next available IP address
    */
-  private getNextIp(): string {
-    const ip = `${this.subnetPrefix}.${this.nextIpSuffix}`;
-    this.nextIpSuffix++;
-    if (this.nextIpSuffix > 254) {
-      this.nextIpSuffix = 2; // Wrap around (will likely fail due to conflicts)
+  private getNextIp(): { ip: string; suffix: number } {
+    // Find the first available suffix starting from 2
+    for (let suffix = 2; suffix <= 254; suffix++) {
+      if (!this.usedIpSuffixes.has(suffix)) {
+        this.usedIpSuffixes.add(suffix);
+        return { ip: `${this.subnetPrefix}.${suffix}`, suffix };
+      }
     }
-    return ip;
+    throw new Error('No available IP addresses in subnet');
+  }
+
+  /**
+   * Register an existing VM's IP as used (for restored VMs)
+   */
+  registerExistingIp(vmId: string, guestIp: string, tapInfo?: Partial<TapInfo>): void {
+    const parts = guestIp.split('.');
+    if (parts.length === 4) {
+      const suffix = parseInt(parts[3], 10);
+      if (suffix >= 2 && suffix <= 254) {
+        this.usedIpSuffixes.add(suffix);
+        console.log(`[TapHelper] Registered existing IP ${guestIp} (suffix ${suffix}) for VM ${vmId}`);
+
+        // Also track in allocatedTaps if we have the info
+        if (tapInfo) {
+          this.allocatedTaps.set(vmId, {
+            name: tapInfo.name || `tap-${vmId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}`,
+            guestIp,
+            gateway: tapInfo.gateway || this.gateway,
+            macAddress: tapInfo.macAddress || this.generateMacAddress(suffix),
+            bridgeName: tapInfo.bridgeName || this.bridgeName,
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Release an IP address
+   */
+  private releaseIp(guestIp: string): void {
+    const parts = guestIp.split('.');
+    if (parts.length === 4) {
+      const suffix = parseInt(parts[3], 10);
+      this.usedIpSuffixes.delete(suffix);
+      console.log(`[TapHelper] Released IP ${guestIp} (suffix ${suffix})`);
+    }
   }
 
   /**
@@ -230,11 +269,9 @@ export class TapHelper {
       await this.deleteTap(vmId);
     }
 
-    const guestIp = this.getNextIp();
-    // MAC must match dnsmasq static reservations: MAC byte = IP suffix - 2
-    // After getNextIp(), nextIpSuffix has been incremented, so IP suffix = nextIpSuffix - 1
-    // Therefore: MAC byte = (nextIpSuffix - 1) - 2 = nextIpSuffix - 3
-    const macAddress = this.generateMacAddress(this.nextIpSuffix - 3);
+    const { ip: guestIp, suffix } = this.getNextIp();
+    // MAC address is generated based on IP suffix
+    const macAddress = this.generateMacAddress(suffix);
 
     // Get owner UID/GID (current user)
     const uid = process.getuid?.() || 1000;
@@ -306,6 +343,8 @@ export class TapHelper {
       console.warn(`[TapHelper] Error deleting TAP: ${error}`);
     }
 
+    // Release the IP for reuse
+    this.releaseIp(tapInfo.guestIp);
     this.allocatedTaps.delete(vmId);
   }
 

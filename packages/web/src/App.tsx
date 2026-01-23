@@ -12,6 +12,7 @@ import { Notes } from './components/Notes';
 import { VMList } from './components/VMList';
 import { VMBaseImages } from './components/VMBaseImages';
 import { VMSnapshots } from './components/VMSnapshots';
+import { VMVolumes } from './components/VMVolumes';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
@@ -19,7 +20,7 @@ import { TerminalPanelProvider } from './components/TerminalPanel';
 import { useHealth, useConfig, useHostStats } from './hooks/useContainers';
 
 // All possible tabs including nested ones
-type Tab = 'containers' | 'compose' | 'dockerfiles' | 'images' | 'instances' | 'base-images' | 'snapshots' | 'volumes' | 'mcp' | 'notes' | 'settings';
+type Tab = 'containers' | 'compose' | 'dockerfiles' | 'images' | 'instances' | 'base-images' | 'snapshots' | 'vm-volumes' | 'volumes' | 'mcp' | 'notes' | 'settings';
 
 // Navigation group identifiers
 type NavGroupId = 'docker' | 'vms';
@@ -87,6 +88,7 @@ function App() {
         { id: 'instances', label: 'Instances', icon: Server },
         { id: 'base-images', label: 'Base Images', icon: HardDrive },
         { id: 'snapshots', label: 'Snapshots', icon: Camera },
+        { id: 'vm-volumes', label: 'Volumes', icon: HardDrive },
       ],
     },
     {
@@ -98,9 +100,9 @@ function App() {
         { id: 'compose', label: 'Compose', icon: Layers },
         { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
         { id: 'images', label: 'Images', icon: Image },
+        { id: 'volumes', label: 'Volumes', icon: HardDrive },
       ],
     },
-    { id: 'volumes', label: 'Volumes', icon: HardDrive, standalone: true },
     { id: 'mcp', label: 'MCP Servers', icon: Package, standalone: true },
     { id: 'notes', label: 'Notes', icon: StickyNote, standalone: true },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, standalone: true },
@@ -451,6 +453,7 @@ function App() {
           {activeTab === 'instances' && <VMList onCreateClick={() => {}} />}
           {activeTab === 'base-images' && <VMBaseImages />}
           {activeTab === 'snapshots' && <VMSnapshots />}
+          {activeTab === 'vm-volumes' && <VMVolumes />}
           {activeTab === 'compose' && <ComposeManager />}
           {activeTab === 'dockerfiles' && <DockerfileEditor />}
           {activeTab === 'images' && <ImageList />}

@@ -1463,6 +1463,53 @@ export async function clearQuickLaunchDefault(): Promise<void> {
   await fetchAPI('/vms/quick-launch/default', { method: 'DELETE' });
 }
 
+// ============ VM File Operations ============
+
+export interface VmFileInfo {
+  name: string;
+  type: 'file' | 'directory';
+  size: number;
+  modified: string;
+}
+
+export async function listVmFiles(vmId: string, path: string = '/home/agent'): Promise<{ files: VmFileInfo[]; path: string }> {
+  return fetchAPI(`/vms/${vmId}/files?path=${encodeURIComponent(path)}`);
+}
+
+export async function uploadFileToVm(vmId: string, file: File, destPath: string = '/home/agent'): Promise<{ success: boolean; path: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('path', destPath);
+
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/vms/${vmId}/files/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to upload file');
+  }
+
+  return response.json();
+}
+
+export async function downloadFileFromVm(vmId: string, filePath: string): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/vms/${vmId}/files/download?path=${encodeURIComponent(filePath)}`);
+
+  if (!response.ok) {
+    throw new Error('Failed to download file');
+  }
+
+  return response.blob();
+}
+
+export async function deleteVmFile(vmId: string, filePath: string): Promise<void> {
+  await fetchAPI(`/vms/${vmId}/files?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
+}
+
 // ============ Backend Status ============
 
 export interface BackendInfo {
@@ -1515,6 +1562,117 @@ export interface HostStats {
 
 export async function getHostStats(): Promise<HostStats> {
   return fetchAPI('/backends/host-stats');
+}
+
+// ========== VM Volumes API ==========
+
+export interface VmVolumeInfo {
+  id: string;
+  name: string;
+  sizeGb: number;
+  actualSizeMb: number;
+  format: 'ext4' | 'xfs';
+  mountPath?: string;
+  attachedTo?: string;
+  attachedToVmName?: string;
+  createdAt: string;
+  lastAttachedAt?: string;
+}
+
+export interface CreateVmVolumeRequest {
+  name: string;
+  sizeGb?: number;
+  format?: 'ext4' | 'xfs';
+  mountPath?: string;
+}
+
+export async function listVmVolumes(): Promise<VmVolumeInfo[]> {
+  return fetchAPI('/vm-volumes');
+}
+
+export async function getVmVolume(id: string): Promise<VmVolumeInfo> {
+  return fetchAPI(`/vm-volumes/${id}`);
+}
+
+export async function createVmVolume(request: CreateVmVolumeRequest): Promise<VmVolumeInfo> {
+  return fetchAPI('/vm-volumes', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+export async function deleteVmVolume(id: string): Promise<void> {
+  await fetchAPI(`/vm-volumes/${id}`, { method: 'DELETE' });
+}
+
+export async function attachVmVolume(volumeId: string, vmId: string): Promise<VmVolumeInfo> {
+  return fetchAPI(`/vm-volumes/${volumeId}/attach`, {
+    method: 'POST',
+    body: JSON.stringify({ vmId }),
+  });
+}
+
+export async function detachVmVolume(volumeId: string): Promise<VmVolumeInfo> {
+  return fetchAPI(`/vm-volumes/${volumeId}/detach`, {
+    method: 'POST',
+  });
+}
+
+export async function resizeVmVolume(volumeId: string, sizeGb: number): Promise<VmVolumeInfo> {
+  return fetchAPI(`/vm-volumes/${volumeId}/resize`, {
+    method: 'POST',
+    body: JSON.stringify({ sizeGb }),
+  });
+}
+
+export async function getVmAttachedVolumes(vmId: string): Promise<VmVolumeInfo[]> {
+  return fetchAPI(`/vm-volumes/vm/${vmId}`);
+}
+
+// VM Volume File Operations
+export interface VmVolumeFileInfo {
+  name: string;
+  type: 'file' | 'directory';
+  size: number;
+}
+
+export async function listVmVolumeFiles(volumeId: string, path: string = '/'): Promise<{ files: VmVolumeFileInfo[]; path: string }> {
+  return fetchAPI(`/vm-volumes/${volumeId}/files?path=${encodeURIComponent(path)}`);
+}
+
+export async function uploadFileToVmVolume(volumeId: string, file: File, destPath: string = '/'): Promise<{ success: boolean; path: string }> {
+  const apiBase = await getApiBase();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('path', destPath);
+
+  const response = await fetch(`${apiBase}/vm-volumes/${volumeId}/files/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function downloadFileFromVmVolume(volumeId: string, filePath: string): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/vm-volumes/${volumeId}/files/download?path=${encodeURIComponent(filePath)}`);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Download failed' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  return response.blob();
+}
+
+export async function deleteVmVolumeFile(volumeId: string, filePath: string): Promise<void> {
+  await fetchAPI(`/vm-volumes/${volumeId}/files?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
 }
 
 // Download base image with progress streaming
