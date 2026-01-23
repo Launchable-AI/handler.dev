@@ -24,7 +24,7 @@ export const THEMES: ThemeConfig[] = [
   },
 ];
 
-const STORAGE_KEY = 'agent-containers-theme';
+const STORAGE_KEY = 'caisson-theme';
 
 function getInitialTheme(): Theme {
   // Check localStorage first

@@ -7,7 +7,7 @@ import { appendBuildLog } from './build-tracker.js';
 import { findAvailableSshPort, validateHostPorts } from '../utils/port.js';
 import type { CreateContainerRequest, ContainerInfo } from '../types/index.js';
 
-const ACM_LABEL = 'agent-container-management';
+const CAISSON_LABEL = 'caisson';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
@@ -42,13 +42,13 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
     await dockerService.buildImageWithLogs(dockerfileWithKey, imageName, logCallback || (() => {}));
   } else if (image) {
     // Check if this image is already ACM-ready (has our label)
-    const isAcmImage = await dockerService.imageHasLabel(image, ACM_LABEL);
+    const isCaissonImage = await dockerService.imageHasLabel(image, CAISSON_LABEL);
 
-    if (isAcmImage) {
+    if (isCaissonImage) {
       // Image already has SSH setup - use it directly
       // Note: If SSH fails, user should rebuild the image to get current key
       imageName = image;
-      logCallback?.(`Using existing ACM image: ${imageName}`);
+      logCallback?.(`Using existing Caisson image: ${imageName}`);
     } else {
       // Base image needs SSH setup - build a new image with key baked in
       imageName = `acm-${name}:latest`;
@@ -136,7 +136,7 @@ async function getOrCreateAppSshKey(): Promise<{ publicKey: string; privateKey: 
   }
 
   // Generate key pair using ssh-keygen
-  execSync(`ssh-keygen -t rsa -b 4096 -f "${privateKeyPath}" -N "" -C "agent-containers"`, {
+  execSync(`ssh-keygen -t rsa -b 4096 -f "${privateKeyPath}" -N "" -C "caisson"`, {
     stdio: 'pipe',
   });
 

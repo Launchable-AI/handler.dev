@@ -4,7 +4,7 @@ import { logger } from 'hono/logger';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { testConnection } from './services/docker.js';
-import { getHypervisorService } from './services/hypervisor.js';
+import { getCloudHypervisorService } from './services/hypervisor.js';
 import {
   createTerminalSession,
   writeToSession,
@@ -52,7 +52,7 @@ app.get('/api/health', async (c) => {
   // Get hypervisor status (lazy - don't initialize if not already done)
   let hypervisor = null;
   try {
-    const service = getHypervisorService();
+    const service = getCloudHypervisorService();
     const networkStatus = service.getNetworkStatus();
     const vmStats = service.getStats();
     hypervisor = {
@@ -129,7 +129,7 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
           case 'start-vm':
             // Start a new VM terminal session
             if (msg.vmId && msg.vmIp) {
-              const hypervisor = getHypervisorService();
+              const hypervisor = getCloudHypervisorService();
               const dataDir = hypervisor.getDataDir();
               sessionId = createVmTerminalSession(
                 ws,

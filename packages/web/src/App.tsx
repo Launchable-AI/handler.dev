@@ -152,12 +152,12 @@ function App() {
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-[hsl(var(--border))]">
           <div className="relative">
-            <img src="/logo.png" alt="Agent Containers" className="h-7 w-7" />
+            <img src="/logo.png" alt="Caisson" className="h-7 w-7" />
             <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[hsl(var(--green))] animate-pulse-glow" />
           </div>
           <div>
             <h1 className="text-sm font-semibold text-[hsl(var(--text-primary))] tracking-tight">
-              Agent Containers
+              Caisson
             </h1>
             <p className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider">
               Control Panel

@@ -1,6 +1,6 @@
 /**
  * FirecrackerService - Firecracker MicroVM Management
- * Manages virtual machines using Firecracker for the Agent Containers platform.
+ * Manages virtual machines using Firecracker for the Caisson platform.
  *
  * Key difference from cloud-hypervisor: Uses MMDS (MicroVM Metadata Service) for
  * guest identity, enabling fast snapshot restore with dynamic network configuration.

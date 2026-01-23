@@ -4,22 +4,22 @@
  */
 
 import { Hono } from 'hono';
-import { getHypervisorService, initializeHypervisorService } from '../services/hypervisor.js';
+import { getCloudHypervisorService, initializeCloudHypervisorService } from '../services/hypervisor.js';
 import { getFirecrackerService, initializeFirecrackerService } from '../services/firecracker.js';
 import { CreateVmSchema, HypervisorType } from '../types/vm.js';
 
 const vms = new Hono();
 
 // Initialize hypervisor services
-let hypervisorInitialized = false;
+let cloudHypervisorInitialized = false;
 let firecrackerInitialized = false;
 
-async function ensureHypervisorInitialized() {
-  if (!hypervisorInitialized) {
-    await initializeHypervisorService();
-    hypervisorInitialized = true;
+async function ensureCloudHypervisorInitialized() {
+  if (!cloudHypervisorInitialized) {
+    await initializeCloudHypervisorService();
+    cloudHypervisorInitialized = true;
   }
-  return getHypervisorService();
+  return getCloudHypervisorService();
 }
 
 async function ensureFirecrackerInitialized() {
@@ -37,13 +37,13 @@ async function getService(hypervisorType: HypervisorType = 'cloud-hypervisor') {
   if (hypervisorType === 'firecracker') {
     return ensureFirecrackerInitialized();
   }
-  return ensureHypervisorInitialized();
+  return ensureCloudHypervisorInitialized();
 }
 
 // List all VMs (from both hypervisors)
 vms.get('/', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const cloudHypervisorVms = hypervisor.listVms();
 
     // Try to get Firecracker VMs (may fail if not initialized)
@@ -65,7 +65,7 @@ vms.get('/', async (c) => {
 // Get VM stats
 vms.get('/stats', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const stats = hypervisor.getStats();
     return c.json(stats);
   } catch (error) {
@@ -77,7 +77,7 @@ vms.get('/stats', async (c) => {
 // Get network status
 vms.get('/network', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const status = hypervisor.getNetworkStatus();
     return c.json(status);
   } catch (error) {
@@ -89,7 +89,7 @@ vms.get('/network', async (c) => {
 // List available base images
 vms.get('/base-images', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const images = hypervisor.listBaseImages();
     return c.json(images);
   } catch (error) {
@@ -101,7 +101,7 @@ vms.get('/base-images', async (c) => {
 // Delete a base image
 vms.delete('/base-images/:name', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const name = c.req.param('name');
     await hypervisor.deleteBaseImage(name);
     return c.json({ success: true });
@@ -114,7 +114,7 @@ vms.delete('/base-images/:name', async (c) => {
 // Download a base image from URL with kernel/initrd
 vms.post('/base-images/download', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const body = await c.req.json();
     const { name, imageUrl, kernelUrl, initrdUrl } = body;
 
@@ -168,7 +168,7 @@ vms.post('/base-images/download', async (c) => {
 // List all snapshots from all VMs
 vms.get('/snapshots', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const snapshots = hypervisor.listAllSnapshots();
     return c.json(snapshots);
   } catch (error) {
@@ -180,7 +180,7 @@ vms.get('/snapshots', async (c) => {
 // Get SSH key for VMs
 vms.get('/ssh-key', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const privateKey = hypervisor.getSshPrivateKey();
     if (!privateKey) {
       return c.json({ error: 'SSH key not found' }, 404);
@@ -198,7 +198,7 @@ vms.get('/ssh-key', async (c) => {
 // Get warmup status for a base image
 vms.get('/warmup/:baseImage', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const baseImage = c.req.param('baseImage');
     const status = hypervisor.getWarmupStatus(baseImage);
     return c.json(status);
@@ -211,7 +211,7 @@ vms.get('/warmup/:baseImage', async (c) => {
 // Get warmup logs for a base image
 vms.get('/warmup/:baseImage/logs', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const baseImage = c.req.param('baseImage');
     const lines = parseInt(c.req.query('lines') || '100', 10);
 
@@ -226,7 +226,7 @@ vms.get('/warmup/:baseImage/logs', async (c) => {
 // Trigger warmup for a base image
 vms.post('/warmup/:baseImage', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const baseImage = c.req.param('baseImage');
 
     // Start warmup in background
@@ -244,7 +244,7 @@ vms.post('/warmup/:baseImage', async (c) => {
 // Clear warmup status (dismiss error)
 vms.delete('/warmup/:baseImage', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const baseImage = c.req.param('baseImage');
     hypervisor.clearWarmupStatus(baseImage);
     return c.json({ success: true });
@@ -297,7 +297,7 @@ vms.get('/:id', async (c) => {
     const id = c.req.param('id');
 
     // Check cloud-hypervisor first
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     let vm = hypervisor.getVm(id);
 
     // If not found, check Firecracker
@@ -336,7 +336,7 @@ vms.get('/:id/logs', async (c) => {
       logs = firecracker.getVmBootLogs(id, lines);
       logPath = firecracker.getVmLogPath(id);
     } else {
-      const hypervisor = await ensureHypervisorInitialized();
+      const hypervisor = await ensureCloudHypervisorInitialized();
       logs = hypervisor.getVmBootLogs(id, lines);
       logPath = hypervisor.getVmLogPath(id);
     }
@@ -367,7 +367,7 @@ vms.get('/:id/ssh', async (c) => {
       return c.json(sshInfo);
     }
 
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const sshInfo = hypervisor.getSshInfo(id);
     if (!sshInfo) {
       return c.json({ error: `VM ${id} not found` }, 404);
@@ -392,7 +392,7 @@ vms.post('/:id/start', async (c) => {
       return c.json(vm);
     }
 
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const vm = await hypervisor.startVm(id);
     return c.json(vm);
   } catch (error) {
@@ -413,7 +413,7 @@ vms.post('/:id/stop', async (c) => {
       return c.json(vm);
     }
 
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const vm = await hypervisor.stopVm(id);
     return c.json(vm);
   } catch (error) {
@@ -435,7 +435,7 @@ vms.post('/:id/pause', async (c) => {
       return c.json(vm);
     }
 
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     await hypervisor.pauseVm(id);
     const vm = hypervisor.getVm(id);
     return c.json(vm);
@@ -457,7 +457,7 @@ vms.delete('/:id', async (c) => {
       return c.json({ success: true, message: `VM ${id} deleted` });
     }
 
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     await hypervisor.deleteVm(id);
     return c.json({ success: true, message: `VM ${id} deleted` });
   } catch (error) {
@@ -469,7 +469,7 @@ vms.delete('/:id', async (c) => {
 // List snapshots for a VM
 vms.get('/:id/snapshots', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const id = c.req.param('id');
 
     const snapshots = hypervisor.listVmSnapshots(id);
@@ -483,7 +483,7 @@ vms.get('/:id/snapshots', async (c) => {
 // Create a snapshot of a VM
 vms.post('/:id/snapshots', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const id = c.req.param('id');
     const body = await c.req.json();
     const name = body.name || `Snapshot ${new Date().toLocaleString()}`;
@@ -499,7 +499,7 @@ vms.post('/:id/snapshots', async (c) => {
 // Delete a snapshot
 vms.delete('/:id/snapshots/:snapshotId', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const id = c.req.param('id');
     const snapshotId = c.req.param('snapshotId');
 
@@ -514,7 +514,7 @@ vms.delete('/:id/snapshots/:snapshotId', async (c) => {
 // Get quick launch default snapshot
 vms.get('/quick-launch/default', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const defaultSnapshot = hypervisor.getQuickLaunchDefault();
     return c.json(defaultSnapshot || { vmId: null, snapshotId: null });
   } catch (error) {
@@ -526,7 +526,7 @@ vms.get('/quick-launch/default', async (c) => {
 // Set quick launch default snapshot
 vms.put('/quick-launch/default', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const body = await c.req.json();
     const { vmId, snapshotId } = body;
 
@@ -546,7 +546,7 @@ vms.put('/quick-launch/default', async (c) => {
 // Clear quick launch default
 vms.delete('/quick-launch/default', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     hypervisor.clearQuickLaunchDefault();
     return c.json({ success: true });
   } catch (error) {
@@ -568,7 +568,7 @@ vms.get('/:id/files', async (c) => {
       return c.json({ files, path });
     }
 
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const files = await hypervisor.listVmFiles(id, path);
     return c.json({ files, path });
   } catch (error) {
@@ -600,7 +600,7 @@ vms.post('/:id/files/upload', async (c) => {
       return c.json({ success: true, path: `${destPath}/${file.name}` });
     }
 
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     await hypervisor.uploadFileToVm(id, file.name, content, destPath);
     return c.json({ success: true, path: `${destPath}/${file.name}` });
   } catch (error) {
@@ -625,7 +625,7 @@ vms.get('/:id/files/download', async (c) => {
       const firecracker = await ensureFirecrackerInitialized();
       content = await firecracker.downloadFileFromVm(id, filePath);
     } else {
-      const hypervisor = await ensureHypervisorInitialized();
+      const hypervisor = await ensureCloudHypervisorInitialized();
       content = await hypervisor.downloadFileFromVm(id, filePath);
     }
 
@@ -659,7 +659,7 @@ vms.delete('/:id/files', async (c) => {
       return c.json({ success: true });
     }
 
-    const hypervisor = await ensureHypervisorInitialized();
+    const hypervisor = await ensureCloudHypervisorInitialized();
     await hypervisor.deleteVmFile(id, filePath);
     return c.json({ success: true });
   } catch (error) {

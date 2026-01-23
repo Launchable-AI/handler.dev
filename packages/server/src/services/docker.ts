@@ -4,8 +4,8 @@ import { getConfig } from './config.js';
 
 const docker = new Docker();
 
-const CONTAINER_LABEL = 'agent-container-management';
-const IMAGE_LABEL = 'agent-container-management';
+const CONTAINER_LABEL = 'caisson';
+const IMAGE_LABEL = 'caisson';
 
 export async function listContainers(): Promise<ContainerInfo[]> {
   const containers = await docker.listContainers({

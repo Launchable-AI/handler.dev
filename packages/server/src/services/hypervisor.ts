@@ -1,6 +1,6 @@
 /**
- * HypervisorService - Cloud-Hypervisor VM Management
- * Manages virtual machines using cloud-hypervisor for the Agent Containers platform.
+ * CloudHypervisorService - Cloud-Hypervisor VM Management
+ * Manages virtual machines using cloud-hypervisor for the Caisson platform.
  */
 
 import { EventEmitter } from 'events';
@@ -24,7 +24,7 @@ import {
 import { NetworkPool, TapAllocation, NetworkStatus } from './network-pool.js';
 import { getConfig } from './config.js';
 
-export class HypervisorService extends EventEmitter {
+export class CloudHypervisorService extends EventEmitter {
   private config: HypervisorConfig;
   private vms: Map<string, VmState> = new Map();
   private processes: Map<string, ChildProcess> = new Map();
@@ -56,7 +56,7 @@ export class HypervisorService extends EventEmitter {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    console.log('[HypervisorService] Initializing...');
+    console.log('[CloudHypervisorService] Initializing...');
 
     // Create required directories
     await this.ensureDirectories();
@@ -86,7 +86,7 @@ export class HypervisorService extends EventEmitter {
     await this.ensureBaseImageSizes();
 
     this.initialized = true;
-    console.log(`[HypervisorService] Initialized with ${this.vms.size} VMs`);
+    console.log(`[CloudHypervisorService] Initialized with ${this.vms.size} VMs`);
 
     this.emit('hypervisor:initialized', { networkStatus: this.networkStatus });
 
@@ -102,7 +102,7 @@ export class HypervisorService extends EventEmitter {
     const mode = this.networkPool.getMode();
 
     if (mode === 'helper') {
-      console.log('[HypervisorService] Network: Using helper mode (on-demand TAP creation)');
+      console.log('[CloudHypervisorService] Network: Using helper mode (on-demand TAP creation)');
       return;
     }
 
@@ -121,7 +121,7 @@ export class HypervisorService extends EventEmitter {
       console.warn('  sudo ./scripts/setup-vm-network.sh');
       console.warn('='.repeat(60) + '\n');
     } else {
-      console.log(`[HypervisorService] Network health: ${this.networkStatus.availableTaps} TAPs available`);
+      console.log(`[CloudHypervisorService] Network health: ${this.networkStatus.availableTaps} TAPs available`);
 
       // Clean up stale allocations
       const activeVmIds = Array.from(this.vms.keys());
@@ -154,11 +154,11 @@ export class HypervisorService extends EventEmitter {
         const currentSizeGB = info['virtual-size'] / (1024 * 1024 * 1024);
 
         if (currentSizeGB < MIN_BASE_SIZE_GB) {
-          console.log(`[HypervisorService] Resizing base image ${entry.name} to ${MIN_BASE_SIZE_GB}GB`);
+          console.log(`[CloudHypervisorService] Resizing base image ${entry.name} to ${MIN_BASE_SIZE_GB}GB`);
           execSync(`qemu-img resize ${imagePath} ${MIN_BASE_SIZE_GB}G`);
         }
       } catch (error) {
-        console.warn(`[HypervisorService] Failed to check/resize base image ${entry.name}:`, error);
+        console.warn(`[CloudHypervisorService] Failed to check/resize base image ${entry.name}:`, error);
       }
     }
   }
@@ -273,7 +273,7 @@ export class HypervisorService extends EventEmitter {
     for (const dir of dirs) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        console.log(`[HypervisorService] Created directory: ${dir}`);
+        console.log(`[CloudHypervisorService] Created directory: ${dir}`);
       }
     }
   }
@@ -287,11 +287,11 @@ export class HypervisorService extends EventEmitter {
         const whichResult = execSync('which cloud-hypervisor', { encoding: 'utf-8' }).trim();
         if (whichResult) {
           this.config.hypervisorBinary = whichResult;
-          console.log(`[HypervisorService] Found cloud-hypervisor at: ${whichResult}`);
+          console.log(`[CloudHypervisorService] Found cloud-hypervisor at: ${whichResult}`);
         }
       } catch {
         // cloud-hypervisor not installed - this is fine if using Firecracker
-        console.log('[HypervisorService] cloud-hypervisor not installed (cloud-hypervisor VMs disabled)');
+        console.log('[CloudHypervisorService] cloud-hypervisor not installed (cloud-hypervisor VMs disabled)');
       }
     }
   }
@@ -304,15 +304,15 @@ export class HypervisorService extends EventEmitter {
     const publicKeyPath = path.join(this.config.sshKeysDir, 'id_ed25519.pub');
 
     if (!fs.existsSync(privateKeyPath)) {
-      console.log('[HypervisorService] Generating SSH keys');
+      console.log('[CloudHypervisorService] Generating SSH keys');
       try {
         execSync(`ssh-keygen -t ed25519 -f ${privateKeyPath} -N "" -q`, {
           encoding: 'utf-8',
         });
         fs.chmodSync(privateKeyPath, 0o600);
-        console.log('[HypervisorService] SSH keys generated');
+        console.log('[CloudHypervisorService] SSH keys generated');
       } catch (error) {
-        console.error('[HypervisorService] Failed to generate SSH keys:', error);
+        console.error('[CloudHypervisorService] Failed to generate SSH keys:', error);
       }
     }
   }
@@ -337,7 +337,7 @@ export class HypervisorService extends EventEmitter {
               this.allocatedPorts.add(state.sshPort);
             }
           } catch (error) {
-            console.error(`[HypervisorService] Failed to load VM state from ${statePath}:`, error);
+            console.error(`[CloudHypervisorService] Failed to load VM state from ${statePath}:`, error);
           }
         }
       }
@@ -369,7 +369,7 @@ export class HypervisorService extends EventEmitter {
     for (const [id, vm] of this.vms) {
       if (vm.status === 'running' && vm.pid) {
         if (!this.isProcessRunning(vm.pid)) {
-          console.warn(`[HypervisorService] VM ${id} was running but process ${vm.pid} is gone`);
+          console.warn(`[CloudHypervisorService] VM ${id} was running but process ${vm.pid} is gone`);
           vm.status = 'stopped';
           vm.pid = undefined;
           vm.stoppedAt = new Date().toISOString();
@@ -400,7 +400,7 @@ export class HypervisorService extends EventEmitter {
             const pidMatch = line.match(/^(\d+)/);
             if (pidMatch) {
               const pid = parseInt(pidMatch[1], 10);
-              console.warn(`[HypervisorService] Killing orphaned VM process: PID ${pid}, VM ID ${vmId}`);
+              console.warn(`[CloudHypervisorService] Killing orphaned VM process: PID ${pid}, VM ID ${vmId}`);
               try {
                 process.kill(pid, 'SIGTERM');
               } catch (e) {
@@ -432,7 +432,7 @@ export class HypervisorService extends EventEmitter {
           }
 
           if (!isTracked) {
-            console.warn(`[HypervisorService] Killing orphaned warmup VM process: PID ${pid}, base image ${baseImage}`);
+            console.warn(`[CloudHypervisorService] Killing orphaned warmup VM process: PID ${pid}, base image ${baseImage}`);
             try {
               process.kill(pid, 'SIGTERM');
             } catch (e) {
@@ -442,7 +442,7 @@ export class HypervisorService extends EventEmitter {
         }
       }
     } catch (error) {
-      console.error('[HypervisorService] Failed to cleanup orphaned processes:', error);
+      console.error('[CloudHypervisorService] Failed to cleanup orphaned processes:', error);
     }
   }
 
@@ -513,7 +513,7 @@ export class HypervisorService extends EventEmitter {
    * Create a new VM
    */
   async createVm(config: VmConfig): Promise<VmInfo> {
-    console.log(`[HypervisorService] Creating VM: ${config.name}`);
+    console.log(`[CloudHypervisorService] Creating VM: ${config.name}`);
 
     // Check for name uniqueness
     for (const vm of this.vms.values()) {
@@ -541,12 +541,12 @@ export class HypervisorService extends EventEmitter {
         // Use async allocation (supports both helper and pool modes)
         tapAllocation = await this.networkPool.allocateAsync(id);
         networkMode = 'tap';
-        console.log(`[HypervisorService] Allocated TAP ${tapAllocation.tapName} for VM ${id} (${poolMode} mode)`);
+        console.log(`[CloudHypervisorService] Allocated TAP ${tapAllocation.tapName} for VM ${id} (${poolMode} mode)`);
       } else {
-        console.warn(`[HypervisorService] No TAP available for VM ${id}: ${status.message}`);
+        console.warn(`[CloudHypervisorService] No TAP available for VM ${id}: ${status.message}`);
       }
     } catch (error) {
-      console.warn(`[HypervisorService] Failed to allocate TAP for VM ${id}:`, error);
+      console.warn(`[CloudHypervisorService] Failed to allocate TAP for VM ${id}:`, error);
     }
 
     // Handle snapshot-based launch
@@ -599,7 +599,7 @@ export class HypervisorService extends EventEmitter {
       const newDiskPath = path.join(vmDir, 'disk.qcow2');
 
       if (fs.existsSync(snapshotDiskPath)) {
-        console.log(`[HypervisorService] Creating CoW overlay from snapshot disk`);
+        console.log(`[CloudHypervisorService] Creating CoW overlay from snapshot disk`);
         execSync(`qemu-img create -f qcow2 -b ${snapshotDiskPath} -F qcow2 ${newDiskPath}`);
       }
 
@@ -609,7 +609,7 @@ export class HypervisorService extends EventEmitter {
         snapshotDir: snapshotCopyDir,
       };
 
-      console.log(`[HypervisorService] VM ${id} will be created from snapshot ${snapshotId}`);
+      console.log(`[CloudHypervisorService] VM ${id} will be created from snapshot ${snapshotId}`);
     }
 
     // Create initial state
@@ -642,14 +642,14 @@ export class HypervisorService extends EventEmitter {
     await this.saveVmState(vm);
 
     this.emit('vm:created', vm);
-    console.log(`[HypervisorService] VM ${id} created`);
+    console.log(`[CloudHypervisorService] VM ${id} created`);
 
     // Auto-start if requested
     if (config.autoStart !== false) {
       try {
         await this.startVm(id);
       } catch (error) {
-        console.error(`[HypervisorService] Failed to auto-start VM ${id}:`, error);
+        console.error(`[CloudHypervisorService] Failed to auto-start VM ${id}:`, error);
         vm.status = 'error';
         vm.error = String(error);
         await this.saveVmState(vm);
@@ -669,18 +669,18 @@ export class HypervisorService extends EventEmitter {
     }
 
     if (vm.status === 'running') {
-      console.warn(`[HypervisorService] VM ${id} is already running`);
+      console.warn(`[CloudHypervisorService] VM ${id} is already running`);
       return this.vmToInfo(vm);
     }
 
     if (vm.status === 'creating' && vm.startedAt) {
-      console.warn(`[HypervisorService] VM ${id} is already starting`);
+      console.warn(`[CloudHypervisorService] VM ${id} is already starting`);
       return this.vmToInfo(vm);
     }
 
     // Handle paused VM - resume via API instead of spawning new process
     if (vm.status === 'paused' && vm.apiSocket && fs.existsSync(vm.apiSocket)) {
-      console.log(`[HypervisorService] Resuming paused VM ${id} (${vm.name})`);
+      console.log(`[CloudHypervisorService] Resuming paused VM ${id} (${vm.name})`);
       await this.sendVmApiRequest(vm.apiSocket, 'PUT', '/api/v1/vm.resume');
       vm.status = 'running';
       await this.saveVmState(vm);
@@ -688,7 +688,7 @@ export class HypervisorService extends EventEmitter {
       return this.vmToInfo(vm);
     }
 
-    console.log(`[HypervisorService] Starting VM ${id} (${vm.name})`);
+    console.log(`[CloudHypervisorService] Starting VM ${id} (${vm.name})`);
 
     const vmDir = path.join(this.config.dataDir, id);
     const apiSocket = path.join(vmDir, 'api.sock');
@@ -700,7 +700,7 @@ export class HypervisorService extends EventEmitter {
     let fullCommand: string;
 
     if (canUseFastBoot) {
-      console.log(`[HypervisorService] Using fast boot for VM ${id}`);
+      console.log(`[CloudHypervisorService] Using fast boot for VM ${id}`);
       fullCommand = this.buildRestoreCommand(vm, vmDir, apiSocket, logFile);
     } else {
       // Build normal cloud-hypervisor command
@@ -742,7 +742,7 @@ export class HypervisorService extends EventEmitter {
         this.monitorVmStartup(id, apiSocket, canUseFastBoot);
       }
 
-      console.log(`[HypervisorService] VM ${id} starting with PID ${proc.pid}`);
+      console.log(`[CloudHypervisorService] VM ${id} starting with PID ${proc.pid}`);
 
       return this.vmToInfo(vm);
     } catch (error) {
@@ -767,18 +767,18 @@ export class HypervisorService extends EventEmitter {
       // Wait for API socket to be ready
       // Fast boot: should be instant (< 2s), normal boot: up to 60s
       const socketTimeout = isFastBoot ? 5000 : 60000;
-      console.log(`[HypervisorService] Waiting for API socket (timeout: ${socketTimeout}ms)`);
+      console.log(`[CloudHypervisorService] Waiting for API socket (timeout: ${socketTimeout}ms)`);
       await this.waitForApiSocket(apiSocket, socketTimeout);
-      console.log(`[HypervisorService] API socket ready in ${Date.now() - startTime}ms`);
+      console.log(`[CloudHypervisorService] API socket ready in ${Date.now() - startTime}ms`);
 
       // For snapshot restore (per-VM snapshots), the VM is in paused state
       // We need to explicitly resume it via the API
       // Note: Only per-VM snapshots are supported (same MAC/IP), no network reconfiguration needed
       if (isFastBoot) {
         const resumeStart = Date.now();
-        console.log(`[HypervisorService] Resuming restored VM ${id}`);
+        console.log(`[CloudHypervisorService] Resuming restored VM ${id}`);
         await this.sendVmApiRequest(apiSocket, 'PUT', '/api/v1/vm.resume');
-        console.log(`[HypervisorService] VM resumed in ${Date.now() - resumeStart}ms`);
+        console.log(`[CloudHypervisorService] VM resumed in ${Date.now() - resumeStart}ms`);
 
         // Per-VM snapshot restore - same MAC/IP, no network reconfiguration needed
         // Just do a quick SSH verification
@@ -787,15 +787,15 @@ export class HypervisorService extends EventEmitter {
         this.emit('vm:booting', vm);
 
         const sshStart = Date.now();
-        console.log(`[HypervisorService] Quick SSH check for snapshot restore`);
+        console.log(`[CloudHypervisorService] Quick SSH check for snapshot restore`);
         await this.waitForSshReadyFast(id, 10000); // 10s max for restore
-        console.log(`[HypervisorService] SSH ready in ${Date.now() - sshStart}ms`);
+        console.log(`[CloudHypervisorService] SSH ready in ${Date.now() - sshStart}ms`);
 
         // Update status to running
         vm.status = 'running';
         await this.saveVmState(vm);
         this.emit('vm:started', vm);
-        console.log(`[HypervisorService] VM ${id} restored in ${Date.now() - startTime}ms total`);
+        console.log(`[CloudHypervisorService] VM ${id} restored in ${Date.now() - startTime}ms total`);
         return;
       }
 
@@ -803,7 +803,7 @@ export class HypervisorService extends EventEmitter {
       vm.status = 'booting';
       await this.saveVmState(vm);
       this.emit('vm:booting', vm);
-      console.log(`[HypervisorService] VM ${id} is booting`);
+      console.log(`[CloudHypervisorService] VM ${id} is booting`);
 
       // Wait for SSH to be reachable (up to 120 seconds)
       await this.waitForSshReady(id);
@@ -813,9 +813,9 @@ export class HypervisorService extends EventEmitter {
       await this.saveVmState(vm);
 
       this.emit('vm:started', vm);
-      console.log(`[HypervisorService] VM ${id} is now running in ${Date.now() - startTime}ms`);
+      console.log(`[CloudHypervisorService] VM ${id} is now running in ${Date.now() - startTime}ms`);
     } catch (error) {
-      console.error(`[HypervisorService] VM ${id} failed to start:`, error);
+      console.error(`[CloudHypervisorService] VM ${id} failed to start:`, error);
       vm.status = 'error';
       vm.error = `Failed to start: ${error}`;
       await this.saveVmState(vm);
@@ -959,7 +959,7 @@ export class HypervisorService extends EventEmitter {
           const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes agent@${host} -p ${port} 'test -f /var/lib/cloud/instance/packages-installed && echo done'`;
           const result = execSync(sshCmd, { stdio: 'pipe', timeout: 10000, encoding: 'utf-8' });
           if (result.trim() === 'done') {
-            console.log(`[HypervisorService] Packages installed for VM ${vmId}`);
+            console.log(`[CloudHypervisorService] Packages installed for VM ${vmId}`);
             resolve();
             return;
           }
@@ -969,7 +969,7 @@ export class HypervisorService extends EventEmitter {
 
         if (Date.now() - startTime > timeoutMs) {
           // Timeout - but don't fail, packages might still be installing
-          console.warn(`[HypervisorService] Package installation timeout for VM ${vmId}, proceeding anyway`);
+          console.warn(`[CloudHypervisorService] Package installation timeout for VM ${vmId}, proceeding anyway`);
           resolve();
           return;
         }
@@ -1210,7 +1210,7 @@ ethernets:
     if (!fs.existsSync(diskPath)) {
       const baseImagePath = path.join(baseImageDir, 'image.qcow2');
       if (fs.existsSync(baseImagePath)) {
-        console.log(`[HypervisorService] Creating QCOW2 overlay: ${diskPath}`);
+        console.log(`[CloudHypervisorService] Creating QCOW2 overlay: ${diskPath}`);
         execSync(`qemu-img create -f qcow2 -b ${baseImagePath} -F qcow2 ${diskPath} ${vm.diskGb}G`);
       } else {
         execSync(`qemu-img create -f qcow2 ${diskPath} ${vm.diskGb}G`);
@@ -1301,11 +1301,11 @@ ethernets:
     }
 
     if (vm.status !== 'running' && vm.status !== 'booting') {
-      console.warn(`[HypervisorService] VM ${id} is not running (status: ${vm.status})`);
+      console.warn(`[CloudHypervisorService] VM ${id} is not running (status: ${vm.status})`);
       return this.vmToInfo(vm);
     }
 
-    console.log(`[HypervisorService] Stopping VM ${id}`);
+    console.log(`[CloudHypervisorService] Stopping VM ${id}`);
 
     try {
       // Try graceful shutdown via API socket
@@ -1333,7 +1333,7 @@ ethernets:
         await this.waitForProcessExit(vm.pid, 3000);
       }
     } catch (error) {
-      console.warn(`[HypervisorService] Graceful shutdown failed for VM ${id}, forcing kill`);
+      console.warn(`[CloudHypervisorService] Graceful shutdown failed for VM ${id}, forcing kill`);
       if (vm.pid) {
         try {
           process.kill(vm.pid, 'SIGKILL');
@@ -1350,7 +1350,7 @@ ethernets:
 
     this.processes.delete(id);
     this.emit('vm:stopped', vm);
-    console.log(`[HypervisorService] VM ${id} stopped`);
+    console.log(`[CloudHypervisorService] VM ${id} stopped`);
 
     return this.vmToInfo(vm);
   }
@@ -1389,7 +1389,7 @@ ethernets:
       throw new Error(`VM ${id} not found`);
     }
 
-    console.log(`[HypervisorService] Deleting VM ${id}`);
+    console.log(`[CloudHypervisorService] Deleting VM ${id}`);
 
     // If this is a warmup VM being deleted, clear the warmup status (unless it's an error)
     if (vm.name.startsWith('warmup-')) {
@@ -1398,7 +1398,7 @@ ethernets:
       // Only clear if not in error state - preserve error for user visibility
       if (!status || status.phase !== 'error') {
         this.clearWarmupStatus(baseImage);
-        console.log(`[HypervisorService] Cleared warmup status for ${baseImage}`);
+        console.log(`[CloudHypervisorService] Cleared warmup status for ${baseImage}`);
       }
     }
 
@@ -1423,7 +1423,7 @@ ethernets:
 
     this.vms.delete(id);
     this.emit('vm:deleted', { id });
-    console.log(`[HypervisorService] VM ${id} deleted`);
+    console.log(`[CloudHypervisorService] VM ${id} deleted`);
   }
 
   /**
@@ -1803,20 +1803,20 @@ ethernets:
    * Shutdown all VMs and cleanup
    */
   async shutdown(): Promise<void> {
-    console.log('[HypervisorService] Shutting down...');
+    console.log('[CloudHypervisorService] Shutting down...');
 
     for (const [id, vm] of this.vms) {
       if (vm.status === 'running') {
         try {
           await this.stopVm(id);
         } catch (error) {
-          console.error(`[HypervisorService] Failed to stop VM ${id}:`, error);
+          console.error(`[CloudHypervisorService] Failed to stop VM ${id}:`, error);
         }
       }
     }
 
     this.emit('hypervisor:shutdown');
-    console.log('[HypervisorService] Shutdown complete');
+    console.log('[CloudHypervisorService] Shutdown complete');
   }
 
   /**
@@ -1856,7 +1856,7 @@ ethernets:
       throw new Error('buildRestoreCommand called without sourceSnapshot - this should not happen');
     }
     const snapshotSourceDir = vm.sourceSnapshot.snapshotDir;
-    console.log(`[HypervisorService] Restoring from per-VM snapshot: ${vm.sourceSnapshot.snapshotId}`);
+    console.log(`[CloudHypervisorService] Restoring from per-VM snapshot: ${vm.sourceSnapshot.snapshotId}`);
 
     // Create restore directory and copy snapshot files
     if (!fs.existsSync(restoreDir)) {
@@ -1936,7 +1936,7 @@ ethernets:
     // (each VM needs a unique MAC address, but snapshot state.json contains baked-in MAC)
     // Fresh boot (~10-30s) is used for new VMs instead
     // Per-VM snapshots are used for pause/resume functionality
-    console.log('[HypervisorService] Warmup disabled - fresh boot used instead');
+    console.log('[CloudHypervisorService] Warmup disabled - fresh boot used instead');
     return null;
   }
 
@@ -2516,17 +2516,22 @@ ethernets:
 }
 
 // Singleton instance
-let hypervisorService: HypervisorService | null = null;
+let cloudHypervisorService: CloudHypervisorService | null = null;
 
-export function getHypervisorService(): HypervisorService {
-  if (!hypervisorService) {
-    hypervisorService = new HypervisorService();
+export function getCloudHypervisorService(): CloudHypervisorService {
+  if (!cloudHypervisorService) {
+    cloudHypervisorService = new CloudHypervisorService();
   }
-  return hypervisorService;
+  return cloudHypervisorService;
 }
 
-export async function initializeHypervisorService(): Promise<HypervisorService> {
-  const service = getHypervisorService();
+export async function initializeCloudHypervisorService(): Promise<CloudHypervisorService> {
+  const service = getCloudHypervisorService();
   await service.initialize();
   return service;
 }
+
+// Legacy aliases for backward compatibility
+export const HypervisorService = CloudHypervisorService;
+export const getHypervisorService = getCloudHypervisorService;
+export const initializeHypervisorService = initializeCloudHypervisorService;
