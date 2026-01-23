@@ -50,12 +50,12 @@ export function createVmTerminalSession(
   const sshArgs = [
     '-tt',                                    // Force PTY allocation
     '-i', sshKeyPath,                         // SSH key
+    '-o', 'IdentitiesOnly=yes',               // Only use specified key, not agent keys
     '-o', 'StrictHostKeyChecking=no',         // Don't prompt for host key
     '-o', 'UserKnownHostsFile=/dev/null',     // Don't save host keys
     '-o', 'ConnectTimeout=10',                // Connection timeout
     '-o', 'ServerAliveInterval=30',           // Keep-alive
     '-o', 'ServerAliveCountMax=3',            // Keep-alive retries
-    '-o', 'LogLevel=DEBUG',                   // Debug logging
     `agent@${vmIp}`,
     shell
   ];
