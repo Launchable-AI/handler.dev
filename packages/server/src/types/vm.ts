@@ -196,7 +196,7 @@ export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = {
   defaultVcpus: 1,
   defaultMemoryMb: 1024,
   defaultDiskGb: 5,
-  defaultBaseImage: 'ubuntu-minimal-24.04',
+  defaultBaseImage: 'ubuntu-24.04',
 };
 
 // Zod schemas for validation

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, RefreshCw, Trash2, Pause, Play, Download } from 'lucide-react';
+import { X, RefreshCw, Trash2, Pause, Play, Download, Copy, Check } from 'lucide-react';
 import * as api from '../api/client';
 
 interface LogViewerProps {
@@ -8,15 +8,19 @@ interface LogViewerProps {
   vmId?: string;
   buildId?: string;
   title: string;
+  logPath?: string;
   onClose: () => void;
 }
 
-export function LogViewer({ containerId, composeName, vmId, buildId, title, onClose }: LogViewerProps) {
+export function LogViewer({ containerId, composeName, vmId, buildId, title, logPath, onClose }: LogViewerProps) {
   const [logs, setLogs] = useState<string[]>([]);
   const [buildStatus, setBuildStatus] = useState<'building' | 'completed' | 'failed' | null>(null);
   const [isStreaming, setIsStreaming] = useState(!vmId); // VMs don't support streaming
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [pathCopied, setPathCopied] = useState(false);
+  const [fetchedLogPath, setFetchedLogPath] = useState<string | undefined>(logPath);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -74,6 +78,9 @@ export function LogViewer({ containerId, composeName, vmId, buildId, title, onCl
               const result = await api.getVmLogs(vmId, 1000);
               if (mounted && result.logs) {
                 setLogs(result.logs.split('\n').filter(Boolean));
+                if (result.logPath) {
+                  setFetchedLogPath(result.logPath);
+                }
               }
             } catch (err) {
               if (mounted) {
@@ -236,6 +243,29 @@ export function LogViewer({ containerId, composeName, vmId, buildId, title, onCl
     URL.revokeObjectURL(url);
   };
 
+  const handleCopy = async () => {
+    const content = logs.join('\n');
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy logs:', err);
+    }
+  };
+
+  const handleCopyPath = async () => {
+    const pathToCopy = fetchedLogPath || logPath;
+    if (!pathToCopy) return;
+    try {
+      await navigator.clipboard.writeText(pathToCopy);
+      setPathCopied(true);
+      setTimeout(() => setPathCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy path:', err);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <div className="w-full max-w-4xl h-[80vh] flex flex-col bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-2xl">
@@ -284,6 +314,17 @@ export function LogViewer({ containerId, composeName, vmId, buildId, title, onCl
               title="Refresh logs"
             >
               <RefreshCw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={handleCopy}
+              className={`p-1.5 transition-colors ${
+                copied
+                  ? 'text-[hsl(var(--green))]'
+                  : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))]'
+              }`}
+              title={copied ? 'Copied!' : 'Copy all logs'}
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
             <button
               onClick={handleDownload}
@@ -355,7 +396,20 @@ export function LogViewer({ containerId, composeName, vmId, buildId, title, onCl
         <div className="px-4 py-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
           <div className="flex items-center justify-between text-[10px] text-[hsl(var(--text-muted))]">
             <span>{logs.length} lines</span>
-            <span>Scroll down for newest logs</span>
+            {(fetchedLogPath || logPath) ? (
+              <button
+                onClick={handleCopyPath}
+                className={`flex items-center gap-1.5 font-mono hover:text-[hsl(var(--text-primary))] transition-colors ${
+                  pathCopied ? 'text-[hsl(var(--green))]' : ''
+                }`}
+                title="Click to copy path"
+              >
+                {pathCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                <span className="truncate max-w-[400px]">{fetchedLogPath || logPath}</span>
+              </button>
+            ) : (
+              <span>Scroll down for newest logs</span>
+            )}
           </div>
         </div>
       </div>

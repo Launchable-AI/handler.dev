@@ -46,6 +46,17 @@ get_metadata() {
 
 log "Starting MMDS network configuration"
 
+# REQUIRED: Add route to MMDS IP address
+# Per Firecracker docs: "guest applications must insert a new rule into the
+# routing table of the guest OS" to reach MMDS.
+# See: https://github.com/firecracker-microvm/firecracker/blob/main/docs/mmds/mmds-user-guide.md
+#
+# The kernel ip= boot parameter configures eth0 with an IP, but does NOT add
+# a route for the link-local MMDS address. We must add it explicitly.
+log "Adding route to MMDS at ${MMDS_IP} via ${INTERFACE}..."
+ip link set "$INTERFACE" up 2>/dev/null || true
+ip route add "${MMDS_IP}" dev "$INTERFACE" 2>/dev/null || true
+
 # Wait for MMDS to be available and get token
 log "Waiting for MMDS..."
 TOKEN=$(get_token)

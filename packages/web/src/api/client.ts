@@ -1369,7 +1369,7 @@ export async function getVmSshInfo(id: string): Promise<{
   return fetchAPI(`/vms/${id}/ssh`);
 }
 
-export async function getVmLogs(id: string, lines?: number): Promise<{ logs: string }> {
+export async function getVmLogs(id: string, lines?: number): Promise<{ logs: string; logPath?: string }> {
   const params = lines ? `?lines=${lines}` : '';
   return fetchAPI(`/vms/${id}/logs${params}`);
 }

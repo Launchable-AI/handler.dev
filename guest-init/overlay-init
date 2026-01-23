@@ -7,10 +7,16 @@
 # Usage:
 #   Kernel boot args: init=/sbin/overlay-init overlay_root=vdb
 #
-# IMPORTANT: The rootfs MUST have /overlay and /mnt/rom directories pre-created!
+# IMPORTANT: The rootfs MUST have /overlay and /mnt directories pre-created!
 #
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+
+# Mount /proc first so we can read /proc/cmdline
+/bin/mount -t proc proc /proc
+
+# Ensure required directories exist
+mkdir -p /overlay /mnt /rom
 
 # Parse kernel command line for overlay_root parameter
 for arg in $(cat /proc/cmdline); do
@@ -64,5 +70,53 @@ fi
 # Set up overlay
 do_overlay
 
-# Now we're in the new root - exec real init
-exec chroot . /sbin/init "$@"
+# Set up agent user and SSH keys from overlay (runs before systemd)
+# This ensures SSH access works even if mmds-configure fails
+# After pivot_root, we're already at / in the new root (no cd needed)
+
+# Debug: write to a log file we can check
+exec 2>/overlay-init.log
+set -x
+
+echo "[overlay-init] Starting SSH setup"
+echo "[overlay-init] PWD=$(pwd)"
+echo "[overlay-init] ls /home/:"
+ls -la /home/ 2>&1 || echo "No /home dir"
+echo "[overlay-init] ls /home/agent/:"
+ls -la /home/agent/ 2>&1 || echo "No /home/agent"
+echo "[overlay-init] ls /home/agent/.ssh/:"
+ls -la /home/agent/.ssh/ 2>&1 || echo "No .ssh dir"
+
+# Check if we have pre-injected SSH keys in the overlay
+if [ -d /home/agent/.ssh ] && [ -f /home/agent/.ssh/authorized_keys ]; then
+    echo "[overlay-init] Found pre-injected SSH keys, setting up agent user..."
+
+    # Agent user might not exist in base image - create it
+    if ! grep -q "^agent:" /etc/passwd 2>/dev/null; then
+        echo "[overlay-init] Creating agent user..."
+        echo "agent:x:1000:1000:Agent User:/home/agent:/bin/bash" >> /etc/passwd
+        echo "agent:x:1000:" >> /etc/group
+        echo "agent:!:19000:0:99999:7:::" >> /etc/shadow
+        mkdir -p /home/agent
+    fi
+
+    # Ensure correct permissions on SSH directory
+    chown -R 1000:1000 /home/agent 2>/dev/null || true
+    chown -R 1000:1000 /home/agent/.ssh 2>/dev/null || true
+    chmod 700 /home/agent/.ssh 2>/dev/null || true
+    chmod 600 /home/agent/.ssh/authorized_keys 2>/dev/null || true
+
+    # Set up sudoers for agent
+    mkdir -p /etc/sudoers.d
+    if [ ! -f /etc/sudoers.d/agent ]; then
+        echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent
+        chmod 440 /etc/sudoers.d/agent
+    fi
+
+    echo "[overlay-init] Agent user setup complete"
+else
+    echo "[overlay-init] No SSH keys found at /home/agent/.ssh/authorized_keys"
+fi
+
+# Now exec real init (we're already in the new root after pivot_root)
+exec /sbin/init "$@"

@@ -16,7 +16,6 @@ use nix::sys::stat::Mode;
 use nix::unistd::{close, getuid, getgid, Uid, Gid};
 use std::ffi::CString;
 use std::fs;
-use std::io::{Read, Write};
 use std::mem;
 use std::os::unix::io::RawFd;
 use std::path::Path;
@@ -45,7 +44,41 @@ const SIOCSIFNETMASK: libc::c_ulong = 0x891c;
 
 const IFF_UP: libc::c_short = 0x1;
 
+// Netlink constants for RTM_DELLINK
+const NETLINK_ROUTE: libc::c_int = 0;
+const RTM_DELLINK: u16 = 17;
+const NLM_F_REQUEST: u16 = 1;
+const NLM_F_ACK: u16 = 4;
+
 const IFNAMSIZ: usize = 16;
+
+/// Netlink message header
+#[repr(C)]
+struct NlMsgHdr {
+    nlmsg_len: u32,
+    nlmsg_type: u16,
+    nlmsg_flags: u16,
+    nlmsg_seq: u32,
+    nlmsg_pid: u32,
+}
+
+/// Interface info message for RTM_DELLINK
+#[repr(C)]
+struct IfInfoMsg {
+    ifi_family: u8,
+    _pad: u8,
+    ifi_type: u16,
+    ifi_index: i32,
+    ifi_flags: u32,
+    ifi_change: u32,
+}
+
+/// Netlink message for deleting an interface
+#[repr(C)]
+struct DelLinkMsg {
+    hdr: NlMsgHdr,
+    ifinfo: IfInfoMsg,
+}
 
 /// TAP device request structure for ioctl
 #[repr(C)]
@@ -304,58 +337,135 @@ fn bring_up(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Delete interface by writing to sysfs (simpler than netlink)
+/// Delete interface using netlink RTM_DELLINK
+/// This works for any interface type, including TAPs attached to bridges
 fn delete_interface(name: &str) -> Result<(), String> {
-    // For TAP devices, we can delete by clearing persistence and closing
-    // But the simplest is to use the /sys interface
+    // Check if interface exists
     let path = format!("/sys/class/net/{}/operstate", name);
     if !Path::new(&path).exists() {
         return Err(format!("Interface '{}' does not exist", name));
     }
 
-    // Open the TUN device and clear persistence to delete the TAP
-    let tun_fd = match open("/dev/net/tun", OFlag::O_RDWR, Mode::empty()) {
-        Ok(fd) => fd,
-        Err(_) => {
-            // Fall back to ip command if we can't access /dev/net/tun
-            let output = std::process::Command::new("ip")
-                .args(["link", "delete", name])
-                .output()
-                .map_err(|e| format!("Failed to execute ip command: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("Failed to delete interface: {}",
-                    String::from_utf8_lossy(&output.stderr)));
+    // Get interface index
+    let ifindex = get_interface_index(name)?;
+
+    // First try the TUN/TAP method (works for unattached TAPs)
+    if let Ok(tun_fd) = open("/dev/net/tun", OFlag::O_RDWR, Mode::empty()) {
+        let mut ifr = IfReq::with_flags(name, IFF_TAP | IFF_NO_PI)?;
+
+        unsafe {
+            // Try to attach to existing TAP
+            if libc::ioctl(tun_fd, TUNSETIFF, &mut ifr as *mut IfReq) == 0 {
+                // Successfully attached, clear persistence to delete
+                if libc::ioctl(tun_fd, TUNSETPERSIST, 0 as libc::c_ulong) == 0 {
+                    let _ = close(tun_fd);
+                    return Ok(());
+                }
             }
-            return Ok(());
-        }
-    };
-
-    let mut ifr = IfReq::with_flags(name, IFF_TAP | IFF_NO_PI)?;
-
-    unsafe {
-        // Try to attach to existing TAP
-        if libc::ioctl(tun_fd, TUNSETIFF, &mut ifr as *mut IfReq) < 0 {
             let _ = close(tun_fd);
-            // If we can't attach, try ip command
-            let output = std::process::Command::new("ip")
-                .args(["link", "delete", name])
-                .output()
-                .map_err(|e| format!("Failed to execute ip command: {}", e))?;
-            if !output.status.success() {
-                return Err(format!("Failed to delete interface: {}",
-                    String::from_utf8_lossy(&output.stderr)));
-            }
-            return Ok(());
-        }
-
-        // Clear persistence
-        if libc::ioctl(tun_fd, TUNSETPERSIST, 0 as libc::c_ulong) < 0 {
-            let _ = close(tun_fd);
-            return Err(format!("Failed to clear TAP persistence: {}", Errno::last()));
         }
     }
 
-    let _ = close(tun_fd);
+    // TUN method failed (TAP is attached to bridge), use netlink RTM_DELLINK
+    delete_interface_netlink(ifindex)
+}
+
+/// Delete an interface using netlink RTM_DELLINK
+/// This is the proper way to delete any network interface and works even
+/// when the interface is attached to a bridge
+fn delete_interface_netlink(ifindex: i32) -> Result<(), String> {
+    // Create netlink socket
+    let sock = unsafe {
+        libc::socket(libc::AF_NETLINK, libc::SOCK_RAW | libc::SOCK_CLOEXEC, NETLINK_ROUTE)
+    };
+    if sock < 0 {
+        return Err(format!("Failed to create netlink socket: {}", Errno::last()));
+    }
+
+    // Bind socket
+    let mut addr: libc::sockaddr_nl = unsafe { mem::zeroed() };
+    addr.nl_family = libc::AF_NETLINK as u16;
+    addr.nl_pid = 0; // Let kernel assign
+    addr.nl_groups = 0;
+
+    let bind_result = unsafe {
+        libc::bind(
+            sock,
+            &addr as *const libc::sockaddr_nl as *const libc::sockaddr,
+            mem::size_of::<libc::sockaddr_nl>() as u32,
+        )
+    };
+    if bind_result < 0 {
+        unsafe { libc::close(sock) };
+        return Err(format!("Failed to bind netlink socket: {}", Errno::last()));
+    }
+
+    // Build RTM_DELLINK message
+    let msg_len = mem::size_of::<DelLinkMsg>() as u32;
+    let msg = DelLinkMsg {
+        hdr: NlMsgHdr {
+            nlmsg_len: msg_len,
+            nlmsg_type: RTM_DELLINK,
+            nlmsg_flags: NLM_F_REQUEST | NLM_F_ACK,
+            nlmsg_seq: 1,
+            nlmsg_pid: 0,
+        },
+        ifinfo: IfInfoMsg {
+            ifi_family: libc::AF_UNSPEC as u8,
+            _pad: 0,
+            ifi_type: 0,
+            ifi_index: ifindex,
+            ifi_flags: 0,
+            ifi_change: 0,
+        },
+    };
+
+    // Send message
+    let send_result = unsafe {
+        libc::send(
+            sock,
+            &msg as *const DelLinkMsg as *const libc::c_void,
+            msg_len as usize,
+            0,
+        )
+    };
+    if send_result < 0 {
+        unsafe { libc::close(sock) };
+        return Err(format!("Failed to send netlink message: {}", Errno::last()));
+    }
+
+    // Receive ACK/error response
+    let mut buf = [0u8; 1024];
+    let recv_result = unsafe {
+        libc::recv(sock, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0)
+    };
+    unsafe { libc::close(sock) };
+
+    if recv_result < 0 {
+        return Err(format!("Failed to receive netlink response: {}", Errno::last()));
+    }
+
+    // Parse response - check for error
+    if recv_result >= mem::size_of::<NlMsgHdr>() as isize {
+        let resp_hdr = unsafe { &*(buf.as_ptr() as *const NlMsgHdr) };
+
+        // NLMSG_ERROR type
+        if resp_hdr.nlmsg_type == 2 {
+            // Error code is right after the header
+            if recv_result >= (mem::size_of::<NlMsgHdr>() + 4) as isize {
+                let error_code = unsafe {
+                    *((buf.as_ptr() as usize + mem::size_of::<NlMsgHdr>()) as *const i32)
+                };
+                if error_code < 0 {
+                    return Err(format!(
+                        "Netlink error deleting interface: {}",
+                        Errno::from_i32(-error_code)
+                    ));
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 

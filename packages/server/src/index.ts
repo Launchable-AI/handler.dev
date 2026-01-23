@@ -259,7 +259,7 @@ async function main() {
   setupWebSocketServer(server);
 
   server.listen(port, () => {
-    console.log(`\n🚀 Agent Containers API`);
+    console.log(`\n🚀 Caisson API`);
     console.log(`   Running on http://localhost:${port}`);
     console.log(`   WebSocket: ws://localhost:${port}/ws/terminal`);
     console.log(`   API docs: http://localhost:${port}/api/health\n`);

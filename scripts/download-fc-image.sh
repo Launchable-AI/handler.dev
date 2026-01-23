@@ -14,7 +14,7 @@
 set -e
 
 # Configuration
-BASE_URL="${CAISSON_IMAGE_URL:-https://caisson.dev.s3.us-east-2.amazonaws.com/images}"
+BASE_URL="${CAISSON_IMAGE_URL:-https://s3.us-east-2.amazonaws.com/caisson.dev/images}"
 
 # Handle sudo: use SUDO_USER's home if running as root via sudo
 if [ -n "$SUDO_USER" ]; then

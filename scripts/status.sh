@@ -95,10 +95,14 @@ fi
 
 # Check NAT rules
 if command -v nft &> /dev/null; then
-    if nft list table ip caisson &> /dev/null; then
+    # nft requires root to query tables, so use sudo if available
+    if sudo -n nft list table ip caisson &> /dev/null 2>&1; then
+        ok "NAT rules configured (nftables: caisson table)"
+    elif nft list table ip caisson &> /dev/null 2>&1; then
         ok "NAT rules configured (nftables: caisson table)"
     else
-        fail "NAT rules missing (nftables: caisson table not found)"
+        # Can't determine - might be permission issue or actually missing
+        warn "NAT rules status unknown (run with sudo to verify)"
     fi
 elif command -v iptables &> /dev/null; then
     if iptables -t nat -L POSTROUTING -n 2>/dev/null | grep -q "172.31.0.0"; then

@@ -279,7 +279,6 @@ export class HypervisorService extends EventEmitter {
    */
   private async checkHypervisorBinary(): Promise<void> {
     if (!fs.existsSync(this.config.hypervisorBinary)) {
-      console.warn(`[HypervisorService] cloud-hypervisor not found at ${this.config.hypervisorBinary}`);
       try {
         const whichResult = execSync('which cloud-hypervisor', { encoding: 'utf-8' }).trim();
         if (whichResult) {
@@ -287,7 +286,8 @@ export class HypervisorService extends EventEmitter {
           console.log(`[HypervisorService] Found cloud-hypervisor at: ${whichResult}`);
         }
       } catch {
-        console.warn('[HypervisorService] cloud-hypervisor not found in PATH. VMs will fail to start.');
+        // cloud-hypervisor not installed - this is fine if using Firecracker
+        console.log('[HypervisorService] cloud-hypervisor not installed (cloud-hypervisor VMs disabled)');
       }
     }
   }
@@ -860,7 +860,8 @@ export class HypervisorService extends EventEmitter {
     return new Promise((resolve, reject) => {
       const check = async () => {
         try {
-          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 agent@${host} -p ${port} 'echo ready'`;
+          // IdentitiesOnly=yes prevents SSH from trying all agent keys first
+          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes agent@${host} -p ${port} 'echo ready'`;
           execSync(sshCmd, { stdio: 'pipe', timeout: 10000 });
           resolve();
           return;
@@ -896,7 +897,8 @@ export class HypervisorService extends EventEmitter {
       const check = async () => {
         try {
           // Use shorter connect timeout for fast boot
-          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=2 agent@${host} -p ${port} 'echo ready'`;
+          // IdentitiesOnly=yes prevents SSH from trying all agent keys first
+          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=2 -o IdentitiesOnly=yes agent@${host} -p ${port} 'echo ready'`;
           execSync(sshCmd, { stdio: 'pipe', timeout: 5000 });
           resolve();
           return;
@@ -932,7 +934,8 @@ export class HypervisorService extends EventEmitter {
       const check = async () => {
         try {
           // Check for the marker file that indicates packages are installed
-          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 agent@${host} -p ${port} 'test -f /var/lib/cloud/instance/packages-installed && echo done'`;
+          // IdentitiesOnly=yes prevents SSH from trying all agent keys first
+          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes agent@${host} -p ${port} 'test -f /var/lib/cloud/instance/packages-installed && echo done'`;
           const result = execSync(sshCmd, { stdio: 'pipe', timeout: 10000, encoding: 'utf-8' });
           if (result.trim() === 'done') {
             console.log(`[HypervisorService] Packages installed for VM ${vmId}`);
@@ -1566,6 +1569,17 @@ ethernets:
     } catch (error) {
       return null;
     }
+  }
+
+  /**
+   * Get the path to a VM's log file
+   */
+  getVmLogPath(vmId: string): string | undefined {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      return undefined;
+    }
+    return path.join(this.config.dataDir, vmId, 'console.log');
   }
 
   /**

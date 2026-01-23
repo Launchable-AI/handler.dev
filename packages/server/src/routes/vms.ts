@@ -321,19 +321,31 @@ vms.get('/:id', async (c) => {
   }
 });
 
-// Get VM boot logs
+// Get VM boot logs (detects hypervisor by ID prefix)
 vms.get('/:id/logs', async (c) => {
   try {
-    const hypervisor = await ensureHypervisorInitialized();
     const id = c.req.param('id');
     const lines = parseInt(c.req.query('lines') || '100', 10);
 
-    const logs = hypervisor.getVmBootLogs(id, lines);
+    let logs: string | null = null;
+    let logPath: string | undefined;
+
+    // Firecracker VMs have 'fc-' prefix
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      logs = firecracker.getVmBootLogs(id, lines);
+      logPath = firecracker.getVmLogPath(id);
+    } else {
+      const hypervisor = await ensureHypervisorInitialized();
+      logs = hypervisor.getVmBootLogs(id, lines);
+      logPath = hypervisor.getVmLogPath(id);
+    }
+
     if (logs === null) {
       return c.json({ error: `VM ${id} not found or no logs available` }, 404);
     }
 
-    return c.json({ logs });
+    return c.json({ logs, logPath });
   } catch (error) {
     console.error('[VMs API] Failed to get VM logs:', error);
     return c.json({ error: String(error) }, 500);

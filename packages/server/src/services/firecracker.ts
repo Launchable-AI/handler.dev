@@ -475,9 +475,80 @@ export class FirecrackerService extends EventEmitter {
       console.log(`[FirecrackerService] Creating ${overlaySize}GB overlay for VM ${vm.id} (sparse, ~1MB actual)`);
       execSync(`truncate -s ${overlaySize}G "${overlayPath}"`, { stdio: 'pipe' });
       execSync(`mkfs.ext4 -F -q "${overlayPath}"`, { stdio: 'pipe' });
+
+      // Pre-inject SSH keys into the overlay using debugfs (no root needed!)
+      // This bypasses mmds-configure and ensures we can always SSH into the VM
+      await this.injectSshKeysToOverlay(overlayPath, vm.mmdsMetadata?.ssh?.authorized_keys || []);
     }
 
     return { basePath: baseImagePath, overlayPath };
+  }
+
+  /**
+   * Inject SSH authorized_keys into the overlay filesystem
+   *
+   * Uses debugfs to write files directly into ext4 without mounting.
+   * This is the PRIMARY method for SSH key setup - it runs before boot
+   * and doesn't depend on MMDS working.
+   *
+   * The overlay-init script in the guest will merge this overlay with the base
+   * rootfs, so files in /upper/home/agent/.ssh/ will appear at /home/agent/.ssh/
+   */
+  private async injectSshKeysToOverlay(overlayPath: string, authorizedKeys: string[]): Promise<void> {
+    if (authorizedKeys.length === 0) {
+      console.log('[FirecrackerService] No SSH keys to inject');
+      return;
+    }
+
+    try {
+      // Check if debugfs is available
+      execSync('which debugfs', { stdio: 'pipe' });
+    } catch {
+      throw new Error('debugfs not available. Install with: sudo apt-get install e2fsprogs');
+    }
+
+    const vmDir = path.dirname(overlayPath);
+    const keysContent = authorizedKeys.join('\n') + '\n';
+    const tmpKeysFile = path.join(vmDir, 'authorized_keys.tmp');
+    const tmpCmdFile = path.join(vmDir, 'debugfs_commands.tmp');
+
+    // Write keys to temp file
+    fs.writeFileSync(tmpKeysFile, keysContent, { mode: 0o600 });
+
+    try {
+      // The overlay filesystem will be merged with the base at /upper
+      // Create directory structure: /upper/home/agent/.ssh/
+      // The overlay-init script will fix ownership/permissions at boot
+      //
+      // Simple approach: just create directories and write the file
+      // The overlay-init script will fix ownership and permissions at boot
+      // Don't use set_inode_field for mode - it corrupts the filesystem
+      const debugfsCommands = [
+        'mkdir /upper',
+        'mkdir /upper/home',
+        'mkdir /upper/home/agent',
+        'mkdir /upper/home/agent/.ssh',
+        `write ${tmpKeysFile} /upper/home/agent/.ssh/authorized_keys`,
+      ].join('\n') + '\n';
+
+      // Write commands to temp file (execSync doesn't handle stdin well)
+      fs.writeFileSync(tmpCmdFile, debugfsCommands);
+
+      // Run debugfs (doesn't need root!)
+      execSync(`debugfs -w -f "${tmpCmdFile}" "${overlayPath}"`, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      console.log('[FirecrackerService] SSH keys injected into overlay');
+    } finally {
+      // Clean up temp files
+      if (fs.existsSync(tmpKeysFile)) {
+        fs.unlinkSync(tmpKeysFile);
+      }
+      if (fs.existsSync(tmpCmdFile)) {
+        fs.unlinkSync(tmpCmdFile);
+      }
+    }
   }
 
   /**
@@ -723,7 +794,8 @@ export class FirecrackerService extends EventEmitter {
       const check = async () => {
         try {
           // Use agent user - the rootfs has SSH keys set up for agent
-          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 agent@${host} -p ${port} 'echo ready'`;
+          // IdentitiesOnly=yes prevents SSH from trying all agent keys first
+          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes agent@${host} -p ${port} 'echo ready'`;
           execSync(sshCmd, { stdio: 'pipe', timeout: 10000 });
           resolve();
           return;
@@ -1238,6 +1310,42 @@ export class FirecrackerService extends EventEmitter {
       return fs.readFileSync(keyPath, 'utf-8');
     }
     return null;
+  }
+
+  /**
+   * Get VM boot logs from firecracker.log
+   */
+  getVmBootLogs(vmId: string, lines: number = 100): string | null {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      return null;
+    }
+
+    const vmDir = path.join(this.config.dataDir, vmId);
+    const logFile = path.join(vmDir, 'firecracker.log');
+
+    if (!fs.existsSync(logFile)) {
+      return '';
+    }
+
+    try {
+      const content = fs.readFileSync(logFile, 'utf-8');
+      const logLines = content.split('\n');
+      return logLines.slice(-lines).join('\n');
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Get the path to a VM's log file
+   */
+  getVmLogPath(vmId: string): string | undefined {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      return undefined;
+    }
+    return path.join(this.config.dataDir, vmId, 'firecracker.log');
   }
 
   /**
