@@ -1202,6 +1202,8 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+const VM_VIEW_MODE_KEY = 'caisson-vm-view-mode';
+
 export function VMList({ onCreateClick: _onCreateClick }: VMListProps) {
   const { data: vms, isLoading, error } = useVms();
   const { data: networkStatus } = useVmNetworkStatus();
@@ -1210,7 +1212,18 @@ export function VMList({ onCreateClick: _onCreateClick }: VMListProps) {
   const createVm = useCreateVm();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [hostCopied, setHostCopied] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('compact');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const stored = localStorage.getItem(VM_VIEW_MODE_KEY);
+    if (stored === 'compact' || stored === 'detailed' || stored === 'list') {
+      return stored;
+    }
+    return 'compact';
+  });
+
+  // Persist view mode to localStorage
+  useEffect(() => {
+    localStorage.setItem(VM_VIEW_MODE_KEY, viewMode);
+  }, [viewMode]);
 
   // Find the warmed-up base image for quick launch
   const warmedUpImage = useMemo(() => {
