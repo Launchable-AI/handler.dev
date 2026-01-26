@@ -41,6 +41,10 @@ export interface CommandCentreState {
   splitLayout: SplitLayout;         // How to arrange sessions in main area
   focusedSessionIds: string[];      // Sessions in main area (focus mode only)
 
+  // Fullscreen/maximize
+  isFullscreen: boolean;            // Hide app sidebar/header
+  maximizedSessionId: string | null; // Single session takes full view
+
   // UI settings
   fontSize: number;                 // Terminal font size in pixels
   sidebarWidth: number;             // Preview sidebar width in pixels
@@ -75,4 +79,9 @@ export interface CommandCentreContextValue {
 
   // Sidebar
   setSidebarWidth: (width: number) => void;
+
+  // Fullscreen/maximize
+  toggleFullscreen: () => void;
+  maximizeSession: (sessionId: string | null) => void;
+  toggleMaximize: (sessionId: string) => void;
 }

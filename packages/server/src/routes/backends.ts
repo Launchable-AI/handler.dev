@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
 import { testConnection } from '../services/docker.js';
 import { getConfig, setConfig } from '../services/config.js';
+import { getDaytonaService } from '../services/daytona.js';
 import os from 'os';
 
 const execAsync = promisify(exec);
@@ -159,7 +160,8 @@ async function getFirecrackerStatus(): Promise<BackendInfo> {
   return info;
 }
 
-// Check Daytona cloud backend status
+// Check Daytona cloud backend status (doesn't hit API - just checks config)
+// Use the /backends/daytona/test endpoint for actual connectivity checks
 async function getDaytonaStatus(): Promise<BackendInfo> {
   const info: BackendInfo = {
     installed: false,
@@ -180,25 +182,10 @@ async function getDaytonaStatus(): Promise<BackendInfo> {
     info.installed = true;
     info.enabled = daytona.enabled ?? false;
 
-    // If enabled, check if API is reachable
+    // Don't hit the Daytona API on regular status polling to avoid rate limits
+    // Assume it's running if enabled - use test endpoint for explicit checks
     if (daytona.enabled) {
-      try {
-        const apiUrl = daytona.apiUrl || 'https://app.daytona.io/api';
-        const response = await fetch(`${apiUrl}/health`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${daytona.apiKey}`,
-          },
-          signal: AbortSignal.timeout(5000),
-        });
-        info.running = response.ok;
-        if (!response.ok) {
-          info.error = 'API key invalid or service unavailable';
-        }
-      } catch (err) {
-        info.running = false;
-        info.error = err instanceof Error ? err.message : 'Failed to connect to Daytona API';
-      }
+      info.running = true;
     }
   } catch (err) {
     info.error = err instanceof Error ? err.message : 'Failed to check Daytona status';
@@ -512,6 +499,20 @@ backends.post('/daytona/test', async (c) => {
       success: false,
       error: err instanceof Error ? err.message : 'Connection failed',
     }, 500);
+  }
+});
+
+// POST /backends/daytona/refresh - Force refresh Daytona workspace cache
+backends.post('/daytona/refresh', async (c) => {
+  try {
+    const daytona = getDaytonaService();
+    if (!await daytona.isAvailable()) {
+      return c.json({ success: false, error: 'Daytona is not configured or enabled' }, 400);
+    }
+    daytona.invalidateCache();
+    return c.json({ success: true, message: 'Cache invalidated' });
+  } catch (err) {
+    return c.json({ success: false, error: String(err) }, 500);
   }
 });
 

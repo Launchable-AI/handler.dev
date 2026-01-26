@@ -10,7 +10,7 @@ interface SessionGridProps {
 
 export function SessionGrid({ className = '' }: SessionGridProps) {
   const { state, focusSession, setSidebarWidth } = useCommandCentre();
-  const { sessions, activeSessionId, layoutMode, splitLayout, focusedSessionIds, fontSize, sidebarWidth } = state;
+  const { sessions, activeSessionId, layoutMode, splitLayout, focusedSessionIds, fontSize, sidebarWidth, maximizedSessionId } = state;
 
   // Sidebar resize state
   const [isResizing, setIsResizing] = useState(false);
@@ -56,6 +56,12 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
     [sessions, focusedSessionIds]
   );
 
+  // Get maximized session if any
+  const maximizedSession = useMemo(() =>
+    maximizedSessionId ? sessions.find(s => s.id === maximizedSessionId) : null,
+    [sessions, maximizedSessionId]
+  );
+
   // Empty state
   if (sessions.length === 0) {
     return (
@@ -71,6 +77,20 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
             Click "Add Session" to connect to a running VM or container
           </p>
         </div>
+      </div>
+    );
+  }
+
+  // Maximized mode: single session takes full view
+  if (maximizedSession) {
+    return (
+      <div className={`flex-1 p-2 overflow-hidden ${className}`}>
+        <SessionTile
+          session={maximizedSession}
+          isActive={true}
+          fontSize={fontSize}
+          className="h-full"
+        />
       </div>
     );
   }

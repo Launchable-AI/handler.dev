@@ -1,5 +1,5 @@
 import { useCallback, CSSProperties } from 'react';
-import { X, ArrowDownToLine, Server, Container } from 'lucide-react';
+import { X, PanelRightClose, Server, Container, Maximize2, Minimize2 } from 'lucide-react';
 import { TerminalInstance } from '../Terminal/TerminalInstance';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
 import type { TerminalSession } from '../../types/command-centre';
@@ -29,6 +29,7 @@ export function SessionTile({
     updateSessionStatus,
     setActiveSession,
     unfocusSession,
+    toggleMaximize,
   } = useCommandCentre();
 
   const handleStateChange = useCallback((state: 'connecting' | 'connected' | 'disconnected' | 'error', errorMessage?: string) => {
@@ -59,6 +60,8 @@ export function SessionTile({
 
   // Can unfocus only in focus mode and if there's more than one focused session
   const canUnfocus = state.layoutMode === 'focus' && state.focusedSessionIds.length > 1;
+  const isMaximized = state.maximizedSessionId === session.id;
+  const canMaximize = state.sessions.length > 1;
 
   return (
     <div
@@ -102,7 +105,27 @@ export function SessionTile({
                 className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] transition-colors"
                 title="Move to sidebar"
               >
-                <ArrowDownToLine className="h-3 w-3" />
+                <PanelRightClose className="h-3 w-3" />
+              </button>
+            )}
+            {canMaximize && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleMaximize(session.id);
+                }}
+                className={`p-1 transition-colors ${
+                  isMaximized
+                    ? 'text-[hsl(var(--purple))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)]'
+                    : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))]'
+                }`}
+                title={isMaximized ? 'Restore (Esc)' : 'Maximize'}
+              >
+                {isMaximized ? (
+                  <Minimize2 className="h-3 w-3" />
+                ) : (
+                  <Maximize2 className="h-3 w-3" />
+                )}
               </button>
             )}
             <button

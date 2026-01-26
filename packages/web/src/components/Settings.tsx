@@ -1,13 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, ChevronDown, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ExternalLink, Eye, EyeOff } from 'lucide-react';
-import { useConfig, useUpdateConfig, useImages } from '../hooks/useContainers';
+import { useConfig, useUpdateConfig, useImages, useRefreshDaytonaCache } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
 import type { ModelOption, BackendStatus } from '../api/client';
 
-type SettingsTab = 'general' | 'ai' | 'backends' | 'cloud';
+type SettingsTab = 'general' | 'ai' | 'backends';
+type BackendsView = 'local' | 'cloud';
 
 export function Settings() {
+  const queryClient = useQueryClient();
   const { data: config, isLoading } = useConfig();
   const { data: images } = useImages();
   const updateMutation = useUpdateConfig();
@@ -55,6 +58,7 @@ export function Settings() {
   } | null>(null);
 
   // Backends state
+  const [backendsView, setBackendsView] = useState<BackendsView>('local');
   const [backends, setBackends] = useState<BackendStatus | null>(null);
   const [backendsLoading, setBackendsLoading] = useState(false);
   const [backendsError, setBackendsError] = useState<string | null>(null);
@@ -113,15 +117,18 @@ export function Settings() {
   useEffect(() => {
     if (activeTab === 'backends') {
       loadBackends();
+      if (backendsView === 'cloud') {
+        loadCloudConfig();
+      }
     }
   }, [activeTab]);
 
-  // Load cloud backends config when switching to cloud tab
+  // Load cloud backends config when switching to cloud view
   useEffect(() => {
-    if (activeTab === 'cloud') {
+    if (activeTab === 'backends' && backendsView === 'cloud') {
       loadCloudConfig();
     }
-  }, [activeTab]);
+  }, [backendsView]);
 
   const loadCloudConfig = async () => {
     setCloudLoading(true);
@@ -151,6 +158,8 @@ export function Settings() {
         enabled: daytonaEnabled,
       });
       setDaytonaConfigured(!!daytonaApiKey);
+      // Refresh backend status in the UI
+      queryClient.invalidateQueries({ queryKey: ['backend-status'] });
     } finally {
       setCloudSaving(false);
     }
@@ -294,17 +303,6 @@ export function Settings() {
         >
           <Sparkles className="h-3.5 w-3.5" />
           AI Prompts
-        </button>
-        <button
-          onClick={() => setActiveTab('cloud')}
-          className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
-            activeTab === 'cloud'
-              ? 'border-[hsl(var(--amber))] text-[hsl(var(--amber))]'
-              : 'border-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
-          }`}
-        >
-          <Cloud className="h-3.5 w-3.5" />
-          Cloud Backends
         </button>
       </div>
 
@@ -520,76 +518,266 @@ export function Settings() {
 
           {activeTab === 'backends' && (
             <div className="space-y-6">
+              {/* Local/Cloud Toggle */}
               <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Backend Services</h3>
-                  <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
-                    Manage container and VM runtime backends
-                  </p>
+                <div className="flex items-center gap-1 p-1 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+                  <button
+                    onClick={() => setBackendsView('local')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
+                      backendsView === 'local'
+                        ? 'bg-[hsl(var(--green)/0.2)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.3)]'
+                        : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+                    }`}
+                  >
+                    <Server className="h-3.5 w-3.5" />
+                    Local
+                  </button>
+                  <button
+                    onClick={() => setBackendsView('cloud')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
+                      backendsView === 'cloud'
+                        ? 'bg-[hsl(var(--amber)/0.2)] text-[hsl(var(--amber))] border border-[hsl(var(--amber)/0.3)]'
+                        : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+                    }`}
+                  >
+                    <Cloud className="h-3.5 w-3.5" />
+                    Cloud
+                  </button>
                 </div>
-                <button
-                  onClick={loadBackends}
-                  disabled={backendsLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${backendsLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
+                {backendsView === 'local' && (
+                  <button
+                    onClick={loadBackends}
+                    disabled={backendsLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${backendsLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                )}
               </div>
 
-              {backendsError && (
-                <div className="p-3 bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-xs text-[hsl(var(--red))]">
-                  {backendsError}
-                </div>
+              {/* Local Backends */}
+              {backendsView === 'local' && (
+                <>
+                  <div>
+                    <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Local Backends</h3>
+                    <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
+                      Manage container and VM runtime backends on this machine
+                    </p>
+                  </div>
+
+                  {backendsError && (
+                    <div className="p-3 bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-xs text-[hsl(var(--red))]">
+                      {backendsError}
+                    </div>
+                  )}
+
+                  {backendsLoading && !backends ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--text-muted))]" />
+                    </div>
+                  ) : backends ? (
+                    <div className="space-y-4">
+                      {/* Docker */}
+                      <BackendCard
+                        name="Docker"
+                        description="Container runtime for running containers and compose projects"
+                        status={backends.docker}
+                        icon={<Box className="h-5 w-5" />}
+                        onAction={(action) => handleBackendAction('docker', action)}
+                        actionInProgress={actionInProgress?.startsWith('docker-') ? actionInProgress : null}
+                      />
+
+                      {/* Cloud-Hypervisor */}
+                      <BackendCard
+                        name="Cloud-Hypervisor"
+                        description="Lightweight hypervisor for running virtual machines"
+                        status={backends.cloudHypervisor}
+                        icon={<Server className="h-5 w-5" />}
+                        onAction={(action) => handleBackendAction('cloud-hypervisor', action)}
+                        actionInProgress={actionInProgress?.startsWith('cloud-hypervisor-') ? actionInProgress : null}
+                      />
+
+                      {/* Firecracker */}
+                      <BackendCard
+                        name="Firecracker"
+                        description="MicroVM hypervisor with fast snapshot restore via MMDS"
+                        status={backends.firecracker}
+                        icon={<Cpu className="h-5 w-5" />}
+                        onAction={(action) => handleBackendAction('firecracker', action)}
+                        actionInProgress={actionInProgress?.startsWith('firecracker-') ? actionInProgress : null}
+                      />
+                    </div>
+                  ) : null}
+
+                  {/* Info section */}
+                  <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
+                    <h4 className="text-xs font-medium text-[hsl(var(--text-primary))] uppercase tracking-wider">About Local Backends</h4>
+                    <div className="space-y-2 text-[10px] text-[hsl(var(--text-muted))]">
+                      <p><strong className="text-[hsl(var(--cyan))]">Docker</strong>: Standard container runtime. Best for development environments and services.</p>
+                      <p><strong className="text-[hsl(var(--green))]">Cloud-Hypervisor</strong>: Modern hypervisor for VMs. Great for isolation and production-like environments.</p>
+                      <p><strong className="text-[hsl(var(--purple))]">Firecracker</strong>: MicroVM technology with ~125ms snapshot restore. Ideal for golden images and rapid provisioning.</p>
+                    </div>
+                  </div>
+                </>
               )}
 
-              {backendsLoading && !backends ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--text-muted))]" />
-                </div>
-              ) : backends ? (
-                <div className="space-y-4">
-                  {/* Docker */}
-                  <BackendCard
-                    name="Docker"
-                    description="Container runtime for running containers and compose projects"
-                    status={backends.docker}
-                    icon={<Box className="h-5 w-5" />}
-                    onAction={(action) => handleBackendAction('docker', action)}
-                    actionInProgress={actionInProgress?.startsWith('docker-') ? actionInProgress : null}
-                  />
+              {/* Cloud Backends */}
+              {backendsView === 'cloud' && (
+                <>
+                  {cloudLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--text-muted))]" />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Cloud Backends</h3>
+                        <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
+                          Configure cloud-based compute backends for running workspaces remotely
+                        </p>
+                      </div>
 
-                  {/* Cloud-Hypervisor */}
-                  <BackendCard
-                    name="Cloud-Hypervisor"
-                    description="Lightweight hypervisor for running virtual machines"
-                    status={backends.cloudHypervisor}
-                    icon={<Server className="h-5 w-5" />}
-                    onAction={(action) => handleBackendAction('cloud-hypervisor', action)}
-                    actionInProgress={actionInProgress?.startsWith('cloud-hypervisor-') ? actionInProgress : null}
-                  />
+                      {/* Daytona Configuration */}
+                      <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+                            <Cloud className="h-5 w-5 text-[hsl(var(--amber))]" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Daytona</h4>
+                              {daytonaConfigured && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                                  Configured
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+                              Standardized development environments powered by Daytona.io
+                            </p>
+                            <a
+                              href="https://www.daytona.io"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--amber))] hover:underline mt-1"
+                            >
+                              Learn more <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={daytonaEnabled}
+                              onChange={(e) => setDaytonaEnabled(e.target.checked)}
+                              disabled={!daytonaConfigured}
+                              className="w-4 h-4 accent-[hsl(var(--amber))]"
+                            />
+                            <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
+                          </label>
+                        </div>
 
-                  {/* Firecracker */}
-                  <BackendCard
-                    name="Firecracker"
-                    description="MicroVM hypervisor with fast snapshot restore via MMDS"
-                    status={backends.firecracker}
-                    icon={<Cpu className="h-5 w-5" />}
-                    onAction={(action) => handleBackendAction('firecracker', action)}
-                    actionInProgress={actionInProgress?.startsWith('firecracker-') ? actionInProgress : null}
-                  />
-                </div>
-              ) : null}
+                        <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
+                          {/* API URL */}
+                          <div>
+                            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+                              API URL
+                            </label>
+                            <input
+                              type="text"
+                              value={daytonaApiUrl}
+                              onChange={(e) => setDaytonaApiUrl(e.target.value)}
+                              placeholder="https://app.daytona.io/api"
+                              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                            />
+                          </div>
 
-              {/* Info section */}
-              <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
-                <h4 className="text-xs font-medium text-[hsl(var(--text-primary))] uppercase tracking-wider">About Backends</h4>
-                <div className="space-y-2 text-[10px] text-[hsl(var(--text-muted))]">
-                  <p><strong className="text-[hsl(var(--cyan))]">Docker</strong>: Standard container runtime. Best for development environments and services.</p>
-                  <p><strong className="text-[hsl(var(--green))]">Cloud-Hypervisor</strong>: Modern hypervisor for VMs. Great for isolation and production-like environments.</p>
-                  <p><strong className="text-[hsl(var(--purple))]">Firecracker</strong>: MicroVM technology with ~125ms snapshot restore. Ideal for golden images and rapid provisioning.</p>
-                </div>
-              </div>
+                          {/* API Key */}
+                          <div>
+                            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+                              API Key
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={showApiKey ? 'text' : 'password'}
+                                value={daytonaApiKey}
+                                onChange={(e) => setDaytonaApiKey(e.target.value)}
+                                placeholder={daytonaConfigured ? '••••••••••••••••' : 'Enter your Daytona API key'}
+                                className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowApiKey(!showApiKey)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+                              >
+                                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">
+                              Get your API key from the Daytona dashboard
+                            </p>
+                          </div>
+
+                          {/* Test Result */}
+                          {cloudTestResult && (
+                            <div className={`p-3 text-xs ${
+                              cloudTestResult.success
+                                ? 'bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.2)] text-[hsl(var(--green))]'
+                                : 'bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-[hsl(var(--red))]'
+                            }`}>
+                              {cloudTestResult.success ? (
+                                <span className="flex items-center gap-1.5">
+                                  <CheckCircle className="h-4 w-4" />
+                                  {cloudTestResult.message || 'Connection successful'}
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1.5">
+                                  <XCircle className="h-4 w-4" />
+                                  {cloudTestResult.error || 'Connection failed'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-2 pt-2">
+                            <button
+                              onClick={handleTestDaytona}
+                              disabled={!daytonaApiKey || cloudSaving}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50"
+                            >
+                              Test Connection
+                            </button>
+                            <button
+                              onClick={handleSaveDaytona}
+                              disabled={cloudSaving}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--amber))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--amber)/0.9)] disabled:opacity-50"
+                            >
+                              {cloudSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Info section */}
+                      <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
+                        <h4 className="text-xs font-medium text-[hsl(var(--text-primary))] uppercase tracking-wider">About Cloud Backends</h4>
+                        <div className="space-y-2 text-[10px] text-[hsl(var(--text-muted))]">
+                          <p>
+                            <strong className="text-[hsl(var(--amber))]">Daytona</strong>: Cloud-based development environments with full IDE support.
+                            Create standardized, reproducible workspaces from any Git repository.
+                          </p>
+                          <p>
+                            Cloud backends appear as additional options when creating new VMs, alongside local hypervisors.
+                            They&apos;re ideal for remote development and team collaboration.
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -728,161 +916,6 @@ export function Settings() {
             </div>
           )}
 
-          {activeTab === 'cloud' && (
-            <div className="space-y-6">
-              {cloudLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--text-muted))]" />
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Cloud Backends</h3>
-                    <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
-                      Configure cloud-based compute backends for running workspaces remotely.
-                    </p>
-                  </div>
-
-                  {/* Daytona Configuration */}
-                  <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-                        <Cloud className="h-5 w-5 text-[hsl(var(--amber))]" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Daytona</h4>
-                          {daytonaConfigured && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
-                              Configured
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
-                          Standardized development environments powered by Daytona.io
-                        </p>
-                        <a
-                          href="https://www.daytona.io"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--amber))] hover:underline mt-1"
-                        >
-                          Learn more <ExternalLink className="h-3 w-3" />
-                        </a>
-                      </div>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={daytonaEnabled}
-                          onChange={(e) => setDaytonaEnabled(e.target.checked)}
-                          disabled={!daytonaConfigured}
-                          className="w-4 h-4 accent-[hsl(var(--amber))]"
-                        />
-                        <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
-                      </label>
-                    </div>
-
-                    <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
-                      {/* API URL */}
-                      <div>
-                        <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
-                          API URL
-                        </label>
-                        <input
-                          type="text"
-                          value={daytonaApiUrl}
-                          onChange={(e) => setDaytonaApiUrl(e.target.value)}
-                          placeholder="https://app.daytona.io/api"
-                          className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
-                        />
-                      </div>
-
-                      {/* API Key */}
-                      <div>
-                        <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
-                          API Key
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showApiKey ? 'text' : 'password'}
-                            value={daytonaApiKey}
-                            onChange={(e) => setDaytonaApiKey(e.target.value)}
-                            placeholder={daytonaConfigured ? '••••••••••••••••' : 'Enter your Daytona API key'}
-                            className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowApiKey(!showApiKey)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
-                          >
-                            {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">
-                          Get your API key from the Daytona dashboard
-                        </p>
-                      </div>
-
-                      {/* Test Result */}
-                      {cloudTestResult && (
-                        <div className={`p-3 text-xs ${
-                          cloudTestResult.success
-                            ? 'bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.2)] text-[hsl(var(--green))]'
-                            : 'bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-[hsl(var(--red))]'
-                        }`}>
-                          {cloudTestResult.success ? (
-                            <span className="flex items-center gap-1.5">
-                              <CheckCircle className="h-4 w-4" />
-                              {cloudTestResult.message || 'Connection successful'}
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1.5">
-                              <XCircle className="h-4 w-4" />
-                              {cloudTestResult.error || 'Connection failed'}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-2 pt-2">
-                        <button
-                          onClick={handleTestDaytona}
-                          disabled={!daytonaApiKey || cloudSaving}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50"
-                        >
-                          Test Connection
-                        </button>
-                        <button
-                          onClick={handleSaveDaytona}
-                          disabled={cloudSaving}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--amber))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--amber)/0.9)] disabled:opacity-50"
-                        >
-                          {cloudSaving && <Loader2 className="h-3 w-3 animate-spin" />}
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Info section */}
-                  <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
-                    <h4 className="text-xs font-medium text-[hsl(var(--text-primary))] uppercase tracking-wider">About Cloud Backends</h4>
-                    <div className="space-y-2 text-[10px] text-[hsl(var(--text-muted))]">
-                      <p>
-                        <strong className="text-[hsl(var(--amber))]">Daytona</strong>: Cloud-based development environments with full IDE support.
-                        Create standardized, reproducible workspaces from any Git repository.
-                      </p>
-                      <p>
-                        Cloud backends appear as additional options when creating new VMs, alongside local hypervisors.
-                        They&apos;re ideal for remote development and team collaboration.
-                      </p>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </div>
       </div>
 

@@ -23,6 +23,8 @@ const initialState: CommandCentreState = {
   layoutMode: 'split',
   splitLayout: 'grid',
   focusedSessionIds: [],
+  isFullscreen: false,
+  maximizedSessionId: null,
   fontSize: DEFAULT_FONT_SIZE,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
 };
@@ -41,7 +43,10 @@ type Action =
   | { type: 'FOCUS_ALL' }
   | { type: 'UNFOCUS_ALL' }
   | { type: 'SET_FONT_SIZE'; payload: number }
-  | { type: 'SET_SIDEBAR_WIDTH'; payload: number };
+  | { type: 'SET_SIDEBAR_WIDTH'; payload: number }
+  | { type: 'TOGGLE_FULLSCREEN' }
+  | { type: 'MAXIMIZE_SESSION'; payload: string | null }
+  | { type: 'TOGGLE_MAXIMIZE'; payload: string };
 
 // Reducer
 function commandCentreReducer(state: CommandCentreState, action: Action): CommandCentreState {
@@ -193,6 +198,24 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         sidebarWidth: width,
       };
     }
+    case 'TOGGLE_FULLSCREEN': {
+      return {
+        ...state,
+        isFullscreen: !state.isFullscreen,
+      };
+    }
+    case 'MAXIMIZE_SESSION': {
+      return {
+        ...state,
+        maximizedSessionId: action.payload,
+      };
+    }
+    case 'TOGGLE_MAXIMIZE': {
+      return {
+        ...state,
+        maximizedSessionId: state.maximizedSessionId === action.payload ? null : action.payload,
+      };
+    }
     default:
       return state;
   }
@@ -294,6 +317,18 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_SIDEBAR_WIDTH', payload: width });
   }, []);
 
+  const toggleFullscreen = useCallback(() => {
+    dispatch({ type: 'TOGGLE_FULLSCREEN' });
+  }, []);
+
+  const maximizeSession = useCallback((sessionId: string | null) => {
+    dispatch({ type: 'MAXIMIZE_SESSION', payload: sessionId });
+  }, []);
+
+  const toggleMaximize = useCallback((sessionId: string) => {
+    dispatch({ type: 'TOGGLE_MAXIMIZE', payload: sessionId });
+  }, []);
+
   const value: CommandCentreContextValue = {
     state,
     createSession,
@@ -311,6 +346,9 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     increaseFontSize,
     decreaseFontSize,
     setSidebarWidth,
+    toggleFullscreen,
+    maximizeSession,
+    toggleMaximize,
   };
 
   return (

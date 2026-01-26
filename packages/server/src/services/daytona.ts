@@ -8,31 +8,81 @@
 import { getConfig } from './config.js';
 import type { VmInfo, VmStatus } from '../types/vm.js';
 
+// Daytona sandbox states from API
+export type DaytonaSandboxState =
+  | 'creating'
+  | 'starting'
+  | 'started'
+  | 'stopping'
+  | 'stopped'
+  | 'archiving'
+  | 'archived'
+  | 'unarchiving'
+  | 'build_failed'
+  | 'error'
+  | 'destroying'
+  | 'destroyed'
+  | 'unknown';
+
 export interface DaytonaWorkspace {
   id: string;
+  organizationId: string;
   name: string;
-  status: 'creating' | 'running' | 'stopped' | 'error' | 'deleting';
+  target: string; // region like "us"
+  snapshot?: string | null;
+  user: string;
+  env: Record<string, string>;
+  cpu: number;
+  gpu: number;
+  memory: number; // GB
+  disk: number; // GB
+  public: boolean;
+  labels: Record<string, string>;
+  volumes: string[];
+  state: DaytonaSandboxState;
+  desiredState: string;
+  errorReason?: string;
+  recoverable: boolean;
+  backupState: string;
+  autoStopInterval: number;
+  autoArchiveInterval: number;
+  autoDeleteInterval: number;
+  class: string; // "small", etc.
+  createdAt: string;
+  updatedAt: string;
+  daemonVersion?: string | null;
+  runnerId?: string;
+  // Legacy fields for backwards compatibility
   repository?: string;
   ide?: string;
   sshHost?: string;
   sshPort?: number;
-  sshUser?: string;
-  createdAt: string;
   startedAt?: string;
-  error?: string;
 }
 
 export interface CreateDaytonaWorkspaceRequest {
-  name: string;
-  repository?: string;
-  ide?: 'vscode' | 'cursor' | 'windsurf' | 'fleet' | string;
-  branch?: string;
+  name?: string;
+  language?: 'python' | 'typescript' | 'javascript';
+  snapshot?: string;
+  resources?: {
+    cpu?: number;
+    memory?: number;
+    disk?: number;
+  };
+  autoStopInterval?: number;
+  ephemeral?: boolean;
+  labels?: Record<string, string>;
 }
 
 export class DaytonaService {
   private apiUrl: string = 'https://app.daytona.io/api';
   private apiKey: string = '';
   private initialized: boolean = false;
+
+  // Cache for workspaces to reduce API calls
+  private workspacesCache: DaytonaWorkspace[] = [];
+  private workspacesCacheTime: number = 0;
+  private static readonly CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
   /**
    * Initialize the Daytona service with config
@@ -124,64 +174,103 @@ export class DaytonaService {
   }
 
   /**
-   * List all workspaces
+   * Check if the cache is still valid
    */
-  async listWorkspaces(): Promise<DaytonaWorkspace[]> {
+  private isCacheValid(): boolean {
+    return Date.now() - this.workspacesCacheTime < DaytonaService.CACHE_TTL_MS;
+  }
+
+  /**
+   * Invalidate the workspace cache (call after mutations)
+   */
+  invalidateCache(): void {
+    this.workspacesCacheTime = 0;
+    this.workspacesCache = [];
+    console.log('[DaytonaService] Cache invalidated');
+  }
+
+  /**
+   * List all sandboxes (uses cache unless forceRefresh)
+   * Note: Daytona API uses /sandbox (singular) for listing
+   */
+  async listWorkspaces(forceRefresh: boolean = false): Promise<DaytonaWorkspace[]> {
+    // Return cached data if valid and not forcing refresh
+    if (!forceRefresh && this.isCacheValid() && this.workspacesCache.length > 0) {
+      console.log('[DaytonaService] Returning cached sandboxes');
+      return this.workspacesCache;
+    }
+
     try {
-      const response = await this.request<{ workspaces: DaytonaWorkspace[] }>('/workspaces');
-      return response.workspaces || [];
+      // Daytona API uses /sandbox (singular) endpoint, returns array directly
+      const sandboxes = await this.request<DaytonaWorkspace[]>('/sandbox');
+      this.workspacesCache = sandboxes || [];
+      this.workspacesCacheTime = Date.now();
+      console.log('[DaytonaService] Fetched fresh sandboxes:', this.workspacesCache.length);
+      return this.workspacesCache;
     } catch (err) {
-      console.error('[DaytonaService] Failed to list workspaces:', err);
+      console.error('[DaytonaService] Failed to list sandboxes:', err);
+      // Return cached data on error if available
+      if (this.workspacesCache.length > 0) {
+        console.log('[DaytonaService] Returning stale cache on error');
+        return this.workspacesCache;
+      }
       return [];
     }
   }
 
   /**
-   * Get a specific workspace
+   * Get a specific sandbox
    */
   async getWorkspace(id: string): Promise<DaytonaWorkspace | null> {
     try {
-      return await this.request<DaytonaWorkspace>(`/workspaces/${id}`);
+      return await this.request<DaytonaWorkspace>(`/sandbox/${id}`);
     } catch {
       return null;
     }
   }
 
   /**
-   * Create a new workspace
+   * Create a new sandbox
    */
   async createWorkspace(request: CreateDaytonaWorkspaceRequest): Promise<DaytonaWorkspace> {
-    return await this.request<DaytonaWorkspace>('/workspaces', {
+    const workspace = await this.request<DaytonaWorkspace>('/sandbox', {
       method: 'POST',
       body: JSON.stringify(request),
     });
+    this.invalidateCache();
+    return workspace;
   }
 
   /**
-   * Start a workspace
+   * Start a sandbox
    */
   async startWorkspace(id: string): Promise<DaytonaWorkspace> {
-    return await this.request<DaytonaWorkspace>(`/workspaces/${id}/start`, {
+    const workspace = await this.request<DaytonaWorkspace>(`/sandbox/${id}/start`, {
       method: 'POST',
     });
+    this.invalidateCache();
+    return workspace;
   }
 
   /**
-   * Stop a workspace
+   * Stop a sandbox
    */
   async stopWorkspace(id: string): Promise<DaytonaWorkspace> {
-    return await this.request<DaytonaWorkspace>(`/workspaces/${id}/stop`, {
+    const workspace = await this.request<DaytonaWorkspace>(`/sandbox/${id}/stop`, {
       method: 'POST',
     });
+    this.invalidateCache();
+    return workspace;
   }
 
   /**
-   * Delete a workspace
+   * Delete a sandbox
    */
   async deleteWorkspace(id: string): Promise<void> {
-    await this.request(`/workspaces/${id}`, {
+    await this.request(`/sandbox/${id}`, {
       method: 'DELETE',
     });
+    this.invalidateCache();
   }
 
   /**
@@ -198,33 +287,53 @@ export class DaytonaService {
       return null;
     }
 
+    const sshUser = workspace.user || 'daytona';
     return {
       host: workspace.sshHost,
       port: workspace.sshPort || 22,
-      user: workspace.sshUser || 'daytona',
-      command: `ssh -p ${workspace.sshPort || 22} ${workspace.sshUser || 'daytona'}@${workspace.sshHost}`,
+      user: sshUser,
+      command: `ssh -p ${workspace.sshPort || 22} ${sshUser}@${workspace.sshHost}`,
     };
   }
 
   /**
-   * Convert Daytona workspace status to VmStatus
+   * Convert Daytona sandbox state to VmStatus
    */
-  private workspaceStatusToVmStatus(status: DaytonaWorkspace['status']): VmStatus {
-    switch (status) {
-      case 'creating': return 'creating';
-      case 'running': return 'running';
-      case 'stopped': return 'stopped';
-      case 'error': return 'error';
-      case 'deleting': return 'stopped';
-      default: return 'stopped';
+  private workspaceStatusToVmStatus(state: DaytonaSandboxState): VmStatus {
+    switch (state) {
+      case 'creating':
+      case 'starting':
+      case 'unarchiving':
+        return 'creating';
+      case 'started':
+        return 'running';
+      case 'stopping':
+      case 'stopped':
+      case 'archiving':
+      case 'archived':
+        return 'stopped';
+      case 'build_failed':
+      case 'error':
+        return 'error';
+      case 'destroying':
+      case 'destroyed':
+        return 'stopped';
+      default:
+        return 'stopped';
     }
   }
 
   /**
-   * Convert Daytona workspace to VmInfo format for UI compatibility
+   * Convert Daytona sandbox to VmInfo format for UI compatibility
+   * Note: Daytona uses Docker containers (daytonaio/sandbox:0.4.1)
    */
   workspaceToVmInfo(workspace: DaytonaWorkspace): VmInfo {
-    const status = this.workspaceStatusToVmStatus(workspace.status);
+    const status = this.workspaceStatusToVmStatus(workspace.state);
+    const language = workspace.labels?.['code-toolbox-language'] || 'python';
+    const sshUser = workspace.user || 'daytona';
+    // Sandbox class: small (1cpu/1gb), medium (2cpu/4gb), large (4cpu/8gb)
+    const sizeClass = workspace.class || 'small';
+
     return {
       id: `daytona-${workspace.id}`,
       name: workspace.name,
@@ -233,21 +342,21 @@ export class DaytonaService {
       hypervisor: 'daytona',
       sshHost: workspace.sshHost || '',
       sshPort: workspace.sshPort || 22,
-      sshUser: workspace.sshUser || 'daytona',
+      sshUser,
       sshCommand: workspace.sshHost
-        ? `ssh -p ${workspace.sshPort || 22} ${workspace.sshUser || 'daytona'}@${workspace.sshHost}`
+        ? `ssh -p ${workspace.sshPort || 22} ${sshUser}@${workspace.sshHost}`
         : undefined,
       guestIp: workspace.sshHost,
-      networkMode: 'none', // Cloud workspaces don't use local networking
+      networkMode: 'none', // Cloud sandboxes don't use local networking
       ports: [],
-      volumes: [],
-      image: workspace.repository || 'daytona-workspace',
-      vcpus: 2, // Default values for cloud workspaces
-      memoryMb: 4096,
-      diskGb: 20,
+      volumes: [], // Daytona volumes have different structure, return empty for now
+      image: `daytona-${sizeClass} (${language})`,
+      vcpus: workspace.cpu || 1,
+      memoryMb: (workspace.memory || 1) * 1024, // Convert GB to MB
+      diskGb: workspace.disk || 5,
       createdAt: workspace.createdAt,
-      startedAt: workspace.startedAt,
-      error: workspace.error,
+      startedAt: workspace.updatedAt, // Use updatedAt as proxy for startedAt
+      error: workspace.errorReason,
     };
   }
 
@@ -270,17 +379,17 @@ export class DaytonaService {
   }
 
   /**
-   * Create a new Daytona workspace (VM-like interface)
+   * Create a new Daytona sandbox (VM-like interface)
    */
   async createVm(request: {
     name: string;
-    repository?: string;
-    ide?: string;
+    language?: 'python' | 'typescript' | 'javascript';
+    autoStopInterval?: number;
   }): Promise<VmInfo> {
     const workspace = await this.createWorkspace({
       name: request.name,
-      repository: request.repository,
-      ide: request.ide,
+      language: request.language || 'python',
+      autoStopInterval: request.autoStopInterval ?? 15, // 15 min default
     });
     return this.workspaceToVmInfo(workspace);
   }

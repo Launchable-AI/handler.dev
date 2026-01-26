@@ -74,27 +74,27 @@ function SnapshotCard({ snapshot, onClone, onPromote, isCloning, isPromoting }: 
           onClick={() => onClone(snapshot)}
           disabled={isBusy}
           className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
-          title="Create a new independent VM from this snapshot (fresh boot with snapshot's disk)"
+          title="Create a new independent VM from this snapshot"
         >
           {isCloning ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
             <Copy className="h-3 w-3" />
           )}
-          {isCloning ? 'Cloning...' : 'Clone'}
+          {isCloning ? 'Creating...' : 'New VM'}
         </button>
         <button
           onClick={() => onPromote(snapshot)}
           disabled={isBusy}
           className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] disabled:opacity-50"
-          title="Convert snapshot to a reusable base image"
+          title="Save as a base image (appears in Base Images list for creating future VMs)"
         >
           {isPromoting ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
             <Package className="h-3 w-3" />
           )}
-          {isPromoting ? 'Promoting...' : 'To Image'}
+          {isPromoting ? 'Saving...' : 'Save as Image'}
         </button>
         <div className="flex-1" />
         <button
@@ -299,8 +299,9 @@ export function VMSnapshots() {
 
       {/* Info text */}
       <div className="text-xs text-[hsl(var(--text-muted))] mb-4 p-2 bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]">
-        <strong>Clone:</strong> Create a new independent VM with fresh boot (snapshot's disk as starting point).{' '}
-        <strong>To Image:</strong> Convert snapshot to a reusable base image for creating multiple VMs.
+        <strong>New VM:</strong> Create a new, independent VM from this snapshot (one-time use).{' '}
+        <strong>Save as Image:</strong> Add to Base Images list so you can create multiple VMs from it later.{' '}
+        <em>To rollback a VM to a snapshot, use the Rollback button in the VM's Instances view.</em>
       </div>
 
       {/* Snapshots Grid */}

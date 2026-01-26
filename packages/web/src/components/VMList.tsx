@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen, Globe, ExternalLink, Pencil, X } from 'lucide-react';
-import { useVms, useStartVm, useStopVm, useDeleteVm, useVmNetworkStatus, useCreateVm, useVmBaseImages, useConfig, useVolumes, useVmSnapshots, useCreateVmSnapshot, useDeleteVmSnapshot, useUpdateVmPorts } from '../hooks/useContainers';
+import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen, Globe, ExternalLink, Pencil, X, RotateCcw } from 'lucide-react';
+import { useVms, useStartVm, useStopVm, useDeleteVm, useVmNetworkStatus, useCreateVm, useVmBaseImages, useConfig, useVolumes, useVmSnapshots, useCreateVmSnapshot, useDeleteVmSnapshot, useUpdateVmPorts, useRollbackVmToSnapshot } from '../hooks/useContainers';
 import { VmInfo, downloadVmSshKey, VmSnapshotInfo, HypervisorType, getBackendStatus, BackendStatus } from '../api/client';
 import { useConfirm } from './ConfirmModal';
 import { LogViewer } from './LogViewer';
@@ -22,7 +22,6 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
   const updatePorts = useUpdateVmPorts();
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
-  const { data: config } = useConfig();
   const [showLogs, setShowLogs] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -366,8 +365,8 @@ function VMListView({ vms }: { vms: VmInfo[] }) {
   const deleteVm = useDeleteVm();
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
-  const { data: config } = useConfig();
   const [showLogsFor, setShowLogsFor] = useState<string | null>(null);
+  const [showFilesFor, setShowFilesFor] = useState<string | null>(null);
   const [copiedVmId, setCopiedVmId] = useState<string | null>(null);
 
   // Get SSH command from VM (provided by server)
@@ -509,13 +508,22 @@ function VMListView({ vms }: { vms: VmInfo[] }) {
                     )}
 
                     {isRunning && vm.guestIp && (
-                      <button
-                        onClick={() => terminalPanel.openTerminal(vm.id, vm.name, vm.guestIp!)}
-                        className="p-1 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)]"
-                        title="Open terminal"
-                      >
-                        <TerminalSquare className="h-3.5 w-3.5" />
-                      </button>
+                      <>
+                        <button
+                          onClick={() => terminalPanel.openTerminal(vm.id, vm.name, vm.guestIp!)}
+                          className="p-1 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)]"
+                          title="Open terminal"
+                        >
+                          <TerminalSquare className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setShowFilesFor(vm.id)}
+                          className="p-1 text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)]"
+                          title="Browse and upload files"
+                        >
+                          <FolderOpen className="h-3.5 w-3.5" />
+                        </button>
+                      </>
                     )}
 
                     {getSshCommand(vm) && (
@@ -556,6 +564,32 @@ function VMListView({ vms }: { vms: VmInfo[] }) {
           onClose={() => setShowLogsFor(null)}
         />
       )}
+
+      {/* File Browser Modal */}
+      {showFilesFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] w-full max-w-4xl h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
+              <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">
+                Files - {vms.find(v => v.id === showFilesFor)?.name || 'VM'}
+              </h3>
+              <button
+                onClick={() => setShowFilesFor(null)}
+                className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <VMFileBrowser
+                vmId={showFilesFor}
+                vmName={vms.find(v => v.id === showFilesFor)?.name || 'VM'}
+                isRunning={vms.find(v => v.id === showFilesFor)?.status === 'running'}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -571,6 +605,7 @@ function VMCard({ vm }: { vm: VmInfo }) {
   const { data: config } = useConfig();
   const terminalPanel = useTerminalPanel();
   const [showLogs, setShowLogs] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
   const [copied, setCopied] = useState(false);
   const [keyDownloaded, setKeyDownloaded] = useState(false);
   const [showChmodHint, setShowChmodHint] = useState(false);
@@ -580,11 +615,13 @@ function VMCard({ vm }: { vm: VmInfo }) {
   const [editingPorts, setEditingPorts] = useState(false);
   const [editPorts, setEditPorts] = useState<Array<{ container: number; host: number }>>([]);
   const [launchingSnapshot, setLaunchingSnapshot] = useState<string | null>(null);
+  const [rollingBackSnapshot, setRollingBackSnapshot] = useState<string | null>(null);
 
   // Snapshot hooks
   const { data: snapshots, isLoading: snapshotsLoading } = useVmSnapshots(vm.id);
   const createSnapshot = useCreateVmSnapshot();
   const deleteSnapshot = useDeleteVmSnapshot();
+  const rollbackSnapshot = useRollbackVmToSnapshot();
 
   const isRunning = vm.status === 'running';
   const isBooting = vm.status === 'booting' || vm.status === 'creating';
@@ -688,6 +725,26 @@ function VMCard({ vm }: { vm: VmInfo }) {
       console.error('Failed to launch from snapshot:', error);
     } finally {
       setLaunchingSnapshot(null);
+    }
+  };
+
+  const handleRollbackToSnapshot = async (snapshot: VmSnapshotInfo) => {
+    const confirmed = await confirm({
+      title: 'Rollback VM',
+      message: `This will restore "${vm.name}" to the state saved in "${snapshot.name || snapshot.id}". The VM will be stopped and its current disk state will be replaced. Continue?`,
+      confirmText: 'Rollback',
+      variant: 'danger',
+    });
+
+    if (confirmed) {
+      setRollingBackSnapshot(snapshot.id);
+      try {
+        await rollbackSnapshot.mutateAsync({ vmId: vm.id, snapshotId: snapshot.id });
+      } catch (error) {
+        console.error('Failed to rollback:', error);
+      } finally {
+        setRollingBackSnapshot(null);
+      }
     }
   };
 
@@ -1054,20 +1111,34 @@ function VMCard({ vm }: { vm: VmInfo }) {
                     </div>
                     <div className="flex items-center gap-1">
                       <button
+                        onClick={() => handleRollbackToSnapshot(snapshot)}
+                        disabled={rollingBackSnapshot === snapshot.id || launchingSnapshot === snapshot.id}
+                        className="flex items-center gap-1 px-1.5 py-0.5 text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] disabled:opacity-50"
+                        title="Restore this VM to the snapshot state (stops VM and replaces disk)"
+                      >
+                        {rollingBackSnapshot === snapshot.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-3 w-3" />
+                        )}
+                        <span>Rollback</span>
+                      </button>
+                      <button
                         onClick={() => handleLaunchFromSnapshot(snapshot)}
-                        disabled={launchingSnapshot === snapshot.id}
-                        className="p-1 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] disabled:opacity-50"
-                        title="Launch new VM from this snapshot"
+                        disabled={launchingSnapshot === snapshot.id || rollingBackSnapshot === snapshot.id}
+                        className="flex items-center gap-1 px-1.5 py-0.5 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
+                        title="Create a new independent VM from this snapshot"
                       >
                         {launchingSnapshot === snapshot.id ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
                           <Play className="h-3 w-3" />
                         )}
+                        <span>New VM</span>
                       </button>
                       <button
                         onClick={() => handleDeleteSnapshot(snapshot)}
-                        disabled={deleteSnapshot.isPending || launchingSnapshot === snapshot.id}
+                        disabled={deleteSnapshot.isPending || launchingSnapshot === snapshot.id || rollingBackSnapshot === snapshot.id}
                         className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] disabled:opacity-50"
                         title="Delete snapshot"
                       >
@@ -1122,14 +1193,24 @@ function VMCard({ vm }: { vm: VmInfo }) {
 
         {/* Terminal button - only show when running and has IP */}
         {isRunning && vm.guestIp && (
-          <button
-            onClick={() => terminalPanel.openTerminal(vm.id, vm.name, vm.guestIp!)}
-            className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]"
-            title="Open terminal"
-          >
-            <TerminalSquare className="h-3 w-3" />
-            Shell
-          </button>
+          <>
+            <button
+              onClick={() => terminalPanel.openTerminal(vm.id, vm.name, vm.guestIp!)}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]"
+              title="Open terminal"
+            >
+              <TerminalSquare className="h-3 w-3" />
+              Shell
+            </button>
+            <button
+              onClick={() => setShowFiles(true)}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
+              title="Browse and upload files"
+            >
+              <FolderOpen className="h-3 w-3" />
+              Files
+            </button>
+          </>
         )}
 
         <button
@@ -1168,6 +1249,28 @@ function VMCard({ vm }: { vm: VmInfo }) {
           title={vm.name}
           onClose={() => setShowLogs(false)}
         />
+      )}
+
+      {/* File Browser Modal */}
+      {showFiles && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] w-full max-w-4xl h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
+              <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">
+                Files - {vm.name}
+              </h3>
+              <button
+                onClick={() => setShowFiles(false)}
+                className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <VMFileBrowser vmId={vm.id} vmName={vm.name} isRunning={isRunning} />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

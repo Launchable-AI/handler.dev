@@ -345,9 +345,18 @@ vms.post('/', async (c) => {
         return c.json({ error: 'Daytona backend is not configured' }, 400);
       }
 
+      // Parse language from baseImage (format: "daytona/python" or just "python")
+      let language: 'python' | 'typescript' | 'javascript' = 'python';
+      if (config.baseImage) {
+        const imgLower = config.baseImage.toLowerCase();
+        if (imgLower.includes('typescript')) language = 'typescript';
+        else if (imgLower.includes('javascript') || imgLower.includes('node')) language = 'javascript';
+      }
+
       const vm = await daytona.createVm({
         name: config.name,
-        repository: config.baseImage, // For Daytona, baseImage is the git repo URL
+        language,
+        autoStopInterval: 15, // 15 minutes default
       });
 
       return c.json(vm, 201);

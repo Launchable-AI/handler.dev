@@ -1608,6 +1608,12 @@ export async function testDaytonaConnection(config?: {
   });
 }
 
+export async function refreshDaytonaCache(): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/daytona/refresh', {
+    method: 'POST',
+  });
+}
+
 // Host Stats
 export interface HostStats {
   cpu: {

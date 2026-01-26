@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus,
   LayoutGrid,
@@ -6,13 +6,20 @@ import {
   Columns3,
   PanelRight,
   ChevronDown,
+  ChevronUp,
   Server,
   Container,
   ZoomIn,
   ZoomOut,
+  Loader2,
+  PlayCircle,
+  Maximize2,
+  Minimize2,
+  HardDrive,
+  Activity,
 } from 'lucide-react';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
-import { useVms, useContainers } from '../../hooks/useContainers';
+import { useVms, useContainers, useVolumes, useVmVolumes } from '../../hooks/useContainers';
 
 interface ToolBarProps {
   className?: string;
@@ -25,30 +32,87 @@ export function ToolBar({ className = '' }: ToolBarProps) {
     setSplitLayout,
     increaseFontSize,
     decreaseFontSize,
+    createSession,
+    toggleFullscreen,
+    maximizeSession,
   } = useCommandCentre();
   const [showPicker, setShowPicker] = useState(false);
+  const [isOpeningAll, setIsOpeningAll] = useState(false);
+  const [showResources, setShowResources] = useState(false);
+  const { data: vms } = useVms();
+  const { data: containers } = useContainers();
+  const { data: dockerVolumes } = useVolumes();
+  const { data: vmVolumes } = useVmVolumes();
 
   const sessionCount = state.sessions.length;
-  const { fontSize, layoutMode, splitLayout, focusedSessionIds } = state;
+  const { fontSize, layoutMode, splitLayout, focusedSessionIds, isFullscreen, maximizedSessionId } = state;
   const unfocusedCount = sessionCount - focusedSessionIds.length;
 
+  // Keyboard shortcut for fullscreen (Escape to exit, F11 or Ctrl+Shift+F to toggle)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape exits fullscreen or maximized
+      if (e.key === 'Escape') {
+        if (maximizedSessionId) {
+          maximizeSession(null);
+        } else if (isFullscreen) {
+          toggleFullscreen();
+        }
+      }
+      // F11 or Ctrl+Shift+F toggles fullscreen
+      if (e.key === 'F11' || (e.ctrlKey && e.shiftKey && e.key === 'F')) {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen, maximizedSessionId, toggleFullscreen, maximizeSession]);
+
+  // Count running instances
+  const runningVMs = vms?.filter(vm => vm.state === 'running') || [];
+  const runningContainers = containers?.filter(c => c.state === 'running') || [];
+  const totalRunning = runningVMs.length + runningContainers.length;
+
+  // Resource stats
+  const totalVMs = vms?.length || 0;
+  const totalContainers = containers?.length || 0;
+  const totalDockerVolumes = dockerVolumes?.length || 0;
+  const totalVmVolumes = vmVolumes?.length || 0;
+
+  // Open all running instances
+  const handleOpenAllRunning = async () => {
+    setIsOpeningAll(true);
+
+    // Small delay between creating sessions for smoother UI
+    for (const vm of runningVMs) {
+      createSession('vm', vm.id, vm.name, vm.guestIp);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    for (const container of runningContainers) {
+      createSession('container', container.id, container.name);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    setIsOpeningAll(false);
+  };
+
   return (
-    <div className={`flex items-center justify-between px-4 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))] ${className}`}>
-      {/* Left: Title & session count */}
+    <div className={className}>
+      {/* Main toolbar */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
+        {/* Left: Session count */}
       <div className="flex items-center gap-3">
-        <h2 className="text-sm font-semibold text-[hsl(var(--text-primary))] uppercase tracking-wider">
-          Command Centre
-        </h2>
-        {sessionCount > 0 && (
-          <span className="px-2 py-0.5 text-[10px] font-medium bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded-full">
-            {sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}
-            {layoutMode === 'focus' && unfocusedCount > 0 && (
-              <span className="ml-1 text-[hsl(var(--text-muted))]">
-                ({unfocusedCount} in sidebar)
-              </span>
-            )}
-          </span>
-        )}
+        <span className="px-2 py-0.5 text-[10px] font-medium bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded-full">
+          {sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}
+          {layoutMode === 'focus' && unfocusedCount > 0 && (
+            <span className="ml-1 text-[hsl(var(--text-muted))]">
+              ({unfocusedCount} in sidebar)
+            </span>
+          )}
+        </span>
       </div>
 
       {/* Center: Layout controls & font size */}
@@ -118,21 +182,137 @@ export function ToolBar({ className = '' }: ToolBarProps) {
             <ZoomIn className="h-3.5 w-3.5" />
           </button>
         </div>
+
+        {/* Separator */}
+        <div className="w-px h-5 bg-[hsl(var(--border))]" />
+
+        {/* Fullscreen toggle */}
+        <button
+          onClick={toggleFullscreen}
+          className={`flex items-center gap-1.5 px-2 py-1 text-xs transition-colors rounded ${
+            isFullscreen
+              ? 'bg-[hsl(var(--purple)/0.15)] text-[hsl(var(--purple))]'
+              : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
+          }`}
+          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F11)'}
+        >
+          {isFullscreen ? (
+            <Minimize2 className="h-3.5 w-3.5" />
+          ) : (
+            <Maximize2 className="h-3.5 w-3.5" />
+          )}
+        </button>
       </div>
 
-      {/* Right: Add session button */}
-      <div className="relative">
+      {/* Right: Quick actions */}
+      <div className="flex items-center gap-2">
+        {/* Open All Running button */}
         <button
-          onClick={() => setShowPicker(!showPicker)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors"
+          onClick={handleOpenAllRunning}
+          disabled={totalRunning === 0 || isOpeningAll}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] transition-colors disabled:opacity-50"
+          title={`Open terminals to all ${totalRunning} running instances`}
         >
-          <Plus className="h-3.5 w-3.5" />
-          Add Session
-          <ChevronDown className="h-3 w-3" />
+          {isOpeningAll ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <PlayCircle className="h-3.5 w-3.5" />
+          )}
+          {isOpeningAll ? 'Opening...' : `Open All (${totalRunning})`}
         </button>
 
-        {showPicker && (
-          <SessionPicker onClose={() => setShowPicker(false)} />
+        {/* Add Session button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowPicker(!showPicker)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Session
+            <ChevronDown className="h-3 w-3" />
+          </button>
+
+          {showPicker && (
+            <SessionPicker onClose={() => setShowPicker(false)} />
+          )}
+        </div>
+      </div>
+      </div>
+
+      {/* Collapsible Resource Overview */}
+      <div className="border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))]">
+        <button
+          onClick={() => setShowResources(!showResources)}
+          className="w-full flex items-center justify-between px-4 py-1.5 text-[10px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-secondary))] transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Activity className="h-3 w-3" />
+            <span className="uppercase tracking-wider font-medium">Resources</span>
+            <span className="text-[hsl(var(--text-muted))]">
+              {runningVMs.length}/{totalVMs} VMs • {runningContainers.length}/{totalContainers} Containers
+            </span>
+          </div>
+          {showResources ? (
+            <ChevronUp className="h-3 w-3" />
+          ) : (
+            <ChevronDown className="h-3 w-3" />
+          )}
+        </button>
+
+        {showResources && (
+          <div className="px-4 pb-2 pt-1 grid grid-cols-4 gap-4 text-[10px]">
+            {/* VMs */}
+            <div className="flex items-center gap-2">
+              <Server className="h-4 w-4 text-[hsl(var(--cyan))]" />
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))]">
+                  {totalVMs} VMs
+                </div>
+                <div className="text-[hsl(var(--green))]">
+                  {runningVMs.length} running
+                </div>
+              </div>
+            </div>
+
+            {/* Containers */}
+            <div className="flex items-center gap-2">
+              <Container className="h-4 w-4 text-[hsl(var(--purple))]" />
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))]">
+                  {totalContainers} Containers
+                </div>
+                <div className="text-[hsl(var(--green))]">
+                  {runningContainers.length} running
+                </div>
+              </div>
+            </div>
+
+            {/* VM Volumes */}
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-[hsl(var(--amber))]" />
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))]">
+                  {totalVmVolumes} VM Volumes
+                </div>
+                <div className="text-[hsl(var(--text-muted))]">
+                  Attached storage
+                </div>
+              </div>
+            </div>
+
+            {/* Docker Volumes */}
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-[hsl(var(--text-muted))]" />
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))]">
+                  {totalDockerVolumes} Docker Volumes
+                </div>
+                <div className="text-[hsl(var(--text-muted))]">
+                  Container storage
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

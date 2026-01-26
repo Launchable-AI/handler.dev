@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Settings as SettingsIcon, Container, FileCode, Layers, HardDrive, Image, Package, StickyNote, Server, ChevronDown, ChevronRight, Box, Camera, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid } from 'lucide-react';
 import { ContainerList } from './components/ContainerList';
 import { CreateContainerForm } from './components/CreateContainerForm';
@@ -18,7 +18,7 @@ import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
 import { TerminalPanelProvider } from './components/TerminalPanel';
-import { useHealth, useConfig, useHostStats } from './hooks/useContainers';
+import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
 // All possible tabs including nested ones
 type Tab = 'command-centre' | 'containers' | 'compose' | 'dockerfiles' | 'images' | 'instances' | 'base-images' | 'snapshots' | 'vm-volumes' | 'volumes' | 'mcp' | 'notes' | 'settings';
@@ -45,16 +45,39 @@ interface StandaloneNavItem extends NavItem {
 
 type NavConfigItem = NavGroup | StandaloneNavItem;
 
+// Valid tabs for persistence
+const VALID_TABS: Tab[] = ['command-centre', 'containers', 'compose', 'dockerfiles', 'images', 'instances', 'base-images', 'snapshots', 'vm-volumes', 'volumes', 'mcp', 'notes', 'settings'];
+
 function App() {
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('instances');
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const saved = localStorage.getItem('caisson:activeTab');
+    if (saved && VALID_TABS.includes(saved as Tab)) {
+      return saved as Tab;
+    }
+    return 'instances';
+  });
   const [expandedGroups, setExpandedGroups] = useState<Set<NavGroupId>>(new Set(['docker', 'vms']));
   const [showHostTooltip, setShowHostTooltip] = useState(false);
   const { data: health } = useHealth();
   const { data: config } = useConfig();
   const { data: hostStats } = useHostStats();
+  const { data: backendStatus } = useBackendStatus();
+
+  // Persist active tab
+  useEffect(() => {
+    localStorage.setItem('caisson:activeTab', activeTab);
+  }, [activeTab]);
 
   const dockerConnected = health?.docker === 'connected';
+
+  // Get enabled backends with their status
+  const enabledBackends = backendStatus ? [
+    { name: 'Docker', status: backendStatus.docker },
+    { name: 'Cloud-Hypervisor', status: backendStatus.cloudHypervisor },
+    { name: 'Firecracker', status: backendStatus.firecracker },
+    { name: 'Daytona', status: backendStatus.daytona },
+  ].filter(b => b.status.installed || b.status.enabled) : [];
 
   // Format bytes to human readable
   const formatBytes = (bytes: number) => {
@@ -418,17 +441,39 @@ function App() {
 
         {/* Status Bar */}
         <div className="px-3 py-2.5 border-t border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
-          <div className="flex items-center justify-between text-[10px]">
-            <div className="flex items-center gap-1.5">
-              <div className={`w-1.5 h-1.5 rounded-full ${dockerConnected ? 'bg-[hsl(var(--green))] glow-green' : 'bg-[hsl(var(--red))]'}`} />
-              <span className={dockerConnected ? 'text-[hsl(var(--green))]' : 'text-[hsl(var(--red))]'}>
-                Docker {dockerConnected ? 'Online' : 'Offline'}
-              </span>
-            </div>
+          <div className="flex flex-col gap-1 text-[10px]">
+            {enabledBackends.map(({ name, status }) => {
+              const isOnline = status.running || (status.enabled && !status.error);
+              const isError = status.enabled && !status.running && status.error;
+              return (
+                <div key={name} className="flex items-center gap-1.5" title={status.error || (status.version ? `v${status.version}` : undefined)}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${
+                    isOnline ? 'bg-[hsl(var(--green))]' :
+                    isError ? 'bg-[hsl(var(--red))]' :
+                    'bg-[hsl(var(--text-muted))]'
+                  }`} />
+                  <span className={
+                    isOnline ? 'text-[hsl(var(--green))]' :
+                    isError ? 'text-[hsl(var(--red))]' :
+                    'text-[hsl(var(--text-muted))]'
+                  }>
+                    {name}
+                  </span>
+                </div>
+              );
+            })}
+            {enabledBackends.length === 0 && (
+              <div className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full ${dockerConnected ? 'bg-[hsl(var(--green))]' : 'bg-[hsl(var(--red))]'}`} />
+                <span className={dockerConnected ? 'text-[hsl(var(--green))]' : 'text-[hsl(var(--red))]'}>
+                  Docker {dockerConnected ? 'Online' : 'Offline'}
+                </span>
+              </div>
+            )}
           </div>
           {config?.dataDirectory && (
-            <div className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))] truncate" title={config.dataDirectory}>
-              {config.dataDirectory}
+            <div className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))] cursor-help" title={config.dataDirectory}>
+              Data Path (hover to view)
             </div>
           )}
         </div>

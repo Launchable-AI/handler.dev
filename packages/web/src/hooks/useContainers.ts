@@ -864,3 +864,23 @@ export function useDeleteVmVolumeFile() {
     },
   });
 }
+
+export function useBackendStatus() {
+  return useQuery({
+    queryKey: ['backend-status'],
+    queryFn: api.getBackendStatus,
+    refetchInterval: 30000, // Refresh every 30 seconds
+    staleTime: 10000,
+  });
+}
+
+export function useRefreshDaytonaCache() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.refreshDaytonaCache,
+    onSuccess: () => {
+      // Invalidate VMs cache to trigger a refetch with fresh Daytona data
+      queryClient.invalidateQueries({ queryKey: ['vms'] });
+    },
+  });
+}
