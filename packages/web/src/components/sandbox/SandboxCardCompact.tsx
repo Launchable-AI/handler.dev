@@ -88,12 +88,17 @@ export function SandboxCardCompact({ sandbox }: SandboxCardCompactProps) {
     }
   };
 
+  // For Docker, prefer dockerExecCommand; for VMs, use sshCommand
+  const isDocker = sandbox.backend === 'docker';
+  const connectCommand = isDocker
+    ? (sandbox.dockerExecCommand || sandbox.sshCommand)
+    : sandbox.sshCommand;
+
   const copyCommand = async () => {
-    const command = sandbox.sshCommand;
-    if (!command) return;
+    if (!connectCommand) return;
 
     try {
-      await navigator.clipboard.writeText(command);
+      await navigator.clipboard.writeText(connectCommand);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -134,11 +139,11 @@ export function SandboxCardCompact({ sandbox }: SandboxCardCompactProps) {
         )}
       </div>
 
-      {/* SSH Command (if running) */}
-      {isRunning && sandbox.sshCommand && (
+      {/* Connect Command (if running) - Docker exec for containers, SSH for VMs */}
+      {isRunning && connectCommand && (
         <div className="flex items-center gap-1 mb-2 p-1.5 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
           <code className="flex-1 text-[9px] text-[hsl(var(--text-muted))] font-mono truncate">
-            {sandbox.sshCommand}
+            {connectCommand}
           </code>
           <button
             onClick={copyCommand}

@@ -230,115 +230,120 @@ function TerminalPanelUI({
     ? 'fixed bottom-0 left-52 right-0 border-t'
     : 'fixed top-0 right-0 bottom-0 border-l';
 
-  // Resize handle extends along the entire edge
-  const resizeHandleClasses = position === 'bottom'
-    ? 'absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize hover:bg-[hsl(var(--cyan)/0.5)] bg-[hsl(var(--border))] transition-colors group'
-    : 'absolute top-0 left-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-[hsl(var(--cyan)/0.5)] bg-[hsl(var(--border))] transition-colors group';
-
   return (
     <div
       ref={panelRef}
-      className={`${panelClasses} z-40 flex flex-col bg-[hsl(var(--bg-base))] border-[hsl(var(--border))]`}
+      className={`${panelClasses} z-40 bg-[hsl(var(--bg-base))] border-[hsl(var(--border))] ${
+        position === 'bottom' ? 'flex flex-col' : 'flex flex-row'
+      }`}
       style={position === 'bottom' ? { height: size } : { width: size }}
     >
-      {/* Resize handle - full edge */}
-      <div
-        className={resizeHandleClasses}
-        onMouseDown={handleMouseDown}
-      >
-        {/* Center grip indicator */}
-        <div className={`absolute ${position === 'bottom' ? 'left-1/2 -translate-x-1/2 top-0' : 'top-1/2 -translate-y-1/2 left-0'}`}>
-          {position === 'bottom' ? (
-            <GripHorizontal className="h-3 w-6 text-[hsl(var(--text-muted))] opacity-30 group-hover:opacity-100 transition-opacity" />
-          ) : (
-            <GripVertical className="h-6 w-3 text-[hsl(var(--text-muted))] opacity-30 group-hover:opacity-100 transition-opacity" />
-          )}
+      {/* Resize handle - full edge with visual separation */}
+      {position === 'right' && (
+        <div
+          className="w-2 h-full flex-shrink-0 cursor-ew-resize hover:bg-[hsl(var(--cyan)/0.3)] bg-[hsl(var(--bg-elevated))] border-l border-[hsl(var(--border))] transition-colors group flex items-center justify-center"
+          onMouseDown={handleMouseDown}
+        >
+          <GripVertical className="h-6 w-3 text-[hsl(var(--text-muted))] opacity-30 group-hover:opacity-100 transition-opacity" />
         </div>
-      </div>
+      )}
 
-      {/* Header with tabs */}
-      <div className="flex items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
-        {/* Tabs */}
-        <div className="flex items-center overflow-x-auto flex-1 min-w-0">
+      {/* Main content wrapper */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Resize handle for bottom position */}
+        {position === 'bottom' && (
+          <div
+            className="h-1.5 w-full flex-shrink-0 cursor-ns-resize hover:bg-[hsl(var(--cyan)/0.5)] bg-[hsl(var(--border))] transition-colors group flex items-center justify-center"
+            onMouseDown={handleMouseDown}
+          >
+            <GripHorizontal className="h-3 w-6 text-[hsl(var(--text-muted))] opacity-30 group-hover:opacity-100 transition-opacity" />
+          </div>
+        )}
+
+        {/* Header with tabs */}
+        <div className="flex items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
+          {/* Tabs */}
+          <div className="flex items-center overflow-x-auto flex-1 min-w-0">
+            {tabs.map(tab => (
+              <div
+                key={tab.id}
+                className={`group flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border-r border-[hsl(var(--border))] whitespace-nowrap ${
+                  tab.id === activeTabId
+                    ? 'bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))]'
+                    : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
+                }`}
+                onClick={() => onTabSelect(tab.id)}
+              >
+                <TerminalSquare className={`h-3.5 w-3.5 ${
+                  tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
+                  tab.connectionState === 'connecting' ? 'text-[hsl(var(--amber))]' :
+                  'text-[hsl(var(--red))]'
+                }`} />
+                <span className="max-w-[120px] truncate">{tab.name}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTabClose(tab.id);
+                  }}
+                  className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-[hsl(var(--bg-overlay))] rounded"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1 px-2">
+            <button
+              onClick={() => onPositionChange(position === 'bottom' ? 'right' : 'bottom')}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
+              title={position === 'bottom' ? 'Move to right' : 'Move to bottom'}
+            >
+              {position === 'bottom' ? (
+                <PanelRight className="h-3.5 w-3.5" />
+              ) : (
+                <PanelBottom className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <button
+              onClick={() => onSizeChange(Math.min(size + 100, position === 'bottom' ? 600 : 800))}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
+              title="Expand"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => onSizeChange(Math.max(size - 100, position === 'bottom' ? 200 : 300))}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
+              title="Shrink"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
+              title="Close panel"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Terminal content */}
+        <div className="flex-1 overflow-hidden relative">
           {tabs.map(tab => (
             <div
               key={tab.id}
-              className={`group flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border-r border-[hsl(var(--border))] whitespace-nowrap ${
-                tab.id === activeTabId
-                  ? 'bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))]'
-                  : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
-              }`}
-              onClick={() => onTabSelect(tab.id)}
+              className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
             >
-              <TerminalSquare className={`h-3.5 w-3.5 ${
-                tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
-                tab.connectionState === 'connecting' ? 'text-[hsl(var(--amber))]' :
-                'text-[hsl(var(--red))]'
-              }`} />
-              <span className="max-w-[120px] truncate">{tab.name}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTabClose(tab.id);
-                }}
-                className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-[hsl(var(--bg-overlay))] rounded"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              <TerminalInstance
+                tab={tab}
+                onStateChange={(state) => onTabStateChange(tab.id, state)}
+              />
             </div>
           ))}
         </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1 px-2">
-          <button
-            onClick={() => onPositionChange(position === 'bottom' ? 'right' : 'bottom')}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
-            title={position === 'bottom' ? 'Move to right' : 'Move to bottom'}
-          >
-            {position === 'bottom' ? (
-              <PanelRight className="h-3.5 w-3.5" />
-            ) : (
-              <PanelBottom className="h-3.5 w-3.5" />
-            )}
-          </button>
-          <button
-            onClick={() => onSizeChange(Math.min(size + 100, position === 'bottom' ? 600 : 800))}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
-            title="Expand"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => onSizeChange(Math.max(size - 100, position === 'bottom' ? 200 : 300))}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
-            title="Shrink"
-          >
-            <Minus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
-            title="Close panel"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Terminal content */}
-      <div className="flex-1 overflow-hidden relative">
-        {tabs.map(tab => (
-          <div
-            key={tab.id}
-            className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
-          >
-            <TerminalInstance
-              tab={tab}
-              onStateChange={(state) => onTabStateChange(tab.id, state)}
-            />
-          </div>
-        ))}
       </div>
     </div>
   );
