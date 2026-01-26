@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Settings as SettingsIcon, Container, FileCode, Layers, HardDrive, Image, Package, StickyNote, Server, ChevronDown, ChevronRight, Box, Camera, Cpu, MemoryStick, Activity, Clock, Monitor } from 'lucide-react';
+import { Plus, Settings as SettingsIcon, Container, FileCode, Layers, HardDrive, Image, Package, StickyNote, Server, ChevronDown, ChevronRight, Box, Camera, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid } from 'lucide-react';
 import { ContainerList } from './components/ContainerList';
 import { CreateContainerForm } from './components/CreateContainerForm';
 import { VolumeManager } from './components/VolumeManager';
@@ -13,6 +13,7 @@ import { VMList } from './components/VMList';
 import { VMBaseImages } from './components/VMBaseImages';
 import { VMSnapshots } from './components/VMSnapshots';
 import { VMVolumes } from './components/VMVolumes';
+import { CommandCentre } from './components/CommandCentre';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
@@ -20,7 +21,7 @@ import { TerminalPanelProvider } from './components/TerminalPanel';
 import { useHealth, useConfig, useHostStats } from './hooks/useContainers';
 
 // All possible tabs including nested ones
-type Tab = 'containers' | 'compose' | 'dockerfiles' | 'images' | 'instances' | 'base-images' | 'snapshots' | 'vm-volumes' | 'volumes' | 'mcp' | 'notes' | 'settings';
+type Tab = 'command-centre' | 'containers' | 'compose' | 'dockerfiles' | 'images' | 'instances' | 'base-images' | 'snapshots' | 'vm-volumes' | 'volumes' | 'mcp' | 'notes' | 'settings';
 
 // Navigation group identifiers
 type NavGroupId = 'docker' | 'vms';
@@ -80,6 +81,7 @@ function App() {
   };
 
   const navConfig: NavConfigItem[] = [
+    { id: 'command-centre', label: 'Command Centre', icon: LayoutGrid, standalone: true },
     {
       id: 'vms',
       label: 'VMs',
@@ -449,6 +451,7 @@ function App() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden">
+          {activeTab === 'command-centre' && <CommandCentre />}
           {activeTab === 'containers' && <ContainerList onCreateClick={() => setShowCreateForm(true)} />}
           {activeTab === 'instances' && <VMList onCreateClick={() => {}} />}
           {activeTab === 'base-images' && <VMBaseImages />}

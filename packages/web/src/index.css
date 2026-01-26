@@ -287,3 +287,97 @@ pre code {
 .animate-scale-in {
   animation: scale-in 0.15s ease-out;
 }
+
+/* ============================================
+   COMMAND CENTRE ANIMATIONS
+   Hyprland-inspired smooth transitions
+   ============================================ */
+
+/* Timing function - Hyprland-style smooth motion */
+:root {
+  --hyprland-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --hyprland-duration: 250ms;
+}
+
+/* Tile maximize animation */
+@keyframes tile-maximize {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.015);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.tile-maximize {
+  animation: tile-maximize var(--hyprland-duration) var(--hyprland-ease);
+}
+
+/* Tile focus ring pulse */
+@keyframes tile-focus-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px hsl(var(--cyan) / 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px hsl(var(--cyan) / 0.3);
+  }
+}
+
+.tile-focus {
+  animation: tile-focus-pulse 1.5s var(--hyprland-ease) infinite;
+}
+
+/* Thumbnail enter animation */
+@keyframes thumbnail-enter {
+  0% {
+    opacity: 0;
+    transform: translateX(20px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.thumbnail-enter {
+  animation: thumbnail-enter var(--hyprland-duration) var(--hyprland-ease) forwards;
+}
+
+/* Thumbnail sidebar stagger animation */
+.thumbnail-sidebar > * {
+  opacity: 0;
+  animation: thumbnail-enter var(--hyprland-duration) var(--hyprland-ease) forwards;
+}
+
+/* Session tile enter animation */
+@keyframes session-tile-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.session-tile-enter {
+  animation: session-tile-enter var(--hyprland-duration) var(--hyprland-ease);
+}
+
+/* Layout transition for grid items */
+.command-centre-grid {
+  transition: grid-template-columns var(--hyprland-duration) var(--hyprland-ease);
+}
+
+/* Smooth resize transition for tiles */
+.command-centre-tile {
+  transition:
+    transform var(--hyprland-duration) var(--hyprland-ease),
+    width var(--hyprland-duration) var(--hyprland-ease),
+    height var(--hyprland-duration) var(--hyprland-ease),
+    flex var(--hyprland-duration) var(--hyprland-ease);
+}
