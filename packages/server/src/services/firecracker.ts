@@ -1108,9 +1108,12 @@ export class FirecrackerService extends EventEmitter {
       } as SnapshotCreateParams);
 
       // Copy disk image (use sparse-aware copy to preserve sparse file structure)
-      const vmDiskPath = path.join(vmDir, 'rootfs.ext4');
+      // The VM uses overlay.ext4 as its writable disk layer
+      const vmDiskPath = path.join(vmDir, 'overlay.ext4');
       if (fs.existsSync(vmDiskPath)) {
         execSync(`cp --sparse=always "${vmDiskPath}" "${diskPath}"`, { stdio: 'pipe' });
+      } else {
+        console.warn(`[FirecrackerService] VM disk not found at ${vmDiskPath}`);
       }
 
       // Save metadata
@@ -1187,14 +1190,19 @@ export class FirecrackerService extends EventEmitter {
     // Copy snapshot files
     const snapshotPath = path.join(vmDir, 'snapshot.bin');
     const memFilePath = path.join(vmDir, 'mem.bin');
-    const diskPath = path.join(vmDir, 'rootfs.ext4');
+    const overlayPath = path.join(vmDir, 'overlay.ext4');  // Use overlay.ext4 to match VM disk naming
     const apiSocket = path.join(vmDir, 'api.sock');
     const logFile = path.join(vmDir, 'firecracker.log');
 
     fs.copyFileSync(snapshotMeta.snapshotPath, snapshotPath);
     fs.copyFileSync(snapshotMeta.memFilePath, memFilePath);
     // Use sparse-aware copy for disk image to preserve sparse file structure
-    execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${diskPath}"`, { stdio: 'pipe' });
+    // The snapshot stores the overlay disk, copy it to the new VM's overlay location
+    if (fs.existsSync(snapshotMeta.diskPath)) {
+      execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${overlayPath}"`, { stdio: 'pipe' });
+    } else {
+      throw new Error(`Snapshot disk not found: ${snapshotMeta.diskPath}`);
+    }
 
     // Build new MMDS metadata with new identity
     const sshPubKeyPath = path.join(this.config.sshKeysDir, 'id_ed25519.pub');
@@ -1280,6 +1288,29 @@ export class FirecrackerService extends EventEmitter {
       // Wait for API socket
       await this.waitForApiSocket(apiSocket, 5000);
       console.log(`[FirecrackerService] API socket ready in ${Date.now() - startTime}ms`);
+
+      // Configure drives BEFORE loading snapshot (required for Firecracker snapshot restore)
+      // The base image should be at the same location (shared read-only)
+      const baseImageDir = path.join(this.config.baseImagesDir, snapshotMeta.baseImage);
+      const baseImagePath = path.join(baseImageDir, 'rootfs.ext4');
+
+      // Configure base rootfs drive (read-only, shared)
+      await this.sendApiRequest(apiSocket, 'PUT', '/drives/rootfs', {
+        drive_id: 'rootfs',
+        path_on_host: baseImagePath,
+        is_root_device: true,
+        is_read_only: true,
+      } as Drive);
+
+      // Configure overlay drive (writable, per-VM) - points to NEW VM's overlay
+      await this.sendApiRequest(apiSocket, 'PUT', '/drives/overlay', {
+        drive_id: 'overlay',
+        path_on_host: overlayPath,
+        is_root_device: false,
+        is_read_only: false,
+      } as Drive);
+
+      console.log(`[FirecrackerService] Drives configured for restore`);
 
       // Load snapshot (don't resume yet!)
       await this.sendApiRequest(apiSocket, 'PUT', '/snapshot/load', {
