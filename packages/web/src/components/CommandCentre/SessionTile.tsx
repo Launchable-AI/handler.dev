@@ -1,9 +1,13 @@
-import { useCallback, useRef, useState, CSSProperties } from 'react';
+import { useCallback, useRef, useState, CSSProperties, useMemo } from 'react';
 import { X, PanelRightClose, Server, Container, Maximize2, Minimize2, Upload, Loader2, Check, PanelLeftOpen } from 'lucide-react';
 import { TerminalInstance } from '../Terminal/TerminalInstance';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
 import type { TerminalSession } from '../../types/command-centre';
 import * as api from '../../api/client';
+
+// Hyprland-style spring easing
+const SPRING_EASING = 'cubic-bezier(0.05, 0.9, 0.1, 1.02)';
+const SPRING_DURATION = '350ms';
 
 interface SessionTileProps {
   session: TerminalSession;
@@ -13,6 +17,10 @@ interface SessionTileProps {
   style?: CSSProperties;
   fontSize?: number;
   onClick?: () => void;
+  // Drag and drop
+  index?: number;
+  onReorder?: (fromIndex: number, toIndex: number) => void;
+  isDraggable?: boolean;
 }
 
 export function SessionTile({
@@ -23,6 +31,9 @@ export function SessionTile({
   style,
   fontSize = 13,
   onClick,
+  index,
+  onReorder,
+  isDraggable = true,
 }: SessionTileProps) {
   const {
     state,
@@ -38,6 +49,43 @@ export function SessionTile({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Drag and drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // Drag handlers
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    if (!isDraggable || index === undefined) return;
+    e.dataTransfer.setData('text/plain', String(index));
+    e.dataTransfer.effectAllowed = 'move';
+    setIsDragging(true);
+  }, [isDraggable, index]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!isDraggable || index === undefined) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setIsDragOver(true);
+  }, [isDraggable, index]);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    if (!isDraggable || index === undefined || !onReorder) return;
+    e.preventDefault();
+    setIsDragOver(false);
+    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    if (!isNaN(fromIndex) && fromIndex !== index) {
+      onReorder(fromIndex, index);
+    }
+  }, [isDraggable, index, onReorder]);
 
   const handleStateChange = useCallback((state: 'connecting' | 'connected' | 'disconnected' | 'error', errorMessage?: string) => {
     updateSessionStatus(session.id, state, errorMessage);
@@ -104,16 +152,31 @@ export function SessionTile({
   const isMaximized = state.maximizedSessionId === session.id;
   const canMaximize = state.sessions.length > 1;
 
+  // Merge styles with spring animation and drag feedback
+  const mergedStyle = useMemo((): CSSProperties => ({
+    ...style,
+    transition: style?.transition || `all ${SPRING_DURATION} ${SPRING_EASING}`,
+    opacity: isDragging ? 0.5 : 1,
+    transform: isDragOver ? 'scale(1.02)' : undefined,
+  }), [style, isDragging, isDragOver]);
+
   return (
     <div
+      draggable={isDraggable && index !== undefined}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={`
         flex flex-col bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))]
-        transition-all duration-200 overflow-hidden
+        overflow-hidden cursor-grab active:cursor-grabbing
         ${isActive && !isThumbnail ? 'ring-2 ring-[hsl(var(--cyan)/0.5)]' : ''}
         ${isThumbnail ? 'hover:border-[hsl(var(--cyan)/0.5)]' : ''}
+        ${isDragOver ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)]' : ''}
         ${className}
       `}
-      style={style}
+      style={mergedStyle}
       onClick={!isThumbnail ? handleClick : undefined}
     >
       {/* Hidden file input for uploads */}

@@ -43,7 +43,9 @@ type Action =
   | { type: 'SET_SIDEBAR_WIDTH'; payload: number }
   | { type: 'TOGGLE_FULLSCREEN' }
   | { type: 'MAXIMIZE_SESSION'; payload: string | null }
-  | { type: 'TOGGLE_MAXIMIZE'; payload: string };
+  | { type: 'TOGGLE_MAXIMIZE'; payload: string }
+  | { type: 'REORDER_SESSIONS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'REORDER_FOCUSED_SESSIONS'; payload: { fromIndex: number; toIndex: number } };
 
 // Reducer
 function commandCentreReducer(state: CommandCentreState, action: Action): CommandCentreState {
@@ -201,6 +203,26 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         maximizedSessionId: state.maximizedSessionId === action.payload ? null : action.payload,
       };
     }
+    case 'REORDER_SESSIONS': {
+      const { fromIndex, toIndex } = action.payload;
+      const newSessions = [...state.sessions];
+      const [removed] = newSessions.splice(fromIndex, 1);
+      newSessions.splice(toIndex, 0, removed);
+      return {
+        ...state,
+        sessions: newSessions,
+      };
+    }
+    case 'REORDER_FOCUSED_SESSIONS': {
+      const { fromIndex, toIndex } = action.payload;
+      const newFocusedIds = [...state.focusedSessionIds];
+      const [removed] = newFocusedIds.splice(fromIndex, 1);
+      newFocusedIds.splice(toIndex, 0, removed);
+      return {
+        ...state,
+        focusedSessionIds: newFocusedIds,
+      };
+    }
     default:
       return state;
   }
@@ -310,6 +332,14 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'TOGGLE_MAXIMIZE', payload: sessionId });
   }, []);
 
+  const reorderSessions = useCallback((fromIndex: number, toIndex: number) => {
+    dispatch({ type: 'REORDER_SESSIONS', payload: { fromIndex, toIndex } });
+  }, []);
+
+  const reorderFocusedSessions = useCallback((fromIndex: number, toIndex: number) => {
+    dispatch({ type: 'REORDER_FOCUSED_SESSIONS', payload: { fromIndex, toIndex } });
+  }, []);
+
   const value: CommandCentreContextValue = {
     state,
     createSession,
@@ -329,6 +359,8 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     toggleFullscreen,
     maximizeSession,
     toggleMaximize,
+    reorderSessions,
+    reorderFocusedSessions,
   };
 
   return (

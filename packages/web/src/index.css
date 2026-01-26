@@ -297,10 +297,17 @@ pre code {
    Hyprland-inspired smooth transitions
    ============================================ */
 
-/* Timing function - Hyprland-style smooth motion */
+/* Timing functions - Hyprland-style smooth motion with spring effect */
 :root {
+  /* Standard smooth ease */
   --hyprland-ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --hyprland-duration: 250ms;
+  /* Spring-like with slight overshoot - feels more natural */
+  --hyprland-spring: cubic-bezier(0.05, 0.9, 0.1, 1.02);
+  /* Snappy for quick interactions */
+  --hyprland-snappy: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Duration for layout animations */
+  --hyprland-duration: 350ms;
+  --hyprland-duration-fast: 200ms;
 }
 
 /* Tile maximize animation */
@@ -372,16 +379,64 @@ pre code {
   animation: session-tile-enter var(--hyprland-duration) var(--hyprland-ease);
 }
 
-/* Layout transition for grid items */
+/* Layout transition for grid items - uses spring for fluid motion */
 .command-centre-grid {
-  transition: grid-template-columns var(--hyprland-duration) var(--hyprland-ease);
+  transition: grid-template-columns var(--hyprland-duration) var(--hyprland-spring);
 }
 
-/* Smooth resize transition for tiles */
+/* Smooth resize transition for tiles - spring easing for natural feel */
 .command-centre-tile {
   transition:
-    transform var(--hyprland-duration) var(--hyprland-ease),
-    width var(--hyprland-duration) var(--hyprland-ease),
-    height var(--hyprland-duration) var(--hyprland-ease),
-    flex var(--hyprland-duration) var(--hyprland-ease);
+    all var(--hyprland-duration) var(--hyprland-spring);
+}
+
+/* Sidebar transition */
+.command-centre-sidebar {
+  transition:
+    width var(--hyprland-duration) var(--hyprland-spring),
+    opacity var(--hyprland-duration-fast) ease-out;
+}
+
+/* Main area flex transition */
+.command-centre-main {
+  transition: all var(--hyprland-duration) var(--hyprland-spring);
+}
+
+/* Session moving between main and sidebar */
+@keyframes session-to-sidebar {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.85);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes session-to-main {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-to-sidebar {
+  animation: session-to-sidebar var(--hyprland-duration) var(--hyprland-spring);
+}
+
+.animate-to-main {
+  animation: session-to-main var(--hyprland-duration) var(--hyprland-spring);
 }

@@ -79,4 +79,8 @@ export interface CommandCentreContextValue {
   toggleFullscreen: () => void;
   maximizeSession: (sessionId: string | null) => void;
   toggleMaximize: (sessionId: string) => void;
+
+  // Reorder sessions (drag and drop)
+  reorderSessions: (fromIndex: number, toIndex: number) => void;
+  reorderFocusedSessions: (fromIndex: number, toIndex: number) => void;
 }
