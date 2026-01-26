@@ -13,8 +13,8 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
   const { state, reorderFocusedSessions } = useCommandCentre();
   const { sessions, activeSessionId, splitLayout, focusedSessionIds, fontSize, maximizedSessionId } = state;
 
-  // Sidebar width state (in pixels)
-  const [sidebarWidth, setSidebarWidth] = useState(280);
+  // Sidebar width state (in pixels) - start at max size
+  const [sidebarWidth, setSidebarWidth] = useState(500);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
@@ -24,7 +24,14 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
   const updateScheduled = useRef(false);
 
   // Ref callback that batches updates to avoid infinite loops
+  // CRITICAL: Only process non-null values to prevent race conditions when moving sessions
+  // When a session moves, old slot fires null, new slot fires element - if null fires last,
+  // the portal target becomes null and the terminal unmounts. By ignoring null callbacks,
+  // we let the new slot's element take over smoothly.
   const createSlotRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
+    // Ignore unmount callbacks - only register new mount targets
+    if (el === null) return;
+
     pendingUpdates.current[id] = el;
     if (!updateScheduled.current) {
       updateScheduled.current = true;
@@ -47,6 +54,23 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
       });
     }
   }, []);
+
+  // Clean up portal targets when sessions are removed (not moved)
+  useEffect(() => {
+    const validIds = new Set(sessions.map(s => s.id));
+    setPortalTargets(prev => {
+      const cleaned: Record<string, HTMLDivElement | null> = {};
+      let changed = false;
+      for (const [id, target] of Object.entries(prev)) {
+        if (validIds.has(id)) {
+          cleaned[id] = target;
+        } else {
+          changed = true; // This id was removed
+        }
+      }
+      return changed ? cleaned : prev;
+    });
+  }, [sessions]);
 
   // Separate sessions into focused and unfocused
   const focusedSessions = useMemo(() =>
