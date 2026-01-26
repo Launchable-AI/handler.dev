@@ -20,6 +20,7 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  Search,
 } from 'lucide-react';
 import type { SandboxBackend, SandboxStatus } from '../../api/client';
 import { useSandboxes, useSandboxCounts } from '../../hooks/useSandboxes';
@@ -88,6 +89,9 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
   // Status filter
   const [showOnlyRunning, setShowOnlyRunning] = useState(false);
 
+  // Search query
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Sort state with persistence
   const [sortColumn, setSortColumn] = useState<SortColumn>(() => {
     const stored = localStorage.getItem(SORT_KEY);
@@ -137,13 +141,22 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
   const { data, isLoading, error } = useSandboxes(filter);
   const counts = useSandboxCounts();
 
-  const sandboxes = data?.sandboxes ?? [];
+  const allSandboxes = data?.sandboxes ?? [];
   const backends = data?.backends ?? {
     docker: false,
     'cloud-hypervisor': false,
     firecracker: false,
     daytona: false,
   };
+
+  // Filter sandboxes by search query
+  const sandboxes = useMemo(() => {
+    if (!searchQuery.trim()) return allSandboxes;
+    const query = searchQuery.toLowerCase();
+    return allSandboxes.filter((sandbox) =>
+      sandbox.name.toLowerCase().includes(query)
+    );
+  }, [allSandboxes, searchQuery]);
 
   // Sort sandboxes
   const sortedSandboxes = useMemo(() => {
@@ -221,9 +234,10 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
   const clearFilters = () => {
     setSelectedBackends([]);
     setShowOnlyRunning(false);
+    setSearchQuery('');
   };
 
-  const hasFilters = selectedBackends.length > 0 || showOnlyRunning;
+  const hasFilters = selectedBackends.length > 0 || showOnlyRunning || searchQuery.trim().length > 0;
 
   // View mode button helper
   const viewModeButton = (mode: ViewMode, icon: React.ReactNode, label: string) => (
@@ -260,8 +274,8 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
     <div className="h-full flex flex-col">
       {/* Toolbar */}
       <div className="flex flex-col gap-2 px-4 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
-        {/* Top row: Create + View modes + Count */}
-        <div className="flex items-center justify-between">
+        {/* Top row: Create + Search + View modes + Count */}
+        <div className="flex items-center justify-between gap-3">
           <button
             onClick={onCreateClick}
             className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
@@ -269,6 +283,26 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
             <Plus className="h-3 w-3" />
             New Sandbox
           </button>
+
+          {/* Search */}
+          <div className="flex-1 max-w-xs relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-[hsl(var(--text-muted))]" />
+            <input
+              type="text"
+              placeholder="Search by name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-7 pr-2 py-1 text-xs bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:outline-none focus:border-[hsl(var(--cyan)/0.5)]"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center gap-3">
             {/* View Mode Buttons */}
