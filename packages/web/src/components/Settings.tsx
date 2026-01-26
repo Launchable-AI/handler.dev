@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, ChevronDown, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, ChevronDown, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ExternalLink, Eye, EyeOff } from 'lucide-react';
 import { useConfig, useUpdateConfig, useImages } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
 import type { ModelOption, BackendStatus } from '../api/client';
 
-type SettingsTab = 'general' | 'ai' | 'backends';
+type SettingsTab = 'general' | 'ai' | 'backends' | 'cloud';
 
 export function Settings() {
   const { data: config, isLoading } = useConfig();
@@ -60,6 +60,16 @@ export function Settings() {
   const [backendsError, setBackendsError] = useState<string | null>(null);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
 
+  // Cloud backends state
+  const [daytonaApiUrl, setDaytonaApiUrl] = useState('https://api.daytona.io');
+  const [daytonaApiKey, setDaytonaApiKey] = useState('');
+  const [daytonaEnabled, setDaytonaEnabled] = useState(false);
+  const [daytonaConfigured, setDaytonaConfigured] = useState(false);
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudSaving, setCloudSaving] = useState(false);
+  const [cloudTestResult, setCloudTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
+
   useEffect(() => {
     if (config) {
       setDataDirectory(config.dataDirectory || '');
@@ -105,6 +115,59 @@ export function Settings() {
       loadBackends();
     }
   }, [activeTab]);
+
+  // Load cloud backends config when switching to cloud tab
+  useEffect(() => {
+    if (activeTab === 'cloud') {
+      loadCloudConfig();
+    }
+  }, [activeTab]);
+
+  const loadCloudConfig = async () => {
+    setCloudLoading(true);
+    try {
+      const daytonaConfig = await api.getDaytonaConfig();
+      setDaytonaApiUrl(daytonaConfig.apiUrl || 'https://api.daytona.io');
+      setDaytonaEnabled(daytonaConfig.enabled);
+      setDaytonaConfigured(daytonaConfig.configured);
+      // Don't load API key - it's sensitive and we don't send it back from server
+      if (!daytonaConfig.hasApiKey) {
+        setDaytonaApiKey('');
+      }
+    } catch {
+      // Ignore errors - defaults are fine
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
+  const handleSaveDaytona = async () => {
+    setCloudSaving(true);
+    setCloudTestResult(null);
+    try {
+      await api.configureDaytona({
+        apiUrl: daytonaApiUrl,
+        apiKey: daytonaApiKey || undefined,
+        enabled: daytonaEnabled,
+      });
+      setDaytonaConfigured(!!daytonaApiKey);
+    } finally {
+      setCloudSaving(false);
+    }
+  };
+
+  const handleTestDaytona = async () => {
+    setCloudTestResult(null);
+    try {
+      const result = await api.testDaytonaConnection({
+        apiUrl: daytonaApiUrl,
+        apiKey: daytonaApiKey || undefined,
+      });
+      setCloudTestResult(result);
+    } catch (err) {
+      setCloudTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+    }
+  };
 
   const loadBackends = async () => {
     setBackendsLoading(true);
@@ -231,6 +294,17 @@ export function Settings() {
         >
           <Sparkles className="h-3.5 w-3.5" />
           AI Prompts
+        </button>
+        <button
+          onClick={() => setActiveTab('cloud')}
+          className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
+            activeTab === 'cloud'
+              ? 'border-[hsl(var(--amber))] text-[hsl(var(--amber))]'
+              : 'border-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+          }`}
+        >
+          <Cloud className="h-3.5 w-3.5" />
+          Cloud Backends
         </button>
       </div>
 
@@ -648,6 +722,162 @@ export function Settings() {
                       {promptsSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                       Save Prompts
                     </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'cloud' && (
+            <div className="space-y-6">
+              {cloudLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--text-muted))]" />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Cloud Backends</h3>
+                    <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
+                      Configure cloud-based compute backends for running workspaces remotely.
+                    </p>
+                  </div>
+
+                  {/* Daytona Configuration */}
+                  <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+                        <Cloud className="h-5 w-5 text-[hsl(var(--amber))]" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Daytona</h4>
+                          {daytonaConfigured && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                              Configured
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+                          Standardized development environments powered by Daytona.io
+                        </p>
+                        <a
+                          href="https://www.daytona.io"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--amber))] hover:underline mt-1"
+                        >
+                          Learn more <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={daytonaEnabled}
+                          onChange={(e) => setDaytonaEnabled(e.target.checked)}
+                          disabled={!daytonaConfigured}
+                          className="w-4 h-4 accent-[hsl(var(--amber))]"
+                        />
+                        <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
+                      </label>
+                    </div>
+
+                    <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
+                      {/* API URL */}
+                      <div>
+                        <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+                          API URL
+                        </label>
+                        <input
+                          type="text"
+                          value={daytonaApiUrl}
+                          onChange={(e) => setDaytonaApiUrl(e.target.value)}
+                          placeholder="https://api.daytona.io"
+                          className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                        />
+                      </div>
+
+                      {/* API Key */}
+                      <div>
+                        <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+                          API Key
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showApiKey ? 'text' : 'password'}
+                            value={daytonaApiKey}
+                            onChange={(e) => setDaytonaApiKey(e.target.value)}
+                            placeholder={daytonaConfigured ? '••••••••••••••••' : 'Enter your Daytona API key'}
+                            className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+                          >
+                            {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">
+                          Get your API key from the Daytona dashboard
+                        </p>
+                      </div>
+
+                      {/* Test Result */}
+                      {cloudTestResult && (
+                        <div className={`p-3 text-xs ${
+                          cloudTestResult.success
+                            ? 'bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.2)] text-[hsl(var(--green))]'
+                            : 'bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-[hsl(var(--red))]'
+                        }`}>
+                          {cloudTestResult.success ? (
+                            <span className="flex items-center gap-1.5">
+                              <CheckCircle className="h-4 w-4" />
+                              {cloudTestResult.message || 'Connection successful'}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5">
+                              <XCircle className="h-4 w-4" />
+                              {cloudTestResult.error || 'Connection failed'}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 pt-2">
+                        <button
+                          onClick={handleTestDaytona}
+                          disabled={!daytonaApiKey || cloudSaving}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50"
+                        >
+                          Test Connection
+                        </button>
+                        <button
+                          onClick={handleSaveDaytona}
+                          disabled={cloudSaving}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--amber))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--amber)/0.9)] disabled:opacity-50"
+                        >
+                          {cloudSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Info section */}
+                  <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
+                    <h4 className="text-xs font-medium text-[hsl(var(--text-primary))] uppercase tracking-wider">About Cloud Backends</h4>
+                    <div className="space-y-2 text-[10px] text-[hsl(var(--text-muted))]">
+                      <p>
+                        <strong className="text-[hsl(var(--amber))]">Daytona</strong>: Cloud-based development environments with full IDE support.
+                        Create standardized, reproducible workspaces from any Git repository.
+                      </p>
+                      <p>
+                        Cloud backends appear as additional options when creating new VMs, alongside local hypervisors.
+                        They&apos;re ideal for remote development and team collaboration.
+                      </p>
+                    </div>
                   </div>
                 </>
               )}

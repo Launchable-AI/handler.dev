@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen, Globe, ExternalLink, Pencil, X } from 'lucide-react';
 import { useVms, useStartVm, useStopVm, useDeleteVm, useVmNetworkStatus, useCreateVm, useVmBaseImages, useConfig, useVolumes, useVmSnapshots, useCreateVmSnapshot, useDeleteVmSnapshot, useUpdateVmPorts } from '../hooks/useContainers';
-import { VmInfo, downloadVmSshKey, VmSnapshotInfo, HypervisorType } from '../api/client';
+import { VmInfo, downloadVmSshKey, VmSnapshotInfo, HypervisorType, getBackendStatus, BackendStatus } from '../api/client';
 import { useConfirm } from './ConfirmModal';
 import { LogViewer } from './LogViewer';
 import { VMFileBrowser } from './VMFileBrowser';
@@ -132,9 +132,17 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
         )}
         {vm.hypervisor && (
           <span className={`flex items-center gap-1 ${
-            vm.hypervisor === 'firecracker' ? 'text-[hsl(var(--purple))]' : 'text-[hsl(var(--cyan))]'
-          }`} title={vm.hypervisor === 'firecracker' ? 'Firecracker' : 'Cloud-Hypervisor'}>
-            {vm.hypervisor === 'firecracker' ? <Flame className="h-3 w-3" /> : <Cloud className="h-3 w-3" />}
+            vm.hypervisor === 'firecracker' ? 'text-[hsl(var(--purple))]' :
+            vm.hypervisor === 'daytona' ? 'text-[hsl(var(--amber))]' :
+            'text-[hsl(var(--cyan))]'
+          }`} title={
+            vm.hypervisor === 'firecracker' ? 'Firecracker' :
+            vm.hypervisor === 'daytona' ? 'Daytona Cloud' :
+            'Cloud-Hypervisor'
+          }>
+            {vm.hypervisor === 'firecracker' ? <Flame className="h-3 w-3" /> :
+             vm.hypervisor === 'daytona' ? <Globe className="h-3 w-3" /> :
+             <Cloud className="h-3 w-3" />}
           </span>
         )}
       </div>
@@ -751,10 +759,15 @@ function VMCard({ vm }: { vm: VmInfo }) {
           <span className={`flex items-center gap-1 px-1.5 py-0.5 border ${
             vm.hypervisor === 'firecracker'
               ? 'text-[hsl(var(--purple))] border-[hsl(var(--purple)/0.3)] bg-[hsl(var(--purple)/0.1)]'
+              : vm.hypervisor === 'daytona'
+              ? 'text-[hsl(var(--amber))] border-[hsl(var(--amber)/0.3)] bg-[hsl(var(--amber)/0.1)]'
               : 'text-[hsl(var(--cyan))] border-[hsl(var(--cyan)/0.3)] bg-[hsl(var(--cyan)/0.1)]'
           }`}>
-            {vm.hypervisor === 'firecracker' ? <Flame className="h-3 w-3" /> : <Cloud className="h-3 w-3" />}
-            {vm.hypervisor === 'firecracker' ? 'FC' : 'CH'}
+            {vm.hypervisor === 'firecracker' ? <Flame className="h-3 w-3" /> :
+             vm.hypervisor === 'daytona' ? <Globe className="h-3 w-3" /> :
+             <Cloud className="h-3 w-3" />}
+            {vm.hypervisor === 'firecracker' ? 'FC' :
+             vm.hypervisor === 'daytona' ? 'DT' : 'CH'}
           </span>
         )}
       </div>
@@ -1133,6 +1146,14 @@ interface PortEntry {
   host: number;
 }
 
+type VmSizePreset = 'small' | 'medium' | 'large';
+
+const VM_SIZE_PRESETS: Record<VmSizePreset, { vcpus: number; memoryMb: number; diskGb: number; label: string }> = {
+  small: { vcpus: 1, memoryMb: 1024, diskGb: 5, label: 'Small' },
+  medium: { vcpus: 4, memoryMb: 4096, diskGb: 5, label: 'Medium' },
+  large: { vcpus: 8, memoryMb: 8192, diskGb: 10, label: 'Large' },
+};
+
 function CreateVMForm({ onClose }: { onClose: () => void }) {
   const createVm = useCreateVm();
   const { data: baseImages } = useVmBaseImages();
@@ -1148,7 +1169,60 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
     { container: 5173, host: 5173 },
     { container: 8080, host: 8080 },
   ]);
-  const [hypervisor, setHypervisor] = useState<HypervisorType>('firecracker');
+  const [hypervisor, setHypervisor] = useState<HypervisorType | null>(null);
+  const [backends, setBackends] = useState<BackendStatus | null>(null);
+
+  // Detect which preset matches current values (if any)
+  const activePreset = useMemo<VmSizePreset | null>(() => {
+    for (const [key, config] of Object.entries(VM_SIZE_PRESETS)) {
+      if (config.vcpus === vcpus && config.memoryMb === memoryMb && config.diskGb === diskGb) {
+        return key as VmSizePreset;
+      }
+    }
+    return null;
+  }, [vcpus, memoryMb, diskGb]);
+
+  // Apply size preset when clicked
+  const applyPreset = (preset: VmSizePreset) => {
+    const config = VM_SIZE_PRESETS[preset];
+    setVcpus(config.vcpus);
+    setMemoryMb(config.memoryMb);
+    setDiskGb(config.diskGb);
+  };
+
+  const isLocalBackend = hypervisor !== 'daytona';
+
+  // Determine available hypervisors based on backend status
+  const availableHypervisors = useMemo<HypervisorType[]>(() => {
+    const available: HypervisorType[] = [];
+    if (backends?.cloudHypervisor?.installed && backends?.cloudHypervisor?.enabled) {
+      available.push('cloud-hypervisor');
+    }
+    if (backends?.firecracker?.installed && backends?.firecracker?.enabled) {
+      available.push('firecracker');
+    }
+    if (backends?.daytona?.installed && backends?.daytona?.enabled) {
+      available.push('daytona');
+    }
+    return available;
+  }, [backends]);
+
+  // Fetch backend status on mount
+  useEffect(() => {
+    getBackendStatus().then(setBackends).catch(console.error);
+  }, []);
+
+  // Auto-select the first available hypervisor
+  useEffect(() => {
+    if (!hypervisor && availableHypervisors.length > 0) {
+      // Prefer firecracker if available, otherwise first available
+      if (availableHypervisors.includes('firecracker')) {
+        setHypervisor('firecracker');
+      } else {
+        setHypervisor(availableHypervisors[0]);
+      }
+    }
+  }, [availableHypervisors, hypervisor]);
 
   // Auto-select the first available base image
   useEffect(() => {
@@ -1209,7 +1283,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
         volumes: volumeMounts.length > 0 ? volumeMounts : undefined,
         ports: validPorts.length > 0 ? validPorts : undefined,
         autoStart: true,
-        hypervisor,
+        hypervisor: hypervisor || 'cloud-hypervisor',
       });
       onClose();
     } catch (error) {
@@ -1258,78 +1332,132 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
 
           {/* Hypervisor Selection */}
           <div>
-            <label className="block text-xs text-[hsl(var(--text-muted))] mb-2">Hypervisor</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setHypervisor('cloud-hypervisor')}
-                className={`flex items-center gap-2 px-3 py-2 border transition-colors ${
-                  hypervisor === 'cloud-hypervisor'
-                    ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] text-[hsl(var(--cyan))]'
-                    : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--cyan)/0.5)]'
-                }`}
-              >
-                <Cloud className="h-4 w-4" />
-                <span className="text-xs font-medium">Cloud-Hypervisor</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setHypervisor('firecracker')}
-                className={`flex items-center gap-2 px-3 py-2 border transition-colors ${
-                  hypervisor === 'firecracker'
-                    ? 'border-[hsl(var(--purple))] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))]'
-                    : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--purple)/0.5)]'
-                }`}
-              >
-                <Flame className="h-4 w-4" />
-                <span className="text-xs font-medium">Firecracker</span>
-              </button>
-            </div>
+            <label className="block text-xs text-[hsl(var(--text-muted))] mb-2">Backend</label>
+            {availableHypervisors.length === 0 ? (
+              <div className="p-3 text-xs text-[hsl(var(--amber))] bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.2)]">
+                No backends available. Check Settings &rarr; Backends to configure.
+              </div>
+            ) : (
+              <div className={`grid gap-2 ${availableHypervisors.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                {availableHypervisors.includes('cloud-hypervisor') && (
+                  <button
+                    type="button"
+                    onClick={() => setHypervisor('cloud-hypervisor')}
+                    className={`flex items-center gap-2 px-3 py-2 border transition-colors ${
+                      hypervisor === 'cloud-hypervisor'
+                        ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] text-[hsl(var(--cyan))]'
+                        : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--cyan)/0.5)]'
+                    }`}
+                  >
+                    <Cloud className="h-4 w-4" />
+                    <span className="text-xs font-medium">Cloud-Hypervisor</span>
+                  </button>
+                )}
+                {availableHypervisors.includes('firecracker') && (
+                  <button
+                    type="button"
+                    onClick={() => setHypervisor('firecracker')}
+                    className={`flex items-center gap-2 px-3 py-2 border transition-colors ${
+                      hypervisor === 'firecracker'
+                        ? 'border-[hsl(var(--purple))] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))]'
+                        : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--purple)/0.5)]'
+                    }`}
+                  >
+                    <Flame className="h-4 w-4" />
+                    <span className="text-xs font-medium">Firecracker</span>
+                  </button>
+                )}
+                {availableHypervisors.includes('daytona') && (
+                  <button
+                    type="button"
+                    onClick={() => setHypervisor('daytona')}
+                    className={`flex items-center gap-2 px-3 py-2 border transition-colors ${
+                      hypervisor === 'daytona'
+                        ? 'border-[hsl(var(--amber))] bg-[hsl(var(--amber)/0.1)] text-[hsl(var(--amber))]'
+                        : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--amber)/0.5)]'
+                    }`}
+                  >
+                    <Globe className="h-4 w-4" />
+                    <span className="text-xs font-medium">Daytona</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          {/* VM Size - only for local backends */}
+          {isLocalBackend && (
             <div>
-              <label className="block text-xs text-[hsl(var(--text-muted))] mb-1">vCPUs</label>
-              <input
-                type="number"
-                value={vcpus}
-                onChange={e => setVcpus(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
-                min={1}
-                max={32}
-              />
+              <label className="block text-xs text-[hsl(var(--text-muted))] mb-2">Size</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['small', 'medium', 'large'] as const).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => applyPreset(preset)}
+                    className={`flex flex-col items-center px-3 py-2 border transition-colors ${
+                      activePreset === preset
+                        ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] text-[hsl(var(--cyan))]'
+                        : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--cyan)/0.5)]'
+                    }`}
+                  >
+                    <span className="text-xs font-medium">{VM_SIZE_PRESETS[preset].label}</span>
+                    <span className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+                      {VM_SIZE_PRESETS[preset].vcpus} vCPU / {VM_SIZE_PRESETS[preset].memoryMb / 1024} GB
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div>
-              <label className="block text-xs text-[hsl(var(--text-muted))] mb-1">Memory (MB)</label>
-              <input
-                type="number"
-                value={memoryMb}
-                onChange={e => setMemoryMb(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
-                min={512}
-                max={65536}
-                step={256}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-[hsl(var(--text-muted))] mb-1">Disk (GB)</label>
-              <input
-                type="number"
-                value={diskGb}
-                onChange={e => setDiskGb(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
-                min={1}
-                max={1000}
-              />
-            </div>
-          </div>
+          )}
 
-          {/* Volumes Section */}
+          {/* Resource inputs - always visible for local backends */}
+          {isLocalBackend && (
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-[hsl(var(--text-muted))] mb-1">vCPUs</label>
+                <input
+                  type="number"
+                  value={vcpus}
+                  onChange={e => setVcpus(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
+                  min={1}
+                  max={32}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-[hsl(var(--text-muted))] mb-1">Memory (MB)</label>
+                <input
+                  type="number"
+                  value={memoryMb}
+                  onChange={e => setMemoryMb(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
+                  min={512}
+                  max={65536}
+                  step={256}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-[hsl(var(--text-muted))] mb-1">Disk (GB)</label>
+                <input
+                  type="number"
+                  value={diskGb}
+                  onChange={e => setDiskGb(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] focus:outline-none"
+                  min={1}
+                  max={1000}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Volumes Section - only for local backends */}
+          {isLocalBackend && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="flex items-center gap-1.5 text-xs text-[hsl(var(--text-muted))]">
                 <HardDrive className="h-3 w-3" />
-                Volumes
+                Shared Volumes (Optional)
               </label>
               <button
                 type="button"
@@ -1342,8 +1470,8 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
             </div>
 
             {volumes.length === 0 ? (
-              <p className="text-[10px] text-[hsl(var(--text-muted))] italic">
-                No volumes attached. Click "Add" to mount a volume.
+              <p className="text-[10px] text-[hsl(var(--text-muted))]">
+                VM has its own writable disk ({diskGb} GB). Add volumes to share data between VMs.
               </p>
             ) : (
               <div className="space-y-2">
@@ -1388,8 +1516,10 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
               </div>
             )}
           </div>
+          )}
 
-          {/* Port Shortcuts Section */}
+          {/* Port Shortcuts Section - only for local backends */}
+          {isLocalBackend && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="flex items-center gap-1.5 text-xs text-[hsl(var(--text-muted))]">
@@ -1443,6 +1573,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
               Quick access links to services running in the VM
             </p>
           </div>
+          )}
 
           <div className="flex gap-2 pt-4">
             <button
@@ -1454,10 +1585,10 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="submit"
-              disabled={createVm.isPending || !name}
+              disabled={createVm.isPending || !name || !hypervisor || availableHypervisors.length === 0}
               className="flex-1 px-4 py-2 text-sm text-[hsl(var(--cyan))] border border-[hsl(var(--cyan)/0.3)] hover:bg-[hsl(var(--cyan)/0.1)] disabled:opacity-50"
             >
-              {createVm.isPending ? 'Creating...' : 'Create VM'}
+              {createVm.isPending ? 'Creating...' : hypervisor === 'daytona' ? 'Create Workspace' : 'Create VM'}
             </button>
           </div>
         </form>

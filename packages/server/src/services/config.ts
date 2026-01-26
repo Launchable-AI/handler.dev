@@ -6,6 +6,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const CONFIG_FILE = join(PROJECT_ROOT, 'data', 'config.json');
 
+export interface DaytonaConfig {
+  apiUrl: string;      // e.g., https://api.daytona.io
+  apiKey: string;      // User's API key
+  enabled: boolean;
+}
+
+export interface CloudBackendsConfig {
+  daytona?: DaytonaConfig;
+}
+
 export interface AppConfig {
   sshKeysDisplayPath: string; // Path shown in SSH commands (e.g., ~/.ssh)
   sshHost: string; // Host used in SSH commands (empty = localhost)
@@ -13,6 +23,7 @@ export interface AppConfig {
   sshJumpHostKeyPath: string; // Path to SSH key for jump host (e.g., ~/.ssh/jump_key.pem)
   dataDirectory: string; // Base directory for all data (volumes, ssh-keys, etc.)
   defaultDevNodeImage: string; // Default image for dev-node containers
+  cloudBackends?: CloudBackendsConfig; // Cloud backend configurations
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -22,6 +33,7 @@ const DEFAULT_CONFIG: AppConfig = {
   sshJumpHostKeyPath: '', // Empty means use default key
   dataDirectory: join(PROJECT_ROOT, 'data'),
   defaultDevNodeImage: 'ubuntu:24.04',
+  cloudBackends: undefined, // No cloud backends configured by default
 };
 
 export function getProjectRoot(): string {

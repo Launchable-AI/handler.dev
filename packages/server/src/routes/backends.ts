@@ -3,6 +3,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
 import { testConnection } from '../services/docker.js';
+import { getConfig, setConfig } from '../services/config.js';
 import os from 'os';
 
 const execAsync = promisify(exec);
@@ -21,6 +22,7 @@ interface BackendStatus {
   docker: BackendInfo;
   cloudHypervisor: BackendInfo;
   firecracker: BackendInfo;
+  daytona: BackendInfo;
 }
 
 // Helper to check if a binary exists in PATH or common locations
@@ -157,18 +159,68 @@ async function getFirecrackerStatus(): Promise<BackendInfo> {
   return info;
 }
 
+// Check Daytona cloud backend status
+async function getDaytonaStatus(): Promise<BackendInfo> {
+  const info: BackendInfo = {
+    installed: false,
+    enabled: false,
+    running: false,
+  };
+
+  try {
+    const config = await getConfig();
+    const daytona = config.cloudBackends?.daytona;
+
+    // If no API key is configured, it's not installed (from user perspective)
+    if (!daytona?.apiKey) {
+      return info;
+    }
+
+    // API key is configured, so it's "installed"
+    info.installed = true;
+    info.enabled = daytona.enabled ?? false;
+
+    // If enabled, check if API is reachable
+    if (daytona.enabled) {
+      try {
+        const apiUrl = daytona.apiUrl || 'https://api.daytona.io';
+        const response = await fetch(`${apiUrl}/health`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${daytona.apiKey}`,
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        info.running = response.ok;
+        if (!response.ok) {
+          info.error = 'API key invalid or service unavailable';
+        }
+      } catch (err) {
+        info.running = false;
+        info.error = err instanceof Error ? err.message : 'Failed to connect to Daytona API';
+      }
+    }
+  } catch (err) {
+    info.error = err instanceof Error ? err.message : 'Failed to check Daytona status';
+  }
+
+  return info;
+}
+
 // GET /backends/status - Get status of all backends
 backends.get('/status', async (c) => {
-  const [docker, cloudHypervisor, firecracker] = await Promise.all([
+  const [docker, cloudHypervisor, firecracker, daytona] = await Promise.all([
     getDockerStatus(),
     getCloudHypervisorStatus(),
     getFirecrackerStatus(),
+    getDaytonaStatus(),
   ]);
 
   const status: BackendStatus = {
     docker,
     cloudHypervisor,
     firecracker,
+    daytona,
   };
 
   return c.json(status);
@@ -197,6 +249,27 @@ backends.post('/:backend/enable', async (c) => {
       }
       return c.json({ success: false, message: 'KVM not available' }, 400);
 
+    case 'daytona':
+      // Enable Daytona cloud backend
+      try {
+        const config = await getConfig();
+        if (!config.cloudBackends?.daytona?.apiKey) {
+          return c.json({ success: false, message: 'Daytona API key not configured' }, 400);
+        }
+        await setConfig({
+          cloudBackends: {
+            ...config.cloudBackends,
+            daytona: {
+              ...config.cloudBackends.daytona,
+              enabled: true,
+            },
+          },
+        });
+        return c.json({ success: true, message: 'Daytona backend enabled' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to enable Daytona' }, 500);
+      }
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
   }
@@ -219,6 +292,26 @@ backends.post('/:backend/disable', async (c) => {
     case 'firecracker':
       // Can't really "disable" these - they're just binaries
       return c.json({ success: true, message: `${backend} doesn't require disabling` });
+
+    case 'daytona':
+      // Disable Daytona cloud backend
+      try {
+        const config = await getConfig();
+        if (config.cloudBackends?.daytona) {
+          await setConfig({
+            cloudBackends: {
+              ...config.cloudBackends,
+              daytona: {
+                ...config.cloudBackends.daytona,
+                enabled: false,
+              },
+            },
+          });
+        }
+        return c.json({ success: true, message: 'Daytona backend disabled' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to disable Daytona' }, 500);
+      }
 
     default:
       return c.json({ error: 'Unknown backend' }, 404);
@@ -282,6 +375,13 @@ backends.post('/:backend/install', async (c) => {
         return c.json({ success: false, message: 'Failed to install Firecracker' }, 500);
       }
 
+    case 'daytona':
+      // Daytona is a cloud service - "install" means configure it
+      return c.json({
+        success: false,
+        message: 'Daytona is a cloud service. Configure it via the Cloud Backends settings.',
+      }, 400);
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
   }
@@ -317,8 +417,126 @@ backends.post('/:backend/uninstall', async (c) => {
         return c.json({ success: false, message: 'Failed to uninstall Firecracker' }, 500);
       }
 
+    case 'daytona':
+      // Remove Daytona configuration
+      try {
+        const config = await getConfig();
+        await setConfig({
+          cloudBackends: {
+            ...config.cloudBackends,
+            daytona: undefined,
+          },
+        });
+        return c.json({ success: true, message: 'Daytona configuration removed' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to remove Daytona configuration' }, 500);
+      }
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
+  }
+});
+
+// ============ Cloud Backends ============
+
+// POST /backends/daytona/configure - Configure Daytona cloud backend
+backends.post('/daytona/configure', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { apiUrl, apiKey, enabled } = body as {
+      apiUrl?: string;
+      apiKey?: string;
+      enabled?: boolean;
+    };
+
+    const config = await getConfig();
+    const currentDaytona = config.cloudBackends?.daytona || {
+      apiUrl: 'https://api.daytona.io',
+      apiKey: '',
+      enabled: false,
+    };
+
+    const newDaytona = {
+      apiUrl: apiUrl ?? currentDaytona.apiUrl,
+      apiKey: apiKey ?? currentDaytona.apiKey,
+      enabled: enabled ?? currentDaytona.enabled,
+    };
+
+    await setConfig({
+      cloudBackends: {
+        ...config.cloudBackends,
+        daytona: newDaytona,
+      },
+    });
+
+    return c.json({ success: true, daytona: { ...newDaytona, apiKey: '***' } });
+  } catch (err) {
+    return c.json({ success: false, error: String(err) }, 500);
+  }
+});
+
+// POST /backends/daytona/test - Test Daytona API connection
+backends.post('/daytona/test', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { apiUrl, apiKey } = body as { apiUrl?: string; apiKey?: string };
+
+    const config = await getConfig();
+    const testApiUrl = apiUrl || config.cloudBackends?.daytona?.apiUrl || 'https://api.daytona.io';
+    const testApiKey = apiKey || config.cloudBackends?.daytona?.apiKey;
+
+    if (!testApiKey) {
+      return c.json({ success: false, error: 'API key is required' }, 400);
+    }
+
+    // Test the API connection
+    const response = await fetch(`${testApiUrl}/health`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${testApiKey}`,
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (response.ok) {
+      return c.json({ success: true, message: 'Connection successful' });
+    } else {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      return c.json({
+        success: false,
+        error: `API returned ${response.status}: ${errorText}`,
+      });
+    }
+  } catch (err) {
+    return c.json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Connection failed',
+    }, 500);
+  }
+});
+
+// GET /backends/daytona/config - Get Daytona configuration (without API key)
+backends.get('/daytona/config', async (c) => {
+  try {
+    const config = await getConfig();
+    const daytona = config.cloudBackends?.daytona;
+
+    if (!daytona) {
+      return c.json({
+        configured: false,
+        apiUrl: 'https://api.daytona.io',
+        enabled: false,
+      });
+    }
+
+    return c.json({
+      configured: !!daytona.apiKey,
+      apiUrl: daytona.apiUrl,
+      enabled: daytona.enabled,
+      hasApiKey: !!daytona.apiKey,
+    });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
   }
 });
 

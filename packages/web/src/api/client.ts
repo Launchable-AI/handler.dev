@@ -413,6 +413,16 @@ export async function checkHealth(): Promise<{ status: string; docker: string }>
 }
 
 // Config
+export interface DaytonaConfig {
+  apiUrl: string;
+  apiKey: string;
+  enabled: boolean;
+}
+
+export interface CloudBackendsConfig {
+  daytona?: DaytonaConfig;
+}
+
 export interface AppConfig {
   sshKeysDisplayPath: string;
   sshHost: string;
@@ -420,6 +430,7 @@ export interface AppConfig {
   sshJumpHostKeyPath: string; // Path to SSH key for jump host (e.g., ~/.ssh/jump_key.pem)
   dataDirectory: string;
   defaultDevNodeImage: string;
+  cloudBackends?: CloudBackendsConfig;
 }
 
 export async function getConfig(): Promise<AppConfig> {
@@ -1267,10 +1278,10 @@ export interface VmInfo {
   createdAt: string;
   startedAt?: string;
   error?: string;
-  hypervisor?: 'cloud-hypervisor' | 'firecracker';
+  hypervisor?: HypervisorType;
 }
 
-export type HypervisorType = 'cloud-hypervisor' | 'firecracker';
+export type HypervisorType = 'cloud-hypervisor' | 'firecracker' | 'daytona';
 
 export interface CreateVmRequest {
   name: string;
@@ -1531,6 +1542,7 @@ export interface BackendStatus {
   docker: BackendInfo;
   cloudHypervisor: BackendInfo;
   firecracker: BackendInfo;
+  daytona: BackendInfo;
 }
 
 export async function getBackendStatus(): Promise<BackendStatus> {
@@ -1542,6 +1554,39 @@ export async function performBackendAction(
   action: 'enable' | 'disable' | 'install' | 'uninstall'
 ): Promise<{ success: boolean; message: string }> {
   return fetchAPI(`/backends/${backend}/${action}`, { method: 'POST' });
+}
+
+// Cloud Backend Configuration
+export interface DaytonaConfigResponse {
+  configured: boolean;
+  apiUrl: string;
+  enabled: boolean;
+  hasApiKey?: boolean;
+}
+
+export async function getDaytonaConfig(): Promise<DaytonaConfigResponse> {
+  return fetchAPI('/backends/daytona/config');
+}
+
+export async function configureDaytona(config: {
+  apiUrl?: string;
+  apiKey?: string;
+  enabled?: boolean;
+}): Promise<{ success: boolean; daytona?: { apiUrl: string; enabled: boolean } }> {
+  return fetchAPI('/backends/daytona/configure', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function testDaytonaConnection(config?: {
+  apiUrl?: string;
+  apiKey?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/daytona/test', {
+    method: 'POST',
+    body: JSON.stringify(config || {}),
+  });
 }
 
 // Host Stats

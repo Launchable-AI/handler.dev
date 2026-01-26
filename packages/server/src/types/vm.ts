@@ -8,7 +8,7 @@ export type VmStatus = 'creating' | 'booting' | 'running' | 'paused' | 'stopped'
 
 export type NetworkMode = 'tap' | 'bridge' | 'user' | 'none';
 
-export type HypervisorType = 'cloud-hypervisor' | 'firecracker';
+export type HypervisorType = 'cloud-hypervisor' | 'firecracker' | 'daytona';
 
 export interface PortMapping {
   container: number;
@@ -203,7 +203,7 @@ export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = {
 export const CreateVmSchema = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/,
     'VM name must start with alphanumeric and contain only alphanumeric, underscore, period, or hyphen'),
-  hypervisor: z.enum(['cloud-hypervisor', 'firecracker']).optional(),
+  hypervisor: z.enum(['cloud-hypervisor', 'firecracker', 'daytona']).optional(),
   baseImage: z.string().optional(),
   // Launch from an existing snapshot (provides instant boot with pre-configured environment)
   fromSnapshot: z.object({

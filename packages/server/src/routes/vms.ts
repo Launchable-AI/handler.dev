@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import { getCloudHypervisorService, initializeCloudHypervisorService } from '../services/hypervisor.js';
 import { getFirecrackerService, initializeFirecrackerService } from '../services/firecracker.js';
+import { getDaytonaService, initializeDaytonaService } from '../services/daytona.js';
 import { CreateVmSchema, HypervisorType } from '../types/vm.js';
 
 const vms = new Hono();
@@ -13,6 +14,7 @@ const vms = new Hono();
 // Initialize hypervisor services
 let cloudHypervisorInitialized = false;
 let firecrackerInitialized = false;
+let daytonaInitialized = false;
 
 async function ensureCloudHypervisorInitialized() {
   if (!cloudHypervisorInitialized) {
@@ -30,6 +32,19 @@ async function ensureFirecrackerInitialized() {
   return getFirecrackerService();
 }
 
+async function ensureDaytonaInitialized() {
+  if (!daytonaInitialized) {
+    try {
+      await initializeDaytonaService();
+      daytonaInitialized = true;
+    } catch {
+      // Daytona may not be configured, that's OK
+      return null;
+    }
+  }
+  return getDaytonaService();
+}
+
 /**
  * Get the appropriate hypervisor service based on type
  */
@@ -37,10 +52,17 @@ async function getService(hypervisorType: HypervisorType = 'cloud-hypervisor') {
   if (hypervisorType === 'firecracker') {
     return ensureFirecrackerInitialized();
   }
+  if (hypervisorType === 'daytona') {
+    const daytona = await ensureDaytonaInitialized();
+    if (!daytona) {
+      throw new Error('Daytona backend is not configured');
+    }
+    return daytona;
+  }
   return ensureCloudHypervisorInitialized();
 }
 
-// List all VMs (from both hypervisors)
+// List all VMs (from all backends)
 vms.get('/', async (c) => {
   try {
     const hypervisor = await ensureCloudHypervisorInitialized();
@@ -55,7 +77,18 @@ vms.get('/', async (c) => {
       // Firecracker not available, that's OK
     }
 
-    return c.json([...cloudHypervisorVms, ...firecrackerVms]);
+    // Try to get Daytona workspaces (may fail if not configured)
+    let daytonaVms: typeof cloudHypervisorVms = [];
+    try {
+      const daytona = await ensureDaytonaInitialized();
+      if (daytona && await daytona.isAvailable()) {
+        daytonaVms = await daytona.listVms();
+      }
+    } catch {
+      // Daytona not available, that's OK
+    }
+
+    return c.json([...cloudHypervisorVms, ...firecrackerVms, ...daytonaVms]);
   } catch (error) {
     console.error('[VMs API] Failed to list VMs:', error);
     return c.json({ error: String(error) }, 500);
@@ -268,6 +301,21 @@ vms.post('/', async (c) => {
     const config = parseResult.data;
     const hypervisorType = config.hypervisor || 'cloud-hypervisor';
 
+    // Handle Daytona backend separately
+    if (hypervisorType === 'daytona') {
+      const daytona = await ensureDaytonaInitialized();
+      if (!daytona) {
+        return c.json({ error: 'Daytona backend is not configured' }, 400);
+      }
+
+      const vm = await daytona.createVm({
+        name: config.name,
+        repository: config.baseImage, // For Daytona, baseImage is the git repo URL
+      });
+
+      return c.json(vm, 201);
+    }
+
     // Get the appropriate service based on hypervisor type
     const service = await getService(hypervisorType);
 
@@ -291,12 +339,25 @@ vms.post('/', async (c) => {
   }
 });
 
-// Get a specific VM (checks both hypervisors)
+// Get a specific VM (checks all backends)
 vms.get('/:id', async (c) => {
   try {
     const id = c.req.param('id');
 
-    // Check cloud-hypervisor first
+    // Check Daytona first if ID has daytona prefix
+    if (id.startsWith('daytona-')) {
+      try {
+        const daytona = await ensureDaytonaInitialized();
+        if (daytona) {
+          const vm = await daytona.getVm(id);
+          if (vm) return c.json(vm);
+        }
+      } catch {
+        // Daytona not available
+      }
+    }
+
+    // Check cloud-hypervisor
     const hypervisor = await ensureCloudHypervisorInitialized();
     let vm = hypervisor.getVm(id);
 
@@ -357,6 +418,19 @@ vms.get('/:id/ssh', async (c) => {
   try {
     const id = c.req.param('id');
 
+    // Daytona workspaces have 'daytona-' prefix
+    if (id.startsWith('daytona-')) {
+      const daytona = await ensureDaytonaInitialized();
+      if (!daytona) {
+        return c.json({ error: 'Daytona backend is not configured' }, 400);
+      }
+      const sshInfo = await daytona.getSshInfo(id);
+      if (!sshInfo) {
+        return c.json({ error: `Workspace ${id} not found` }, 404);
+      }
+      return c.json(sshInfo);
+    }
+
     // Firecracker VMs have 'fc-' prefix
     if (id.startsWith('fc-')) {
       const firecracker = await ensureFirecrackerInitialized();
@@ -385,6 +459,16 @@ vms.post('/:id/start', async (c) => {
   try {
     const id = c.req.param('id');
 
+    // Daytona workspaces have 'daytona-' prefix
+    if (id.startsWith('daytona-')) {
+      const daytona = await ensureDaytonaInitialized();
+      if (!daytona) {
+        return c.json({ error: 'Daytona backend is not configured' }, 400);
+      }
+      const vm = await daytona.startVm(id);
+      return c.json(vm);
+    }
+
     // Firecracker VMs have 'fc-' prefix
     if (id.startsWith('fc-')) {
       const firecracker = await ensureFirecrackerInitialized();
@@ -405,6 +489,16 @@ vms.post('/:id/start', async (c) => {
 vms.post('/:id/stop', async (c) => {
   try {
     const id = c.req.param('id');
+
+    // Daytona workspaces have 'daytona-' prefix
+    if (id.startsWith('daytona-')) {
+      const daytona = await ensureDaytonaInitialized();
+      if (!daytona) {
+        return c.json({ error: 'Daytona backend is not configured' }, 400);
+      }
+      const vm = await daytona.stopVm(id);
+      return c.json(vm);
+    }
 
     // Firecracker VMs have 'fc-' prefix
     if (id.startsWith('fc-')) {
@@ -449,6 +543,16 @@ vms.post('/:id/pause', async (c) => {
 vms.delete('/:id', async (c) => {
   try {
     const id = c.req.param('id');
+
+    // Daytona workspaces have 'daytona-' prefix
+    if (id.startsWith('daytona-')) {
+      const daytona = await ensureDaytonaInitialized();
+      if (!daytona) {
+        return c.json({ error: 'Daytona backend is not configured' }, 400);
+      }
+      await daytona.deleteVm(id);
+      return c.json({ success: true, message: `Workspace ${id} deleted` });
+    }
 
     // Firecracker VMs have 'fc-' prefix
     if (id.startsWith('fc-')) {
