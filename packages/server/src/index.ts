@@ -10,12 +10,14 @@ import {
   writeToSession,
   resizeSession,
   closeSessionByWebSocket,
+  closeAllSessions,
 } from './services/terminal.js';
 import {
   createVmTerminalSession,
   writeToVmSession,
   resizeVmSession,
   closeVmSessionByWebSocket,
+  closeAllVmSessions,
 } from './services/vm-terminal.js';
 import containers from './routes/containers.js';
 import images from './routes/images.js';
@@ -258,7 +260,7 @@ async function main() {
   });
 
   // Setup WebSocket server
-  setupWebSocketServer(server);
+  const wss = setupWebSocketServer(server);
 
   server.listen(port, () => {
     console.log(`\n🚀 Caisson API`);
@@ -266,6 +268,51 @@ async function main() {
     console.log(`   WebSocket: ws://localhost:${port}/ws/terminal`);
     console.log(`   API docs: http://localhost:${port}/api/health\n`);
   });
+
+  // Graceful shutdown handler
+  const shutdown = (signal: string) => {
+    console.log(`\n📤 Received ${signal}, shutting down gracefully...`);
+
+    // Close all terminal sessions (kills SSH/docker exec processes)
+    closeAllSessions();
+    closeAllVmSessions();
+
+    // Close all WebSocket connections
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.close(1001, 'Server shutting down');
+      }
+    });
+
+    // Close WebSocket server
+    wss.close((err) => {
+      if (err) {
+        console.error('Error closing WebSocket server:', err);
+      } else {
+        console.log('   WebSocket server closed');
+      }
+    });
+
+    // Close HTTP server
+    server.close((err) => {
+      if (err) {
+        console.error('Error closing HTTP server:', err);
+        process.exit(1);
+      }
+      console.log('   HTTP server closed');
+      console.log('👋 Goodbye!\n');
+      process.exit(0);
+    });
+
+    // Force exit after timeout if graceful shutdown fails
+    setTimeout(() => {
+      console.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 5000);
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 main().catch(console.error);

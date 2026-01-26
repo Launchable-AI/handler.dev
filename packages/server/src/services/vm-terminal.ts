@@ -156,3 +156,13 @@ export function closeVmSessionByWebSocket(ws: WebSocket): void {
 export function getActiveVmSessionCount(): number {
   return sessions.size;
 }
+
+export function closeAllVmSessions(): void {
+  console.log(`[VM Terminal] Closing ${sessions.size} active session(s)...`);
+  for (const [id, session] of sessions.entries()) {
+    if (!session.process.killed) {
+      session.process.kill();
+    }
+    sessions.delete(id);
+  }
+}

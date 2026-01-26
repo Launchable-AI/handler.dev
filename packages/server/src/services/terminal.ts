@@ -142,3 +142,13 @@ export function closeSessionByWebSocket(ws: WebSocket): void {
 export function getActiveSessionCount(): number {
   return sessions.size;
 }
+
+export function closeAllSessions(): void {
+  console.log(`[Terminal] Closing ${sessions.size} active session(s)...`);
+  for (const [id, session] of sessions.entries()) {
+    if (!session.process.killed) {
+      session.process.kill();
+    }
+    sessions.delete(id);
+  }
+}
