@@ -1,10 +1,47 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { createServer } from 'http';
+import { createServer, Server } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { testConnection } from './services/docker.js';
 import { getCloudHypervisorService } from './services/hypervisor.js';
+
+const execAsync = promisify(exec);
+
+/**
+ * Find and kill any process using the specified port
+ */
+async function killProcessOnPort(port: number): Promise<boolean> {
+  try {
+    // Find process using the port
+    const { stdout } = await execAsync(`lsof -ti :${port} 2>/dev/null || true`);
+    const pids = stdout.trim().split('\n').filter(Boolean);
+
+    if (pids.length === 0) {
+      return false;
+    }
+
+    console.log(`Found ${pids.length} process(es) using port ${port}: ${pids.join(', ')}`);
+
+    // Kill each process
+    for (const pid of pids) {
+      try {
+        await execAsync(`kill -9 ${pid}`);
+        console.log(`   Killed process ${pid}`);
+      } catch {
+        // Process may have already exited
+      }
+    }
+
+    // Wait a moment for the port to be released
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return true;
+  } catch {
+    return false;
+  }
+}
 import {
   createTerminalSession,
   writeToSession,
@@ -262,12 +299,40 @@ async function main() {
   // Setup WebSocket server
   const wss = setupWebSocketServer(server);
 
-  server.listen(port, () => {
-    console.log(`\n🚀 Caisson API`);
-    console.log(`   Running on http://localhost:${port}`);
-    console.log(`   WebSocket: ws://localhost:${port}/ws/terminal`);
-    console.log(`   API docs: http://localhost:${port}/api/health\n`);
+  // Function to start listening with retry on EADDRINUSE
+  const startListening = (retryCount = 0): void => {
+    server.listen(port, () => {
+      console.log(`\n🚀 Caisson API`);
+      console.log(`   Running on http://localhost:${port}`);
+      console.log(`   WebSocket: ws://localhost:${port}/ws/terminal`);
+      console.log(`   API docs: http://localhost:${port}/api/health\n`);
+    });
+  };
+
+  // Handle server errors (including EADDRINUSE)
+  server.on('error', async (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`\n⚠️  Port ${port} is already in use.`);
+      console.log('   Attempting to kill the existing process...');
+
+      const killed = await killProcessOnPort(port);
+      if (killed) {
+        console.log('   Retrying to start server...\n');
+        // Small delay before retry
+        setTimeout(() => startListening(1), 100);
+      } else {
+        console.error(`\n❌ Could not free port ${port}.`);
+        console.error('   Please manually kill the process using:');
+        console.error(`   lsof -ti :${port} | xargs kill -9\n`);
+        process.exit(1);
+      }
+    } else {
+      console.error('Server error:', err);
+      process.exit(1);
+    }
   });
+
+  startListening();
 
   // Graceful shutdown handler
   const shutdown = (signal: string) => {
