@@ -1325,7 +1325,7 @@ export class FirecrackerService extends EventEmitter {
         host,
         port,
         user,
-        command: `ssh -i ${privateKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${user}@${host}`,
+        command: `ssh -i ${privateKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${user}@${host}`,
       };
     }
 
@@ -1335,7 +1335,7 @@ export class FirecrackerService extends EventEmitter {
       host,
       port,
       user,
-      command: `ssh -i ${privateKeyPath} -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${user}@${host}`,
+      command: `ssh -i ${privateKeyPath} -p ${port} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${user}@${host}`,
     };
   }
 

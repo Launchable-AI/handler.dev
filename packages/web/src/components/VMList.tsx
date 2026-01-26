@@ -33,18 +33,8 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
   const isBooting = vm.status === 'booting' || vm.status === 'creating';
   const hasError = vm.status === 'error';
 
-  // Generate SSH command (local mode for simplicity in compact view)
-  const sshCommand = useMemo(() => {
-    if (!isRunning || (!vm.sshPort && !vm.guestIp)) return null;
-    const sshKeysPath = config?.sshKeysDisplayPath || '~/.ssh';
-    const user = vm.sshUser || 'agent';
-    const host = vm.guestIp || 'localhost';
-    const port = vm.networkMode === 'tap' ? 22 : vm.sshPort;
-    let cmd = `ssh -o StrictHostKeyChecking=no -i ${sshKeysPath}/vm_id_ed25519`;
-    if (port !== 22) cmd += ` -p ${port}`;
-    cmd += ` ${user}@${host}`;
-    return cmd;
-  }, [vm, config, isRunning]);
+  // Use SSH command from server
+  const sshCommand = isRunning ? vm.sshCommand : null;
 
   const copySshCommand = async () => {
     if (!sshCommand) return;
@@ -372,17 +362,10 @@ function VMListView({ vms }: { vms: VmInfo[] }) {
   const [showLogsFor, setShowLogsFor] = useState<string | null>(null);
   const [copiedVmId, setCopiedVmId] = useState<string | null>(null);
 
-  // Generate SSH command for a VM
+  // Get SSH command from VM (provided by server)
   const getSshCommand = (vm: VmInfo) => {
-    if (vm.status !== 'running' || (!vm.sshPort && !vm.guestIp)) return null;
-    const sshKeysPath = config?.sshKeysDisplayPath || '~/.ssh';
-    const user = vm.sshUser || 'agent';
-    const host = vm.guestIp || 'localhost';
-    const port = vm.networkMode === 'tap' ? 22 : vm.sshPort;
-    let cmd = `ssh -o StrictHostKeyChecking=no -i ${sshKeysPath}/vm_id_ed25519`;
-    if (port !== 22) cmd += ` -p ${port}`;
-    cmd += ` ${user}@${host}`;
-    return cmd;
+    if (vm.status !== 'running') return null;
+    return vm.sshCommand || null;
   };
 
   const copySshCommand = async (vm: VmInfo) => {
@@ -601,43 +584,26 @@ function VMCard({ vm }: { vm: VmInfo }) {
   const hasJumpHost = !!(config?.sshJumpHost && config?.sshJumpHostKeyPath);
   const isTapMode = vm.networkMode === 'tap' && vm.guestIp;
 
-  // Generate SSH command with configurable host, key path, and jump host
+  // Generate SSH command - use server-provided command for local, construct for remote with jump host
   const sshCommand = useMemo(() => {
-    if (!vm.sshPort && !vm.guestIp) return null;
-
-    const sshKeysPath = config?.sshKeysDisplayPath || '~/.ssh';
-    const jumpHost = config?.sshJumpHost || '';
-    const jumpHostKeyPath = config?.sshJumpHostKeyPath || '';
-    const user = vm.sshUser || 'agent';
-
-    // Local mode: direct connection (from the host machine)
+    // Local mode: use server-provided SSH command
     if (connectionMode === 'local') {
-      const host = vm.guestIp || 'localhost';
-      const port = isTapMode ? 22 : vm.sshPort;
-      let cmd = `ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ${sshKeysPath}/vm_id_ed25519`;
-      if (port !== 22) {
-        cmd += ` -p ${port}`;
-      }
-      cmd += ` ${user}@${host}`;
-      return cmd;
+      return vm.sshCommand || null;
     }
 
     // Remote mode: use ProxyCommand through jump host
-    if (isTapMode && jumpHost && jumpHostKeyPath) {
-      const host = vm.guestIp;
+    const jumpHost = config?.sshJumpHost || '';
+    const jumpHostKeyPath = config?.sshJumpHostKeyPath || '';
+
+    if (isTapMode && jumpHost && jumpHostKeyPath && vm.guestIp) {
+      const user = vm.sshUser || 'agent';
       // Use ProxyCommand format for proper key handling on both hops
-      return `ssh -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ${jumpHostKeyPath} -W %h:%p ${jumpHost}" -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ${sshKeysPath}/vm_id_ed25519 ${user}@${host}`;
+      // Note: This assumes the same SSH key is synced to the jump host
+      return `ssh -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ${jumpHostKeyPath} -W %h:%p ${jumpHost}" -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ~/.local/share/caisson/ssh-keys/id_ed25519 ${user}@${vm.guestIp}`;
     }
 
-    // Fallback: no jump host configured, use direct connection
-    const host = config?.sshHost || vm.guestIp || 'localhost';
-    const port = isTapMode ? 22 : vm.sshPort;
-    let cmd = `ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ${sshKeysPath}/vm_id_ed25519`;
-    if (port !== 22) {
-      cmd += ` -p ${port}`;
-    }
-    cmd += ` ${user}@${host}`;
-    return cmd;
+    // Fallback: use server-provided command
+    return vm.sshCommand || null;
   }, [vm, config, connectionMode, isTapMode]);
 
   const statusColors: Record<string, string> = {
