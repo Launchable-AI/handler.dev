@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Camera, Trash2, Loader2, AlertTriangle, Server } from 'lucide-react';
-import { useAllVmSnapshots, useDeleteVmSnapshot } from '../hooks/useContainers';
+import { Camera, Trash2, Loader2, AlertTriangle, Server, Play } from 'lucide-react';
+import { useAllVmSnapshots, useDeleteVmSnapshot, useCreateVm } from '../hooks/useContainers';
 import { VmSnapshotWithVmInfo } from '../api/client';
 import { useConfirm } from './ConfirmModal';
 
@@ -15,7 +15,13 @@ function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleString();
 }
 
-function SnapshotCard({ snapshot }: { snapshot: VmSnapshotWithVmInfo }) {
+interface SnapshotCardProps {
+  snapshot: VmSnapshotWithVmInfo;
+  onLaunch: (snapshot: VmSnapshotWithVmInfo) => void;
+  isLaunching?: boolean;
+}
+
+function SnapshotCard({ snapshot, onLaunch, isLaunching }: SnapshotCardProps) {
   const deleteSnapshot = useDeleteVmSnapshot();
   const confirm = useConfirm();
 
@@ -61,10 +67,23 @@ function SnapshotCard({ snapshot }: { snapshot: VmSnapshotWithVmInfo }) {
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-2 border-t border-[hsl(var(--border))]">
+        <button
+          onClick={() => onLaunch(snapshot)}
+          disabled={isLaunching}
+          className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
+          title="Launch new VM from this snapshot"
+        >
+          {isLaunching ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Play className="h-3 w-3" />
+          )}
+          {isLaunching ? 'Launching...' : 'Launch'}
+        </button>
         <div className="flex-1" />
         <button
           onClick={handleDelete}
-          disabled={deleteSnapshot.isPending}
+          disabled={deleteSnapshot.isPending || isLaunching}
           className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.3)] disabled:opacity-50"
           title="Delete snapshot"
         >
@@ -82,7 +101,9 @@ function SnapshotCard({ snapshot }: { snapshot: VmSnapshotWithVmInfo }) {
 
 export function VMSnapshots() {
   const { data: snapshots, isLoading, error } = useAllVmSnapshots();
+  const createVm = useCreateVm();
   const [filterVm, setFilterVm] = useState<string>('all');
+  const [launchingSnapshot, setLaunchingSnapshot] = useState<string | null>(null);
 
   // Get unique VM names for filter
   const vmNames = [...new Set(snapshots?.map(s => s.vmName) || [])];
@@ -91,6 +112,31 @@ export function VMSnapshots() {
   const filteredSnapshots = filterVm === 'all'
     ? snapshots
     : snapshots?.filter(s => s.vmName === filterVm);
+
+  // Generate a unique VM name based on snapshot
+  const generateVmName = (snapshotName: string) => {
+    const baseName = snapshotName.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase().slice(0, 20);
+    return `${baseName}-${Date.now().toString(36)}`;
+  };
+
+  // Launch a new VM from snapshot
+  const handleLaunchFromSnapshot = async (snapshot: VmSnapshotWithVmInfo) => {
+    setLaunchingSnapshot(snapshot.id);
+    try {
+      await createVm.mutateAsync({
+        name: generateVmName(snapshot.name || snapshot.vmName),
+        fromSnapshot: {
+          vmId: snapshot.vmId,
+          snapshotId: snapshot.id,
+        },
+        autoStart: true,
+      });
+    } catch (error) {
+      console.error('Failed to launch from snapshot:', error);
+    } finally {
+      setLaunchingSnapshot(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -137,7 +183,12 @@ export function VMSnapshots() {
       {filteredSnapshots && filteredSnapshots.length > 0 ? (
         <div className="flex-1 overflow-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 content-start">
           {filteredSnapshots.map(snapshot => (
-            <SnapshotCard key={`${snapshot.vmId}-${snapshot.id}`} snapshot={snapshot} />
+            <SnapshotCard
+              key={`${snapshot.vmId}-${snapshot.id}`}
+              snapshot={snapshot}
+              onLaunch={handleLaunchFromSnapshot}
+              isLaunching={launchingSnapshot === snapshot.id}
+            />
           ))}
         </div>
       ) : (

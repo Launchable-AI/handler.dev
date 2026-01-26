@@ -198,12 +198,37 @@ vms.post('/base-images/download', async (c) => {
   }
 });
 
-// List all snapshots from all VMs
+// List all snapshots from all VMs (both hypervisors)
 vms.get('/snapshots', async (c) => {
   try {
-    const hypervisor = await ensureCloudHypervisorInitialized();
-    const snapshots = hypervisor.listAllSnapshots();
-    return c.json(snapshots);
+    const allSnapshots = [];
+
+    // Get cloud-hypervisor snapshots
+    try {
+      const hypervisor = await ensureCloudHypervisorInitialized();
+      const chSnapshots = hypervisor.listAllSnapshots();
+      allSnapshots.push(...chSnapshots);
+    } catch {
+      // Cloud-hypervisor may not be available
+    }
+
+    // Get Firecracker snapshots
+    try {
+      const firecracker = await ensureFirecrackerInitialized();
+      // Firecracker doesn't have listAllSnapshots, so iterate over VMs
+      const vms = firecracker.listVms();
+      for (const vm of vms) {
+        const snapshots = firecracker.listVmSnapshots(vm.id);
+        allSnapshots.push(...snapshots.map(s => ({
+          ...s,
+          vmName: vm.name,
+        })));
+      }
+    } catch {
+      // Firecracker may not be available
+    }
+
+    return c.json(allSnapshots);
   } catch (error) {
     console.error('[VMs API] Failed to list all snapshots:', error);
     return c.json({ error: String(error) }, 500);
@@ -299,7 +324,19 @@ vms.post('/', async (c) => {
     }
 
     const config = parseResult.data;
-    const hypervisorType = config.hypervisor || 'cloud-hypervisor';
+
+    // Auto-detect hypervisor type from snapshot if creating from snapshot
+    let hypervisorType: HypervisorType = config.hypervisor || 'cloud-hypervisor';
+    if (config.fromSnapshot?.vmId) {
+      // Infer hypervisor type from the source VM's ID prefix
+      if (config.fromSnapshot.vmId.startsWith('fc-')) {
+        hypervisorType = 'firecracker';
+      } else if (config.fromSnapshot.vmId.startsWith('daytona-')) {
+        hypervisorType = 'daytona';
+      } else {
+        hypervisorType = 'cloud-hypervisor';
+      }
+    }
 
     // Handle Daytona backend separately
     if (hypervisorType === 'daytona') {
@@ -600,9 +637,17 @@ vms.patch('/:id/ports', async (c) => {
 // List snapshots for a VM
 vms.get('/:id/snapshots', async (c) => {
   try {
-    const hypervisor = await ensureCloudHypervisorInitialized();
     const id = c.req.param('id');
 
+    // Route to Firecracker if ID has fc- prefix
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      const snapshots = firecracker.listVmSnapshots(id);
+      return c.json(snapshots);
+    }
+
+    // Otherwise use cloud-hypervisor
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const snapshots = hypervisor.listVmSnapshots(id);
     return c.json(snapshots);
   } catch (error) {
@@ -614,11 +659,19 @@ vms.get('/:id/snapshots', async (c) => {
 // Create a snapshot of a VM
 vms.post('/:id/snapshots', async (c) => {
   try {
-    const hypervisor = await ensureCloudHypervisorInitialized();
     const id = c.req.param('id');
     const body = await c.req.json();
     const name = body.name || `Snapshot ${new Date().toLocaleString()}`;
 
+    // Route to Firecracker if ID has fc- prefix
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      const snapshot = await firecracker.createSnapshot(id, name);
+      return c.json(snapshot, 201);
+    }
+
+    // Otherwise use cloud-hypervisor
+    const hypervisor = await ensureCloudHypervisorInitialized();
     const snapshot = await hypervisor.createUserVmSnapshot(id, name);
     return c.json(snapshot, 201);
   } catch (error) {
@@ -630,10 +683,18 @@ vms.post('/:id/snapshots', async (c) => {
 // Delete a snapshot
 vms.delete('/:id/snapshots/:snapshotId', async (c) => {
   try {
-    const hypervisor = await ensureCloudHypervisorInitialized();
     const id = c.req.param('id');
     const snapshotId = c.req.param('snapshotId');
 
+    // Route to Firecracker if ID has fc- prefix
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      firecracker.deleteVmSnapshot(id, snapshotId);
+      return c.json({ success: true });
+    }
+
+    // Otherwise use cloud-hypervisor
+    const hypervisor = await ensureCloudHypervisorInitialized();
     hypervisor.deleteVmSnapshot(id, snapshotId);
     return c.json({ success: true });
   } catch (error) {

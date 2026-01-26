@@ -191,8 +191,8 @@ function TerminalPanelUI({
     : 'fixed top-0 right-0 bottom-0 border-l';
 
   const resizeHandleClasses = position === 'bottom'
-    ? 'absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-[hsl(var(--cyan)/0.3)] transition-colors flex items-center justify-center'
-    : 'absolute top-0 left-0 bottom-0 w-1 cursor-ew-resize hover:bg-[hsl(var(--cyan)/0.3)] transition-colors flex items-center justify-center';
+    ? 'absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-[hsl(var(--cyan)/0.3)] transition-colors flex items-center justify-center'
+    : 'absolute top-0 left-0 bottom-0 w-2 cursor-ew-resize hover:bg-[hsl(var(--cyan)/0.3)] transition-colors flex items-center justify-center';
 
   return (
     <div

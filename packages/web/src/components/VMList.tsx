@@ -565,6 +565,7 @@ function VMCard({ vm }: { vm: VmInfo }) {
   const startVm = useStartVm();
   const stopVm = useStopVm();
   const deleteVm = useDeleteVm();
+  const createVm = useCreateVm();
   const updatePorts = useUpdateVmPorts();
   const confirm = useConfirm();
   const { data: config } = useConfig();
@@ -578,6 +579,7 @@ function VMCard({ vm }: { vm: VmInfo }) {
   const [snapshotName, setSnapshotName] = useState('');
   const [editingPorts, setEditingPorts] = useState(false);
   const [editPorts, setEditPorts] = useState<Array<{ container: number; host: number }>>([]);
+  const [launchingSnapshot, setLaunchingSnapshot] = useState<string | null>(null);
 
   // Snapshot hooks
   const { data: snapshots, isLoading: snapshotsLoading } = useVmSnapshots(vm.id);
@@ -664,6 +666,28 @@ function VMCard({ vm }: { vm: VmInfo }) {
 
     if (confirmed) {
       deleteSnapshot.mutate({ vmId: vm.id, snapshotId: snapshot.id });
+    }
+  };
+
+  const handleLaunchFromSnapshot = async (snapshot: VmSnapshotInfo) => {
+    setLaunchingSnapshot(snapshot.id);
+    try {
+      // Generate a unique name based on snapshot name or VM name
+      const baseName = (snapshot.name || vm.name).replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase().slice(0, 20);
+      const vmName = `${baseName}-${Date.now().toString(36)}`;
+
+      await createVm.mutateAsync({
+        name: vmName,
+        fromSnapshot: {
+          vmId: vm.id,
+          snapshotId: snapshot.id,
+        },
+        autoStart: true,
+      });
+    } catch (error) {
+      console.error('Failed to launch from snapshot:', error);
+    } finally {
+      setLaunchingSnapshot(null);
     }
   };
 
@@ -1028,14 +1052,28 @@ function VMCard({ vm }: { vm: VmInfo }) {
                         {new Date(snapshot.createdAt).toLocaleString()} • {formatSize(snapshot.sizeBytes)}
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleDeleteSnapshot(snapshot)}
-                      disabled={deleteSnapshot.isPending}
-                      className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] disabled:opacity-50"
-                      title="Delete snapshot"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleLaunchFromSnapshot(snapshot)}
+                        disabled={launchingSnapshot === snapshot.id}
+                        className="p-1 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] disabled:opacity-50"
+                        title="Launch new VM from this snapshot"
+                      >
+                        {launchingSnapshot === snapshot.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Play className="h-3 w-3" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSnapshot(snapshot)}
+                        disabled={deleteSnapshot.isPending || launchingSnapshot === snapshot.id}
+                        className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] disabled:opacity-50"
+                        title="Delete snapshot"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -280,6 +280,18 @@ export class FirecrackerService extends EventEmitter {
       }
     }
 
+    // If creating from snapshot, delegate to restoreFromSnapshot
+    if (config.fromSnapshot) {
+      const { vmId: sourceVmId, snapshotId } = config.fromSnapshot;
+      const snapshotDir = path.join(this.config.dataDir, sourceVmId, 'snapshots', snapshotId);
+
+      if (!fs.existsSync(snapshotDir)) {
+        throw new Error(`Snapshot ${snapshotId} not found for VM ${sourceVmId}`);
+      }
+
+      return this.restoreFromSnapshot(snapshotDir, { name: config.name });
+    }
+
     const id = this.generateVmId();
     const sshPort = this.allocateSshPort();
     const vmDir = path.join(this.config.dataDir, id);
@@ -1609,6 +1621,22 @@ export class FirecrackerService extends EventEmitter {
     }
 
     return snapshots.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  /**
+   * Delete a snapshot
+   */
+  deleteVmSnapshot(vmId: string, snapshotId: string): void {
+    const vmDir = path.join(this.config.dataDir, vmId);
+    const snapshotDir = path.join(vmDir, 'snapshots', snapshotId);
+
+    if (!fs.existsSync(snapshotDir)) {
+      throw new Error(`Snapshot ${snapshotId} not found for VM ${vmId}`);
+    }
+
+    // Remove the snapshot directory recursively
+    fs.rmSync(snapshotDir, { recursive: true, force: true });
+    console.log(`[FirecrackerService] Deleted snapshot ${snapshotId} for VM ${vmId}`);
   }
 
   /**
