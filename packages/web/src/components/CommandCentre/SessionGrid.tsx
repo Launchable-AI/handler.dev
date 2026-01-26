@@ -1,21 +1,58 @@
-import React, { useMemo } from 'react';
-import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { SessionTile } from './SessionTile';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
-import { TerminalSquare, GripVertical, GripHorizontal } from 'lucide-react';
-import type { TerminalSession, SplitLayout } from '../../types/command-centre';
+import { TerminalSquare } from 'lucide-react';
+import type { TerminalSession } from '../../types/command-centre';
 
 interface SessionGridProps {
   className?: string;
 }
 
 export function SessionGrid({ className = '' }: SessionGridProps) {
-  const { state, reorderSessions, reorderFocusedSessions } = useCommandCentre();
-  const { sessions, activeSessionId, splitLayout, focusedSessionIds, fontSize, sidebarWidth, maximizedSessionId } = state;
+  const { state, reorderFocusedSessions } = useCommandCentre();
+  const { sessions, activeSessionId, splitLayout, focusedSessionIds, fontSize, maximizedSessionId } = state;
+
+  // Sidebar width state (in pixels)
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+
+  // Portal targets for each session - keeps terminals mounted when moving between layouts
+  const [portalTargets, setPortalTargets] = useState<Record<string, HTMLDivElement | null>>({});
+  const pendingUpdates = useRef<Record<string, HTMLDivElement | null>>({});
+  const updateScheduled = useRef(false);
+
+  // Ref callback that batches updates to avoid infinite loops
+  const createSlotRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
+    pendingUpdates.current[id] = el;
+    if (!updateScheduled.current) {
+      updateScheduled.current = true;
+      requestAnimationFrame(() => {
+        updateScheduled.current = false;
+        const updates = { ...pendingUpdates.current };
+        pendingUpdates.current = {};
+        setPortalTargets(prev => {
+          // Only update if something actually changed
+          let hasChanges = false;
+          for (const [key, value] of Object.entries(updates)) {
+            if (prev[key] !== value) {
+              hasChanges = true;
+              break;
+            }
+          }
+          if (!hasChanges) return prev;
+          return { ...prev, ...updates };
+        });
+      });
+    }
+  }, []);
 
   // Separate sessions into focused and unfocused
   const focusedSessions = useMemo(() =>
-    sessions.filter(s => focusedSessionIds.includes(s.id)),
+    focusedSessionIds
+      .map(id => sessions.find(s => s.id === id))
+      .filter((s): s is TerminalSession => s !== undefined),
     [sessions, focusedSessionIds]
   );
 
@@ -24,17 +61,42 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
     [sessions, focusedSessionIds]
   );
 
-  // Get maximized session if any
   const maximizedSession = useMemo(() =>
     maximizedSessionId ? sessions.find(s => s.id === maximizedSessionId) : null,
     [sessions, maximizedSessionId]
   );
 
-  // Calculate sidebar percentage (for panel sizing)
-  const sidebarPercentage = useMemo(() => {
-    // Approximate: assume container is ~1200px wide
-    return Math.min(40, Math.max(15, (sidebarWidth / 1200) * 100));
-  }, [sidebarWidth]);
+  const hasUnfocused = unfocusedSessions.length > 0;
+
+  // Resize handlers
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRef.current || !containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const newWidth = containerRect.right - e.clientX;
+      setSidebarWidth(Math.max(150, Math.min(500, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   // Empty state
   if (sessions.length === 0) {
@@ -55,394 +117,113 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
     );
   }
 
-  // Maximized mode: single session takes full view
-  if (maximizedSession) {
-    return (
-      <div className={`flex-1 p-2 overflow-hidden ${className}`}>
-        <SessionTile
-          session={maximizedSession}
-          isActive={true}
-          fontSize={fontSize}
-          className="h-full"
-        />
-      </div>
-    );
+  // Calculate thumbnail height based on sidebar width (proportional)
+  const thumbnailHeight = Math.max(100, sidebarWidth * 0.6);
+
+  // Determine grid layout for focused sessions
+  const count = focusedSessions.length;
+  let gridClass = 'grid-cols-1';
+
+  if (count === 1) {
+    gridClass = 'grid-cols-1';
+  } else if (splitLayout === 'vertical') {
+    gridClass = 'grid-cols-1';
+  } else if (splitLayout === 'horizontal') {
+    gridClass = `grid-cols-${Math.min(count, 4)}`;
+  } else {
+    if (count === 2) gridClass = 'grid-cols-2';
+    else if (count <= 4) gridClass = 'grid-cols-2 grid-rows-2';
+    else if (count <= 6) gridClass = 'grid-cols-3 grid-rows-2';
+    else if (count <= 9) gridClass = 'grid-cols-3 grid-rows-3';
+    else gridClass = 'grid-cols-4';
   }
 
-  // If no unfocused sessions, show all in main area (no sidebar)
-  if (unfocusedSessions.length === 0) {
-    return (
-      <div className={`flex-1 p-2 overflow-hidden ${className}`}>
-        <ResizableSplitView
-          sessions={sessions}
-          layout={splitLayout}
-          activeSessionId={activeSessionId}
-          fontSize={fontSize}
-          onReorder={reorderFocusedSessions}
-        />
-      </div>
-    );
-  }
-
-  // Has unfocused sessions: show focused in main, unfocused in sidebar
+  // Single return with conditional layout - keeps portals in same tree position
   return (
-    <div className={`flex-1 overflow-hidden ${className}`}>
-      <PanelGroup orientation="horizontal" className="h-full">
-        {/* Main area: focused sessions */}
-        <Panel defaultSize={100 - sidebarPercentage} minSize={30}>
-          <div className="h-full p-2 pr-0">
+    <div ref={containerRef} className={`flex-1 flex overflow-hidden ${className}`}>
+      {maximizedSession ? (
+        // Maximized mode: single session takes full view
+        <div className="flex-1 p-2 overflow-hidden">
+          <div
+            ref={createSlotRef(maximizedSession.id)}
+            className="h-full"
+          />
+        </div>
+      ) : (
+        // Normal mode: grid + sidebar layout
+        <>
+          {/* Main area - render slots for focused sessions */}
+          <div className="flex-1 min-w-0 p-2 pr-0">
             {focusedSessions.length > 0 ? (
-              <ResizableSplitView
-                sessions={focusedSessions}
-                layout={splitLayout}
-                activeSessionId={activeSessionId}
-                fontSize={fontSize}
-                onReorder={reorderFocusedSessions}
-              />
+              <div className={`h-full grid ${gridClass} gap-1`}>
+                {focusedSessions.map((session) => (
+                  <div
+                    key={session.id}
+                    ref={createSlotRef(session.id)}
+                    className="h-full min-h-0"
+                  />
+                ))}
+              </div>
             ) : (
               <div className="h-full flex items-center justify-center text-[hsl(var(--text-muted))] text-sm">
                 Click a session in the sidebar to focus it
               </div>
             )}
           </div>
-        </Panel>
 
-        {/* Resize handle */}
-        <ResizeHandle direction="horizontal" />
+          {/* Resize handle */}
+          {hasUnfocused && (
+            <div
+              onMouseDown={handleMouseDown}
+              className="w-2 flex-shrink-0 bg-[hsl(var(--bg-elevated))] hover:bg-[hsl(var(--cyan)/0.3)] active:bg-[hsl(var(--cyan)/0.5)] transition-colors cursor-col-resize flex items-center justify-center"
+            >
+              <div className="w-0.5 h-12 bg-[hsl(var(--border))] rounded-full" />
+            </div>
+          )}
 
-        {/* Sidebar: unfocused sessions */}
-        <Panel defaultSize={sidebarPercentage} minSize={15} maxSize={50}>
-          <div className="h-full p-2 pl-0">
-            <PanelGroup orientation="vertical" className="h-full">
-              {unfocusedSessions.map((session, index) => (
-                <SessionPanelWithHandle
+          {/* Sidebar - render slots for unfocused sessions */}
+          {hasUnfocused && (
+            <div
+              className="flex-shrink-0 p-2 pl-0 flex flex-col gap-2 overflow-y-auto"
+              style={{ width: sidebarWidth }}
+            >
+              {unfocusedSessions.map((session) => (
+                <div
                   key={session.id}
-                  session={session}
-                  isActive={session.id === activeSessionId}
-                  isThumbnail={true}
-                  fontSize={fontSize}
-                  isLast={index === unfocusedSessions.length - 1}
-                  direction="vertical"
-                  index={index}
-                  onReorder={reorderSessions}
+                  ref={createSlotRef(session.id)}
+                  className="flex-shrink-0"
+                  style={{ height: thumbnailHeight }}
                 />
               ))}
-            </PanelGroup>
-          </div>
-        </Panel>
-      </PanelGroup>
-    </div>
-  );
-}
+            </div>
+          )}
+        </>
+      )}
 
-// Session panel with optional resize handle
-interface SessionPanelWithHandleProps {
-  session: TerminalSession;
-  isActive: boolean;
-  isThumbnail?: boolean;
-  fontSize: number;
-  isLast: boolean;
-  direction: 'horizontal' | 'vertical';
-  index?: number;
-  onReorder?: (fromIndex: number, toIndex: number) => void;
-}
+      {/* Render all session tiles via portals - ALWAYS at same position in React tree */}
+      {sessions.map((session) => {
+        const target = portalTargets[session.id];
+        if (!target) return null;
 
-function SessionPanelWithHandle({
-  session,
-  isActive,
-  isThumbnail = false,
-  fontSize,
-  isLast,
-  index,
-  onReorder,
-  direction,
-}: SessionPanelWithHandleProps) {
-  return (
-    <>
-      <Panel minSize={15}>
-        <div className="h-full p-1">
+        const isFocused = focusedSessionIds.includes(session.id);
+        const isMaximized = maximizedSessionId === session.id;
+        const index = isFocused ? focusedSessionIds.indexOf(session.id) : undefined;
+
+        return createPortal(
           <SessionTile
+            key={session.id}
             session={session}
-            isActive={isActive}
-            isThumbnail={isThumbnail}
+            isActive={isMaximized || session.id === activeSessionId}
+            isThumbnail={!isFocused && !isMaximized}
             fontSize={fontSize}
             className="h-full"
             index={index}
-            onReorder={onReorder}
-          />
-        </div>
-      </Panel>
-      {!isLast && <ResizeHandle direction={direction} />}
-    </>
-  );
-}
-
-// Custom resize handle with Hyprland-style visuals
-interface ResizeHandleProps {
-  direction: 'horizontal' | 'vertical';
-}
-
-function ResizeHandle({ direction }: ResizeHandleProps) {
-  const isHorizontal = direction === 'horizontal';
-
-  return (
-    <PanelResizeHandle
-      className={`
-        group relative flex items-center justify-center
-        ${isHorizontal ? 'w-3' : 'h-3'}
-        hover:bg-[hsl(var(--cyan)/0.2)] active:bg-[hsl(var(--cyan)/0.3)]
-        transition-colors duration-150
-      `}
-    >
-      {/* Visual handle bar */}
-      <div
-        className={`
-          absolute bg-[hsl(var(--border))] group-hover:bg-[hsl(var(--cyan)/0.6)] group-active:bg-[hsl(var(--cyan))]
-          transition-all duration-150 rounded-full
-          ${isHorizontal ? 'w-1 h-12' : 'h-1 w-12'}
-        `}
-      />
-      {/* Grip icon on hover */}
-      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
-        {isHorizontal ? (
-          <GripVertical className="h-4 w-4 text-[hsl(var(--cyan))]" />
-        ) : (
-          <GripHorizontal className="h-4 w-4 text-[hsl(var(--cyan))]" />
-        )}
-      </div>
-    </PanelResizeHandle>
-  );
-}
-
-// Resizable split view for main area
-interface ResizableSplitViewProps {
-  sessions: TerminalSession[];
-  layout: SplitLayout;
-  activeSessionId: string | null;
-  fontSize: number;
-  onReorder?: (fromIndex: number, toIndex: number) => void;
-}
-
-function ResizableSplitView({ sessions, layout, activeSessionId, fontSize, onReorder }: ResizableSplitViewProps) {
-  const count = sessions.length;
-
-  if (count === 0) return null;
-
-  // Single session - no resize needed
-  if (count === 1) {
-    return (
-      <div className="h-full">
-        <SessionTile
-          session={sessions[0]}
-          isActive={sessions[0].id === activeSessionId}
-          fontSize={fontSize}
-          className="h-full"
-          index={0}
-          onReorder={onReorder}
-        />
-      </div>
-    );
-  }
-
-  // Vertical layout - stack vertically with horizontal resize handles
-  if (layout === 'vertical') {
-    return (
-      <PanelGroup orientation="vertical" className="h-full">
-        {sessions.map((session, index) => (
-          <SessionPanelWithHandle
-            key={session.id}
-            session={session}
-            isActive={session.id === activeSessionId}
-            fontSize={fontSize}
-            isLast={index === sessions.length - 1}
-            direction="vertical"
-            index={index}
-            onReorder={onReorder}
-          />
-        ))}
-      </PanelGroup>
-    );
-  }
-
-  // Horizontal layout - stack horizontally with vertical resize handles
-  if (layout === 'horizontal') {
-    return (
-      <PanelGroup orientation="horizontal" className="h-full">
-        {sessions.map((session, index) => (
-          <SessionPanelWithHandle
-            key={session.id}
-            session={session}
-            isActive={session.id === activeSessionId}
-            fontSize={fontSize}
-            isLast={index === sessions.length - 1}
-            direction="horizontal"
-            index={index}
-            onReorder={onReorder}
-          />
-        ))}
-      </PanelGroup>
-    );
-  }
-
-  // Grid layout - use nested panels for 2D resizing
-  // For 2 sessions: side by side
-  if (count === 2) {
-    return (
-      <PanelGroup orientation="horizontal" className="h-full">
-        <Panel minSize={20}>
-          <div className="h-full p-1">
-            <SessionTile
-              session={sessions[0]}
-              isActive={sessions[0].id === activeSessionId}
-              fontSize={fontSize}
-              className="h-full"
-              index={0}
-              onReorder={onReorder}
-            />
-          </div>
-        </Panel>
-        <ResizeHandle direction="horizontal" />
-        <Panel minSize={20}>
-          <div className="h-full p-1">
-            <SessionTile
-              session={sessions[1]}
-              isActive={sessions[1].id === activeSessionId}
-              fontSize={fontSize}
-              className="h-full"
-              index={1}
-              onReorder={onReorder}
-            />
-          </div>
-        </Panel>
-      </PanelGroup>
-    );
-  }
-
-  // For 3-4 sessions: 2x2 grid
-  if (count <= 4) {
-    const topRow = sessions.slice(0, 2);
-    const bottomRow = sessions.slice(2);
-
-    return (
-      <PanelGroup orientation="vertical" className="h-full">
-        <Panel minSize={20}>
-          <PanelGroup orientation="horizontal" className="h-full">
-            {topRow.map((session, index) => (
-              <SessionPanelWithHandle
-                key={session.id}
-                session={session}
-                isActive={session.id === activeSessionId}
-                fontSize={fontSize}
-                isLast={index === topRow.length - 1}
-                direction="horizontal"
-                index={index}
-                onReorder={onReorder}
-              />
-            ))}
-          </PanelGroup>
-        </Panel>
-        {bottomRow.length > 0 && (
-          <>
-            <ResizeHandle direction="vertical" />
-            <Panel minSize={20}>
-              <PanelGroup orientation="horizontal" className="h-full">
-                {bottomRow.map((session, index) => (
-                  <SessionPanelWithHandle
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === activeSessionId}
-                    fontSize={fontSize}
-                    isLast={index === bottomRow.length - 1}
-                    direction="horizontal"
-                    index={index + 2}
-                    onReorder={onReorder}
-                  />
-                ))}
-              </PanelGroup>
-            </Panel>
-          </>
-        )}
-      </PanelGroup>
-    );
-  }
-
-  // For 5-6 sessions: 3x2 grid
-  if (count <= 6) {
-    const topRow = sessions.slice(0, 3);
-    const bottomRow = sessions.slice(3);
-
-    return (
-      <PanelGroup orientation="vertical" className="h-full">
-        <Panel minSize={20}>
-          <PanelGroup orientation="horizontal" className="h-full">
-            {topRow.map((session, index) => (
-              <SessionPanelWithHandle
-                key={session.id}
-                session={session}
-                isActive={session.id === activeSessionId}
-                fontSize={fontSize}
-                isLast={index === topRow.length - 1}
-                direction="horizontal"
-                index={index}
-                onReorder={onReorder}
-              />
-            ))}
-          </PanelGroup>
-        </Panel>
-        {bottomRow.length > 0 && (
-          <>
-            <ResizeHandle direction="vertical" />
-            <Panel minSize={20}>
-              <PanelGroup orientation="horizontal" className="h-full">
-                {bottomRow.map((session, index) => (
-                  <SessionPanelWithHandle
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === activeSessionId}
-                    fontSize={fontSize}
-                    isLast={index === bottomRow.length - 1}
-                    direction="horizontal"
-                    index={index + 3}
-                    onReorder={onReorder}
-                  />
-                ))}
-              </PanelGroup>
-            </Panel>
-          </>
-        )}
-      </PanelGroup>
-    );
-  }
-
-  // For more than 6: 3-column grid with multiple rows
-  const rows: TerminalSession[][] = [];
-  for (let i = 0; i < sessions.length; i += 3) {
-    rows.push(sessions.slice(i, i + 3));
-  }
-
-  return (
-    <PanelGroup orientation="vertical" className="h-full">
-      {rows.map((row, rowIndex) => (
-        <React.Fragment key={rowIndex}>
-          <Panel minSize={15}>
-            <PanelGroup orientation="horizontal" className="h-full">
-              {row.map((session, colIndex) => (
-                <SessionPanelWithHandle
-                  key={session.id}
-                  session={session}
-                  isActive={session.id === activeSessionId}
-                  fontSize={fontSize}
-                  isLast={colIndex === row.length - 1}
-                  direction="horizontal"
-                  index={rowIndex * 3 + colIndex}
-                  onReorder={onReorder}
-                />
-              ))}
-            </PanelGroup>
-          </Panel>
-          {rowIndex < rows.length - 1 && <ResizeHandle direction="vertical" />}
-        </React.Fragment>
-      ))}
-    </PanelGroup>
+            onReorder={isFocused && !isMaximized ? reorderFocusedSessions : undefined}
+            isDraggable={isFocused && !isMaximized}
+          />,
+          target
+        );
+      })}
+    </div>
   );
 }

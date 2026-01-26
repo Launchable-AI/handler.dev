@@ -162,15 +162,12 @@ export function SessionTile({
 
   return (
     <div
-      draggable={isDraggable && index !== undefined}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
         flex flex-col bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))]
-        overflow-hidden cursor-grab active:cursor-grabbing
+        overflow-hidden
         ${isActive && !isThumbnail ? 'ring-2 ring-[hsl(var(--cyan)/0.5)]' : ''}
         ${isThumbnail ? 'hover:border-[hsl(var(--cyan)/0.5)]' : ''}
         ${isDragOver ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)]' : ''}
@@ -187,8 +184,13 @@ export function SessionTile({
         onChange={handleFileSelect}
       />
 
-      {/* Tile header */}
-      <div className={`flex items-center justify-between bg-[hsl(var(--bg-elevated))] border-b border-[hsl(var(--border))] ${isThumbnail ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
+      {/* Tile header - draggable for reordering */}
+      <div
+        draggable={isDraggable && index !== undefined}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        className={`flex items-center justify-between bg-[hsl(var(--bg-elevated))] border-b border-[hsl(var(--border))] ${isThumbnail ? 'px-2 py-1' : 'px-3 py-1.5'} ${isDraggable && index !== undefined ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      >
         <div className="flex items-center gap-2 min-w-0">
           {session.type === 'vm' ? (
             <Server className={`${isThumbnail ? 'h-3 w-3' : 'h-3.5 w-3.5'} flex-shrink-0 ${statusColor}`} />
