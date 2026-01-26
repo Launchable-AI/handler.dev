@@ -409,6 +409,38 @@ export class FirecrackerService extends EventEmitter {
     const logFile = path.join(vmDir, 'firecracker.log');
 
     try {
+      // Re-allocate TAP device if we don't have one (e.g., VM was stopped)
+      if (!vm.networkConfig.tapDevice || vm.networkConfig.mode !== 'tap') {
+        try {
+          const status = this.networkPool.checkHealth();
+          const poolMode = this.networkPool.getMode();
+
+          if (poolMode === 'helper' || (status.healthy && status.availableTaps > 0)) {
+            const tapAllocation = await this.networkPool.allocateAsync(id);
+            vm.networkConfig.mode = 'tap';
+            vm.networkConfig.tapDevice = tapAllocation.tapName;
+            vm.networkConfig.bridgeName = tapAllocation.bridgeName;
+            vm.networkConfig.macAddress = tapAllocation.macAddress;
+            vm.networkConfig.guestIp = tapAllocation.guestIp;
+            vm.networkConfig.gateway = tapAllocation.gateway;
+            vm.guestIp = tapAllocation.guestIp;
+
+            // Update MMDS metadata with new network info
+            if (vm.mmdsMetadata) {
+              vm.mmdsMetadata.network.interfaces.eth0.mac = tapAllocation.macAddress;
+              vm.mmdsMetadata.network.interfaces.eth0.ipv4.address = tapAllocation.guestIp;
+              vm.mmdsMetadata.network.interfaces.eth0.ipv4.gateway = tapAllocation.gateway;
+            }
+
+            console.log(`[FirecrackerService] Re-allocated TAP ${tapAllocation.tapName} for VM ${id}`);
+          } else {
+            console.warn(`[FirecrackerService] No TAP available for VM ${id}: ${status.message}`);
+          }
+        } catch (error) {
+          console.warn(`[FirecrackerService] Failed to allocate TAP for VM ${id}:`, error);
+        }
+      }
+
       // Remove old socket if exists
       if (fs.existsSync(apiSocket)) {
         fs.unlinkSync(apiSocket);
@@ -876,6 +908,17 @@ export class FirecrackerService extends EventEmitter {
           // Process may already be dead
         }
       }
+    }
+
+    // Release TAP device so it can be reused by other VMs
+    // A new TAP will be allocated when the VM is started again
+    if (vm.networkConfig.tapDevice) {
+      console.log(`[FirecrackerService] Releasing TAP ${vm.networkConfig.tapDevice} for stopped VM ${id}`);
+      await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id);
+      vm.networkConfig.tapDevice = undefined;
+      vm.networkConfig.guestIp = undefined;
+      vm.networkConfig.mode = 'none';
+      vm.guestIp = undefined;
     }
 
     vm.status = 'stopped';

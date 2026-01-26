@@ -690,6 +690,30 @@ export class CloudHypervisorService extends EventEmitter {
 
     console.log(`[CloudHypervisorService] Starting VM ${id} (${vm.name})`);
 
+    // Re-allocate TAP device if we don't have one (e.g., VM was stopped)
+    if (!vm.networkConfig.tapDevice || vm.networkConfig.mode !== 'tap') {
+      try {
+        const status = this.networkPool.checkHealth();
+        const poolMode = this.networkPool.getMode();
+
+        if (poolMode === 'helper' || (status.healthy && status.availableTaps > 0)) {
+          const tapAllocation = await this.networkPool.allocateAsync(id);
+          vm.networkConfig.mode = 'tap';
+          vm.networkConfig.tapDevice = tapAllocation.tapName;
+          vm.networkConfig.bridgeName = tapAllocation.bridgeName;
+          vm.networkConfig.macAddress = tapAllocation.macAddress;
+          vm.networkConfig.guestIp = tapAllocation.guestIp;
+          vm.networkConfig.gateway = tapAllocation.gateway;
+          vm.guestIp = tapAllocation.guestIp;
+          console.log(`[CloudHypervisorService] Re-allocated TAP ${tapAllocation.tapName} for VM ${id}`);
+        } else {
+          console.warn(`[CloudHypervisorService] No TAP available for VM ${id}: ${status.message}`);
+        }
+      } catch (error) {
+        console.warn(`[CloudHypervisorService] Failed to allocate TAP for VM ${id}:`, error);
+      }
+    }
+
     const vmDir = path.join(this.config.dataDir, id);
     const apiSocket = path.join(vmDir, 'api.sock');
     const logFile = path.join(vmDir, 'vm.log');
@@ -1341,6 +1365,17 @@ ethernets:
           // Process may already be dead
         }
       }
+    }
+
+    // Release TAP device so it can be reused by other VMs
+    // A new TAP will be allocated when the VM is started again
+    if (vm.networkConfig.tapDevice) {
+      console.log(`[CloudHypervisorService] Releasing TAP ${vm.networkConfig.tapDevice} for stopped VM ${id}`);
+      await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id);
+      vm.networkConfig.tapDevice = undefined;
+      vm.networkConfig.guestIp = undefined;
+      vm.networkConfig.mode = 'none';
+      vm.guestIp = undefined;
     }
 
     vm.status = 'stopped';
