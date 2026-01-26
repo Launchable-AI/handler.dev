@@ -9,7 +9,7 @@ interface SessionGridProps {
 }
 
 export function SessionGrid({ className = '' }: SessionGridProps) {
-  const { state, focusSession, setSidebarWidth } = useCommandCentre();
+  const { state, setSidebarWidth } = useCommandCentre();
   const { sessions, activeSessionId, layoutMode, splitLayout, focusedSessionIds, fontSize, sidebarWidth, maximizedSessionId } = state;
 
   // Sidebar resize state
@@ -151,7 +151,6 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
               isActive={session.id === activeSessionId}
               isThumbnail={true}
               fontSize={fontSize}
-              onClick={() => focusSession(session.id)}
               className="flex-shrink-0"
               style={{ height: Math.max(80, sidebarWidth * 0.5) }}
             />

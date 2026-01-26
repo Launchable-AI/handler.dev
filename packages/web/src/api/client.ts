@@ -2204,6 +2204,30 @@ export async function downloadSandboxSshKey(id: string): Promise<Blob> {
   return response.blob();
 }
 
+/**
+ * Upload a file to a sandbox's working directory
+ */
+export async function uploadFileToSandbox(
+  id: string,
+  file: File,
+  destPath: string = '/home/dev/workspace'
+): Promise<{ success: boolean; path: string }> {
+  const apiBase = await getApiBase();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('destPath', destPath);
+
+  const response = await fetch(`${apiBase}/sandboxes/${encodeURIComponent(id)}/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || 'Upload failed');
+  }
+  return response.json();
+}
+
 // ==================== Unified Volume API ====================
 
 /**

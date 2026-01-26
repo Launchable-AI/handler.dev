@@ -47,7 +47,10 @@ export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
 
   const [copied, setCopied] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
-  const [connectionMode, setConnectionMode] = useState<ConnectionMode>('docker');
+  // Default to docker exec for Docker containers, SSH for VMs
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>(
+    sandbox.backend === 'docker' ? 'docker' : 'ssh'
+  );
   const [error, setError] = useState<string | null>(null);
 
   const isRunning = sandbox.status === 'running';
@@ -69,7 +72,12 @@ export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
   // Commands
   const dockerCommand = sandbox.dockerExecCommand;
   const sshCommand = sandbox.sshCommand;
-  const currentCommand = connectionMode === 'docker' ? dockerCommand : sshCommand;
+  // Determine displayed command based on what's available
+  const currentCommand = isDocker
+    ? (dockerCommand && sshCommand
+        ? (connectionMode === 'docker' ? dockerCommand : sshCommand)
+        : dockerCommand || sshCommand)
+    : sshCommand;
 
   // Status styling
   const stateConfig: Record<string, { color: string; label: string }> = {
@@ -352,12 +360,22 @@ export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
                     </button>
                   </div>
                 )}
+                {/* Show label when only one option available */}
+                {isDocker && dockerCommand && !sshCommand && (
+                  <span className="text-[10px] text-[hsl(var(--blue))]">Docker</span>
+                )}
+                {!isDocker && sshCommand && (
+                  <span className="text-[10px] text-[hsl(var(--cyan))]">SSH</span>
+                )}
               </div>
               <div className="bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] p-2">
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-[10px] text-[hsl(var(--text-secondary))] truncate">
-                    {/* For non-Docker, always show SSH command. For Docker, show based on mode */}
-                    {isDocker ? currentCommand : sshCommand}
+                    {/* Show appropriate command based on backend and mode */}
+                    {isDocker
+                      ? (dockerCommand && sshCommand ? currentCommand : dockerCommand || sshCommand)
+                      : sshCommand
+                    }
                   </code>
                   <div className="flex items-center gap-0.5 shrink-0">
                     <button

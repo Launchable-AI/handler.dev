@@ -47,6 +47,8 @@
   --red-dim: 0 50% 35%;
   --purple: 270 60% 60%;
   --purple-dim: 270 40% 40%;
+  --blue: 210 80% 55%;
+  --blue-dim: 210 60% 40%;
 
   /* Functional */
   --border: 220 15% 20%;
@@ -98,6 +100,8 @@
   --red-dim: 0 55% 55%;
   --purple: 270 55% 50%;
   --purple-dim: 270 40% 60%;
+  --blue: 210 75% 45%;
+  --blue-dim: 210 55% 55%;
 
   /* Functional */
   --border: 220 20% 85%;

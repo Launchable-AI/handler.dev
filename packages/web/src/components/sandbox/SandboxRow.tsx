@@ -2,6 +2,7 @@
  * SandboxRow - Table row view for sandbox list
  */
 
+import { useState } from 'react';
 import {
   Play,
   Square,
@@ -9,8 +10,11 @@ import {
   Terminal,
   Cpu,
   MemoryStick,
+  Camera,
+  Loader2,
 } from 'lucide-react';
-import type { Sandbox } from '../../api/client';
+import type { Sandbox, VmMeta } from '../../api/client';
+import * as api from '../../api/client';
 import { BackendBadge } from './BackendBadge';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox } from '../../hooks/useSandboxes';
@@ -28,9 +32,16 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
 
+  const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
+
   const isRunning = sandbox.status === 'running';
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
   const isTransition = isTransitioning(sandbox.status);
+
+  // Check if this is a VM-based sandbox that supports snapshots
+  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const vmMeta = sandbox.backendMeta as VmMeta | undefined;
+  const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
 
   const canStart = isStopped && !isTransition;
   const canStop = isRunning && !isTransition;
@@ -80,6 +91,20 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
       if (sandbox.guestIp) {
         terminalPanel.openTerminal(sandbox.id, sandbox.name, sandbox.guestIp);
       }
+    }
+  };
+
+  const handleCreateSnapshot = async () => {
+    // Extract the VM ID from the sandbox ID (e.g., 'fc-xxx' -> 'xxx')
+    const vmId = sandbox.id.replace(/^(fc-|vm-)/, '');
+
+    setIsCreatingSnapshot(true);
+    try {
+      await api.createVmSnapshot(vmId, `${sandbox.name}-${Date.now()}`);
+    } catch (error) {
+      console.error('Failed to create snapshot:', error);
+    } finally {
+      setIsCreatingSnapshot(false);
     }
   };
 
@@ -167,6 +192,20 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
               title="Stop"
             >
               <Square className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {canSnapshot && (
+            <button
+              onClick={handleCreateSnapshot}
+              disabled={isCreatingSnapshot}
+              className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)] transition-colors disabled:opacity-50"
+              title="Create Snapshot"
+            >
+              {isCreatingSnapshot ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Camera className="h-3.5 w-3.5" />
+              )}
             </button>
           )}
           {canDelete && (

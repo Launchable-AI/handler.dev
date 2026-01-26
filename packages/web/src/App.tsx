@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Settings as SettingsIcon, FileCode, Layers, HardDrive, Image, Package, StickyNote, ChevronDown, ChevronRight, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes } from 'lucide-react';
+import { Plus, Settings as SettingsIcon, FileCode, Layers, HardDrive, Image, Package, StickyNote, ChevronDown, ChevronRight, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera } from 'lucide-react';
 // VolumeManager replaced by UnifiedVolumeList
 import { DockerfileEditor } from './components/DockerfileEditor';
 import { ImageList } from './components/ImageList';
@@ -9,6 +9,7 @@ import { MCPRegistry } from './components/MCPRegistry';
 import { Notes } from './components/Notes';
 import { SandboxList, CreateSandboxForm } from './components/sandbox';
 import { UnifiedVolumeList } from './components/volume/UnifiedVolumeList';
+import { VMSnapshots } from './components/VMSnapshots';
 import { CommandCentre } from './components/CommandCentre';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
@@ -17,7 +18,7 @@ import { TerminalPanelProvider } from './components/TerminalPanel';
 import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
 // All possible tabs - simplified to unified abstractions
-type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'images' | 'dockerfiles' | 'compose' | 'mcp' | 'notes' | 'settings';
+type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'images' | 'snapshots' | 'dockerfiles' | 'compose' | 'mcp' | 'notes' | 'settings';
 
 // Navigation group identifiers
 type NavGroupId = 'advanced';
@@ -42,7 +43,7 @@ interface StandaloneNavItem extends NavItem {
 type NavConfigItem = NavGroup | StandaloneNavItem;
 
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'volumes', 'images', 'dockerfiles', 'compose', 'mcp', 'notes', 'settings'];
+const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'volumes', 'images', 'snapshots', 'dockerfiles', 'compose', 'mcp', 'notes', 'settings'];
 
 function App() {
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -104,6 +105,7 @@ function App() {
     { id: 'sandboxes', label: 'Sandboxes', icon: Boxes, standalone: true },
     { id: 'volumes', label: 'Volumes', icon: HardDrive, standalone: true },
     { id: 'images', label: 'Images', icon: Image, standalone: true },
+    { id: 'snapshots', label: 'Snapshots', icon: Camera, standalone: true },
     {
       id: 'advanced',
       label: 'Advanced',
@@ -485,6 +487,7 @@ function App() {
           {activeTab === 'sandboxes' && <SandboxList onCreateClick={() => setShowCreateForm(true)} />}
           {activeTab === 'volumes' && <UnifiedVolumeList />}
           {activeTab === 'images' && <ImageList />}
+          {activeTab === 'snapshots' && <VMSnapshots />}
           {activeTab === 'compose' && <ComposeManager />}
           {activeTab === 'dockerfiles' && <DockerfileEditor />}
           {activeTab === 'mcp' && <MCPRegistry />}
