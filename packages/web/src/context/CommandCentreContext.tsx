@@ -3,7 +3,6 @@ import type {
   CommandCentreState,
   CommandCentreContextValue,
   TerminalSession,
-  LayoutMode,
   SplitLayout,
 } from '../types/command-centre';
 
@@ -20,7 +19,6 @@ const initialState: CommandCentreState = {
   sessions: [],
   layouts: [],
   activeSessionId: null,
-  layoutMode: 'split',
   splitLayout: 'grid',
   focusedSessionIds: [],
   isFullscreen: false,
@@ -35,7 +33,6 @@ type Action =
   | { type: 'CLOSE_SESSION'; payload: string }
   | { type: 'UPDATE_SESSION_STATUS'; payload: { id: string; status: TerminalSession['status']; errorMessage?: string } }
   | { type: 'SET_ACTIVE_SESSION'; payload: string | null }
-  | { type: 'SET_LAYOUT_MODE'; payload: LayoutMode }
   | { type: 'SET_SPLIT_LAYOUT'; payload: SplitLayout }
   | { type: 'FOCUS_SESSION'; payload: string }
   | { type: 'UNFOCUS_SESSION'; payload: string }
@@ -96,18 +93,6 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
       return {
         ...state,
         activeSessionId: action.payload,
-      };
-    }
-    case 'SET_LAYOUT_MODE': {
-      // When switching to focus mode, focus all sessions if none are focused
-      let focusedIds = state.focusedSessionIds;
-      if (action.payload === 'focus' && focusedIds.length === 0 && state.sessions.length > 0) {
-        focusedIds = state.sessions.map(s => s.id);
-      }
-      return {
-        ...state,
-        layoutMode: action.payload,
-        focusedSessionIds: focusedIds,
       };
     }
     case 'SET_SPLIT_LAYOUT': {
@@ -273,10 +258,6 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_ACTIVE_SESSION', payload: sessionId });
   }, []);
 
-  const setLayoutMode = useCallback((mode: LayoutMode) => {
-    dispatch({ type: 'SET_LAYOUT_MODE', payload: mode });
-  }, []);
-
   const setSplitLayout = useCallback((layout: SplitLayout) => {
     dispatch({ type: 'SET_SPLIT_LAYOUT', payload: layout });
   }, []);
@@ -335,7 +316,6 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     closeSession,
     updateSessionStatus,
     setActiveSession,
-    setLayoutMode,
     setSplitLayout,
     focusSession,
     unfocusSession,

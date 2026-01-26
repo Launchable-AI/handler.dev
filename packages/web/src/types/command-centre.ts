@@ -28,18 +28,14 @@ export interface TileLayout {
 // Split layouts for main view
 export type SplitLayout = 'grid' | 'vertical' | 'horizontal';
 
-// Main layout modes
-export type LayoutMode = 'split' | 'focus';
-
 export interface CommandCentreState {
   sessions: TerminalSession[];
   layouts: TileLayout[];
   activeSessionId: string | null;
 
   // Layout
-  layoutMode: LayoutMode;           // 'split' = all in main, 'focus' = main + sidebar
   splitLayout: SplitLayout;         // How to arrange sessions in main area
-  focusedSessionIds: string[];      // Sessions in main area (focus mode only)
+  focusedSessionIds: string[];      // Sessions in main area (unfocused go to sidebar)
 
   // Fullscreen/maximize
   isFullscreen: boolean;            // Hide app sidebar/header
@@ -62,10 +58,9 @@ export interface CommandCentreContextValue {
   setActiveSession: (sessionId: string | null) => void;
 
   // Layout
-  setLayoutMode: (mode: LayoutMode) => void;
   setSplitLayout: (layout: SplitLayout) => void;
 
-  // Focus mode: move sessions between main and sidebar
+  // Move sessions between main area and sidebar
   focusSession: (sessionId: string) => void;      // Move to main area
   unfocusSession: (sessionId: string) => void;    // Move to sidebar
   toggleFocus: (sessionId: string) => void;       // Toggle between main/sidebar

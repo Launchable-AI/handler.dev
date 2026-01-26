@@ -10,7 +10,7 @@ interface SessionGridProps {
 
 export function SessionGrid({ className = '' }: SessionGridProps) {
   const { state, setSidebarWidth } = useCommandCentre();
-  const { sessions, activeSessionId, layoutMode, splitLayout, focusedSessionIds, fontSize, sidebarWidth, maximizedSessionId } = state;
+  const { sessions, activeSessionId, splitLayout, focusedSessionIds, fontSize, sidebarWidth, maximizedSessionId } = state;
 
   // Sidebar resize state
   const [isResizing, setIsResizing] = useState(false);
@@ -95,8 +95,8 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
     );
   }
 
-  // Split mode: all sessions in main area with selected layout
-  if (layoutMode === 'split') {
+  // If no unfocused sessions, show all in main area (no sidebar)
+  if (unfocusedSessions.length === 0) {
     return (
       <div className={`flex-1 p-2 overflow-hidden ${className}`}>
         <SplitView
@@ -109,7 +109,7 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
     );
   }
 
-  // Focus mode: focused sessions in main, unfocused in sidebar
+  // Has unfocused sessions: show focused in main, unfocused in sidebar
   return (
     <div ref={containerRef} className={`flex-1 flex gap-0 p-2 overflow-hidden ${className}`}>
       {/* Main area: focused sessions */}

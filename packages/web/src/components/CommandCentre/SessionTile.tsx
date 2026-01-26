@@ -99,8 +99,8 @@ export function SessionTile({
     error: 'bg-[hsl(var(--red))]',
   }[session.status];
 
-  // Can unfocus only in focus mode and if there's more than one focused session
-  const canUnfocus = state.layoutMode === 'focus' && state.focusedSessionIds.length > 1;
+  // Can unfocus only if there's more than one focused session (need at least one in main area)
+  const canUnfocus = state.focusedSessionIds.length > 1;
   const isMaximized = state.maximizedSessionId === session.id;
   const canMaximize = state.sessions.length > 1;
 

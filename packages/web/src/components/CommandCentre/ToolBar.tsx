@@ -4,7 +4,6 @@ import {
   LayoutGrid,
   Rows3,
   Columns3,
-  PanelRight,
   ChevronDown,
   ChevronUp,
   Server,
@@ -28,7 +27,6 @@ interface ToolBarProps {
 export function ToolBar({ className = '' }: ToolBarProps) {
   const {
     state,
-    setLayoutMode,
     setSplitLayout,
     increaseFontSize,
     decreaseFontSize,
@@ -45,7 +43,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
   const { data: vmVolumes } = useVmVolumes();
 
   const sessionCount = state.sessions.length;
-  const { fontSize, layoutMode, splitLayout, focusedSessionIds, isFullscreen, maximizedSessionId } = state;
+  const { fontSize, splitLayout, focusedSessionIds, isFullscreen, maximizedSessionId } = state;
   const unfocusedCount = sessionCount - focusedSessionIds.length;
 
   // Keyboard shortcut for fullscreen (Escape to exit, F11 or Ctrl+Shift+F to toggle)
@@ -107,7 +105,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
       <div className="flex items-center gap-3">
         <span className="px-2 py-0.5 text-[10px] font-medium bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded-full">
           {sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}
-          {layoutMode === 'focus' && unfocusedCount > 0 && (
+          {unfocusedCount > 0 && (
             <span className="ml-1 text-[hsl(var(--text-muted))]">
               ({unfocusedCount} in sidebar)
             </span>
@@ -138,24 +136,6 @@ export function ToolBar({ className = '' }: ToolBarProps) {
             title="Vertical split"
           />
         </div>
-
-        {/* Separator */}
-        <div className="w-px h-5 bg-[hsl(var(--border))]" />
-
-        {/* Focus mode toggle */}
-        <button
-          onClick={() => setLayoutMode(layoutMode === 'split' ? 'focus' : 'split')}
-          disabled={sessionCount < 2}
-          className={`flex items-center gap-1.5 px-2 py-1 text-xs transition-colors rounded ${
-            layoutMode === 'focus'
-              ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))]'
-              : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
-          } disabled:opacity-50`}
-          title={layoutMode === 'focus' ? 'Show all in main view' : 'Enable focus mode with sidebar'}
-        >
-          <PanelRight className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Focus</span>
-        </button>
 
         {/* Separator */}
         <div className="w-px h-5 bg-[hsl(var(--border))]" />
