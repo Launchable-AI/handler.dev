@@ -1430,6 +1430,25 @@ export async function deleteVmSnapshot(vmId: string, snapshotId: string): Promis
   await fetchAPI(`/vms/${vmId}/snapshots/${encodeURIComponent(snapshotId)}`, { method: 'DELETE' });
 }
 
+// Rollback VM to a snapshot (restores the same VM to snapshot state)
+export async function rollbackVmToSnapshot(vmId: string, snapshotId: string): Promise<VmInfo> {
+  return fetchAPI(`/vms/${vmId}/snapshots/${encodeURIComponent(snapshotId)}/rollback`, {
+    method: 'POST',
+  });
+}
+
+// Promote snapshot to a base image
+export async function promoteSnapshotToImage(
+  vmId: string,
+  snapshotId: string,
+  imageName: string
+): Promise<{ imageName: string; imagePath: string }> {
+  return fetchAPI(`/vms/${vmId}/snapshots/${encodeURIComponent(snapshotId)}/promote`, {
+    method: 'POST',
+    body: JSON.stringify({ imageName }),
+  });
+}
+
 export interface VmSnapshotWithVmInfo extends VmSnapshotInfo {
   vmName: string;
 }

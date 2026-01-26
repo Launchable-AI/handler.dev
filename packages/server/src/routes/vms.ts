@@ -703,6 +703,54 @@ vms.delete('/:id/snapshots/:snapshotId', async (c) => {
   }
 });
 
+// Rollback VM to a snapshot (same VM, restores disk and can restore memory on start)
+vms.post('/:id/snapshots/:snapshotId/rollback', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const snapshotId = c.req.param('snapshotId');
+
+    // Currently only Firecracker supports rollback
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      const vm = await firecracker.rollbackToSnapshot(id, snapshotId);
+      return c.json(vm);
+    }
+
+    // Cloud-hypervisor doesn't support rollback yet
+    return c.json({ error: 'Rollback not supported for this hypervisor' }, 400);
+  } catch (error) {
+    console.error('[VMs API] Failed to rollback to snapshot:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Promote snapshot to a base image
+vms.post('/:id/snapshots/:snapshotId/promote', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const snapshotId = c.req.param('snapshotId');
+    const body = await c.req.json();
+    const imageName = body.imageName;
+
+    if (!imageName || typeof imageName !== 'string') {
+      return c.json({ error: 'imageName is required' }, 400);
+    }
+
+    // Currently only Firecracker supports promote
+    if (id.startsWith('fc-')) {
+      const firecracker = await ensureFirecrackerInitialized();
+      const result = await firecracker.promoteSnapshotToImage(id, snapshotId, imageName);
+      return c.json(result, 201);
+    }
+
+    // Cloud-hypervisor doesn't support promote yet
+    return c.json({ error: 'Promote not supported for this hypervisor' }, 400);
+  } catch (error) {
+    console.error('[VMs API] Failed to promote snapshot:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
 // Get quick launch default snapshot
 vms.get('/quick-launch/default', async (c) => {
   try {

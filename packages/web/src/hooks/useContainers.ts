@@ -625,6 +625,32 @@ export function useDeleteVmSnapshot() {
   });
 }
 
+export function useRollbackVmToSnapshot() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ vmId, snapshotId }: { vmId: string; snapshotId: string }) =>
+      api.rollbackVmToSnapshot(vmId, snapshotId),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['vms'] });
+      queryClient.invalidateQueries({ queryKey: ['vms', variables.vmId] });
+    },
+  });
+}
+
+export function usePromoteSnapshotToImage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ vmId, snapshotId, imageName }: { vmId: string; snapshotId: string; imageName: string }) =>
+      api.promoteSnapshotToImage(vmId, snapshotId, imageName),
+    onSuccess: () => {
+      // Invalidate base images list when a new image is created
+      queryClient.invalidateQueries({ queryKey: ['base-images'] });
+    },
+  });
+}
+
 export function useAllVmSnapshots() {
   return useQuery({
     queryKey: ['vms', 'all-snapshots'],

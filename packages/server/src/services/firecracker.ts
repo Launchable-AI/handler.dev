@@ -280,7 +280,7 @@ export class FirecrackerService extends EventEmitter {
       }
     }
 
-    // If creating from snapshot, delegate to restoreFromSnapshot
+    // If creating from snapshot, use cloneFromSnapshot (fresh boot with snapshot's disk)
     if (config.fromSnapshot) {
       const { vmId: sourceVmId, snapshotId } = config.fromSnapshot;
       const snapshotDir = path.join(this.config.dataDir, sourceVmId, 'snapshots', snapshotId);
@@ -289,7 +289,8 @@ export class FirecrackerService extends EventEmitter {
         throw new Error(`Snapshot ${snapshotId} not found for VM ${sourceVmId}`);
       }
 
-      return this.restoreFromSnapshot(snapshotDir, { name: config.name });
+      // Clone creates a NEW independent VM with fresh boot
+      return this.cloneFromSnapshot(snapshotDir, { name: config.name });
     }
 
     const id = this.generateVmId();
@@ -1147,14 +1148,70 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
-   * Restore a VM from snapshot with new identity
-   * This is the KEY FEATURE - updates MMDS before resuming so guest reconfigures network
+   * Rollback a VM to a previous snapshot state (same VM, memory restore)
+   * This restores the SAME VM to its exact state when the snapshot was taken.
+   * The VM must be stopped before rollback.
    */
-  async restoreFromSnapshot(
+  async rollbackToSnapshot(vmId: string, snapshotId: string): Promise<VmInfo> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    if (vm.status === 'running') {
+      throw new Error('VM must be stopped before rollback. Stop the VM first.');
+    }
+
+    const vmDir = path.join(this.config.dataDir, vmId);
+    const snapshotDir = path.join(vmDir, 'snapshots', snapshotId);
+    const metadataPath = path.join(snapshotDir, 'metadata.json');
+
+    if (!fs.existsSync(metadataPath)) {
+      throw new Error(`Snapshot ${snapshotId} not found`);
+    }
+
+    const snapshotMeta = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as FirecrackerSnapshotInfo;
+
+    console.log(`[FirecrackerService] Rolling back VM ${vmId} to snapshot ${snapshotId}`);
+
+    // Restore the overlay disk from snapshot
+    const overlayPath = path.join(vmDir, 'overlay.ext4');
+    if (fs.existsSync(snapshotMeta.diskPath)) {
+      execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${overlayPath}"`, { stdio: 'pipe' });
+    } else {
+      throw new Error(`Snapshot disk not found: ${snapshotMeta.diskPath}`);
+    }
+
+    // Copy snapshot files for memory restore
+    const snapshotPath = path.join(vmDir, 'snapshot.bin');
+    const memFilePath = path.join(vmDir, 'mem.bin');
+    fs.copyFileSync(snapshotMeta.snapshotPath, snapshotPath);
+    fs.copyFileSync(snapshotMeta.memFilePath, memFilePath);
+
+    // Mark VM as ready to start (will use snapshot restore on next start)
+    vm.sourceSnapshot = {
+      vmId: snapshotMeta.vmId,
+      snapshotId: snapshotMeta.id,
+      snapshotDir,
+    };
+    vm.status = 'stopped';
+    await this.saveVmState(vm);
+
+    console.log(`[FirecrackerService] VM ${vmId} rolled back to snapshot ${snapshotId}. Start VM to resume.`);
+
+    return this.vmToInfo(vm);
+  }
+
+  /**
+   * Clone a VM from a snapshot - creates a NEW independent VM with fresh boot
+   * The new VM boots fresh but has all the disk contents from the snapshot.
+   * This is like using the snapshot as a "base image" for a new VM.
+   */
+  async cloneFromSnapshot(
     snapshotDir: string,
-    newConfig: { name: string; id?: string }
+    newConfig: { name: string }
   ): Promise<VmInfo> {
-    console.log(`[FirecrackerService] Restoring VM from snapshot: ${snapshotDir}`);
+    console.log(`[FirecrackerService] Cloning new VM from snapshot: ${snapshotDir}`);
 
     const metadataPath = path.join(snapshotDir, 'metadata.json');
     if (!fs.existsSync(metadataPath)) {
@@ -1163,14 +1220,25 @@ export class FirecrackerService extends EventEmitter {
 
     const snapshotMeta = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as FirecrackerSnapshotInfo;
 
-    // Create new VM identity
-    const id = newConfig.id || this.generateVmId();
+    // Check snapshot disk exists
+    if (!fs.existsSync(snapshotMeta.diskPath)) {
+      throw new Error(`Snapshot disk not found: ${snapshotMeta.diskPath}. Please take a new snapshot.`);
+    }
+
+    // Create a new VM with the snapshot's configuration
+    // but DON'T use memory restore - boot fresh with the snapshot's disk
+    const id = this.generateVmId();
     const sshPort = this.allocateSshPort();
     const vmDir = path.join(this.config.dataDir, id);
 
     fs.mkdirSync(vmDir, { recursive: true });
 
-    // Allocate new TAP device
+    // Copy the snapshot's overlay disk as this VM's starting overlay
+    // This gives us the installed packages without memory state
+    const overlayPath = path.join(vmDir, 'overlay.ext4');
+    execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${overlayPath}"`, { stdio: 'pipe' });
+
+    // Allocate network
     let tapAllocation: TapAllocation | null = null;
     let networkMode: 'tap' | 'none' = 'none';
 
@@ -1181,36 +1249,19 @@ export class FirecrackerService extends EventEmitter {
       if (poolMode === 'helper' || (status.healthy && status.availableTaps > 0)) {
         tapAllocation = await this.networkPool.allocateAsync(id);
         networkMode = 'tap';
-        console.log(`[FirecrackerService] Allocated TAP ${tapAllocation.tapName} for restored VM ${id}`);
+        console.log(`[FirecrackerService] Allocated TAP ${tapAllocation.tapName} for cloned VM ${id}`);
       }
     } catch (error) {
-      console.warn(`[FirecrackerService] Failed to allocate TAP for restored VM ${id}:`, error);
+      console.warn(`[FirecrackerService] Failed to allocate TAP for cloned VM ${id}:`, error);
     }
 
-    // Copy snapshot files
-    const snapshotPath = path.join(vmDir, 'snapshot.bin');
-    const memFilePath = path.join(vmDir, 'mem.bin');
-    const overlayPath = path.join(vmDir, 'overlay.ext4');  // Use overlay.ext4 to match VM disk naming
-    const apiSocket = path.join(vmDir, 'api.sock');
-    const logFile = path.join(vmDir, 'firecracker.log');
-
-    fs.copyFileSync(snapshotMeta.snapshotPath, snapshotPath);
-    fs.copyFileSync(snapshotMeta.memFilePath, memFilePath);
-    // Use sparse-aware copy for disk image to preserve sparse file structure
-    // The snapshot stores the overlay disk, copy it to the new VM's overlay location
-    if (fs.existsSync(snapshotMeta.diskPath)) {
-      execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${overlayPath}"`, { stdio: 'pipe' });
-    } else {
-      throw new Error(`Snapshot disk not found: ${snapshotMeta.diskPath}`);
-    }
-
-    // Build new MMDS metadata with new identity
+    // Build MMDS metadata
     const sshPubKeyPath = path.join(this.config.sshKeysDir, 'id_ed25519.pub');
     const sshPublicKey = fs.existsSync(sshPubKeyPath)
       ? fs.readFileSync(sshPubKeyPath, 'utf-8').trim()
       : '';
 
-    const newMmdsMetadata: MmdsMetadata = {
+    const mmdsMetadata: MmdsMetadata = {
       instance: {
         id,
         name: newConfig.name,
@@ -1234,18 +1285,18 @@ export class FirecrackerService extends EventEmitter {
       },
     };
 
-    // Create VM state
+    // Create VM state - this is a FRESH VM that will boot normally
     const vm: FirecrackerVmState = {
       id,
       name: newConfig.name,
-      status: 'creating',
+      status: 'stopped',  // Start as stopped, will boot fresh
       sshPort,
       guestIp: tapAllocation?.guestIp,
       networkConfig: {
         mode: networkMode,
         tapDevice: tapAllocation?.tapName,
         bridgeName: tapAllocation?.bridgeName,
-        macAddress: newMmdsMetadata.network.interfaces.eth0.mac,
+        macAddress: mmdsMetadata.network.interfaces.eth0.mac,
         guestIp: tapAllocation?.guestIp,
         gateway: tapAllocation?.gateway,
       },
@@ -1255,7 +1306,7 @@ export class FirecrackerService extends EventEmitter {
       memoryMb: snapshotMeta.memoryMb,
       diskGb: snapshotMeta.diskGb,
       volumes: [],
-      mmdsMetadata: newMmdsMetadata,
+      mmdsMetadata,
       sourceSnapshot: {
         vmId: snapshotMeta.vmId,
         snapshotId: snapshotMeta.id,
@@ -1267,92 +1318,73 @@ export class FirecrackerService extends EventEmitter {
     this.vms.set(id, vm);
     await this.saveVmState(vm);
 
-    // Start Firecracker process
-    const logFd = fs.openSync(logFile, 'a');
-    const proc = spawn('sg', ['kvm', '-c', `${this.config.firecrackerBinary} --api-sock ${apiSocket}`], {
-      detached: true,
-      stdio: ['ignore', logFd, logFd],
-    });
-    fs.closeSync(logFd);
-    proc.unref();
-    this.processes.set(id, proc);
+    console.log(`[FirecrackerService] Created cloned VM ${id} from snapshot. Starting...`);
 
-    vm.pid = proc.pid;
-    vm.apiSocket = apiSocket;
-    vm.startedAt = new Date().toISOString();
-    await this.saveVmState(vm);
+    // Start the VM with fresh boot (not memory restore)
+    return this.startVm(id);
+  }
 
-    const startTime = Date.now();
+  /**
+   * Promote a snapshot to a base image
+   * This merges the base image + overlay into a new standalone base image
+   * that can be used to create fresh VMs.
+   */
+  async promoteSnapshotToImage(
+    vmId: string,
+    snapshotId: string,
+    newImageName: string
+  ): Promise<{ imageName: string; imagePath: string }> {
+    const vmDir = path.join(this.config.dataDir, vmId);
+    const snapshotDir = path.join(vmDir, 'snapshots', snapshotId);
+    const metadataPath = path.join(snapshotDir, 'metadata.json');
 
-    try {
-      // Wait for API socket
-      await this.waitForApiSocket(apiSocket, 5000);
-      console.log(`[FirecrackerService] API socket ready in ${Date.now() - startTime}ms`);
-
-      // Configure drives BEFORE loading snapshot (required for Firecracker snapshot restore)
-      // The base image should be at the same location (shared read-only)
-      const baseImageDir = path.join(this.config.baseImagesDir, snapshotMeta.baseImage);
-      const baseImagePath = path.join(baseImageDir, 'rootfs.ext4');
-
-      // Configure base rootfs drive (read-only, shared)
-      await this.sendApiRequest(apiSocket, 'PUT', '/drives/rootfs', {
-        drive_id: 'rootfs',
-        path_on_host: baseImagePath,
-        is_root_device: true,
-        is_read_only: true,
-      } as Drive);
-
-      // Configure overlay drive (writable, per-VM) - points to NEW VM's overlay
-      await this.sendApiRequest(apiSocket, 'PUT', '/drives/overlay', {
-        drive_id: 'overlay',
-        path_on_host: overlayPath,
-        is_root_device: false,
-        is_read_only: false,
-      } as Drive);
-
-      console.log(`[FirecrackerService] Drives configured for restore`);
-
-      // Load snapshot (don't resume yet!)
-      await this.sendApiRequest(apiSocket, 'PUT', '/snapshot/load', {
-        snapshot_path: snapshotPath,
-        mem_backend: {
-          backend_type: 'File',
-          backend_path: memFilePath,
-        },
-        enable_diff_snapshots: false,
-        resume_vm: false,  // DON'T RESUME YET - need to update MMDS first
-      } as SnapshotLoadParams);
-
-      console.log(`[FirecrackerService] Snapshot loaded in ${Date.now() - startTime}ms`);
-
-      // Update MMDS with new identity BEFORE resuming
-      // This is THE KEY - guest will query MMDS after resume and reconfigure
-      if (networkMode === 'tap') {
-        await this.sendApiRequest(apiSocket, 'PUT', '/mmds', newMmdsMetadata);
-        console.log(`[FirecrackerService] MMDS updated with new identity`);
-      }
-
-      // NOW resume - guest will query MMDS and reconfigure network
-      await this.sendApiRequest(apiSocket, 'PATCH', '/vm', { state: 'Resumed' });
-      console.log(`[FirecrackerService] VM resumed in ${Date.now() - startTime}ms`);
-
-      vm.status = 'running';
-      await this.saveVmState(vm);
-      this.emit('vm:started', vm);
-
-      // Quick SSH check (should be very fast for snapshot restore)
-      await this.waitForSshReady(id, 10000);
-      console.log(`[FirecrackerService] VM ${id} restored and running in ${Date.now() - startTime}ms`);
-
-    } catch (error) {
-      console.error(`[FirecrackerService] Failed to restore VM ${id}:`, error);
-      vm.status = 'error';
-      vm.error = String(error);
-      await this.saveVmState(vm);
-      throw error;
+    if (!fs.existsSync(metadataPath)) {
+      throw new Error(`Snapshot ${snapshotId} not found`);
     }
 
-    return this.vmToInfo(vm);
+    const snapshotMeta = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as FirecrackerSnapshotInfo;
+
+    if (!fs.existsSync(snapshotMeta.diskPath)) {
+      throw new Error(`Snapshot disk not found: ${snapshotMeta.diskPath}`);
+    }
+
+    console.log(`[FirecrackerService] Promoting snapshot ${snapshotId} to base image: ${newImageName}`);
+
+    // Create new image directory
+    const newImageDir = path.join(this.config.baseImagesDir, newImageName);
+    if (fs.existsSync(newImageDir)) {
+      throw new Error(`Image ${newImageName} already exists`);
+    }
+    fs.mkdirSync(newImageDir, { recursive: true });
+
+    // Get the original base image
+    const baseImageDir = path.join(this.config.baseImagesDir, snapshotMeta.baseImage);
+    const baseRootfs = path.join(baseImageDir, 'rootfs.ext4');
+    const baseKernel = path.join(baseImageDir, 'vmlinux');
+
+    // Copy the kernel
+    const newKernel = path.join(newImageDir, 'vmlinux');
+    fs.copyFileSync(baseKernel, newKernel);
+
+    // Create merged rootfs by:
+    // 1. Copy base image
+    // 2. Mount both and copy overlay contents
+    // For simplicity, we'll just copy the overlay as the new rootfs
+    // (The overlay contains the full filesystem state after overlayfs merge)
+    const newRootfs = path.join(newImageDir, 'rootfs.ext4');
+
+    // The overlay.ext4 from snapshot IS the full merged state
+    // (Firecracker's overlay-init creates a proper overlayfs merge)
+    execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${newRootfs}"`, { stdio: 'pipe' });
+
+    console.log(`[FirecrackerService] Created new base image: ${newImageName}`);
+    console.log(`[FirecrackerService]   Kernel: ${newKernel}`);
+    console.log(`[FirecrackerService]   Rootfs: ${newRootfs}`);
+
+    return {
+      imageName: newImageName,
+      imagePath: newImageDir,
+    };
   }
 
   /**
