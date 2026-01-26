@@ -4,15 +4,27 @@ import type {
   CommandCentreContextValue,
   TerminalSession,
   LayoutMode,
+  SplitLayout,
 } from '../types/command-centre';
+
+// Constants
+const MIN_FONT_SIZE = 8;
+const MAX_FONT_SIZE = 24;
+const DEFAULT_FONT_SIZE = 13;
+const MIN_SIDEBAR_WIDTH = 150;
+const MAX_SIDEBAR_WIDTH = 500;
+const DEFAULT_SIDEBAR_WIDTH = 220;
 
 // Initial state
 const initialState: CommandCentreState = {
   sessions: [],
   layouts: [],
   activeSessionId: null,
-  maximizedSessionId: null,
-  layoutMode: 'grid',
+  layoutMode: 'split',
+  splitLayout: 'grid',
+  focusedSessionIds: [],
+  fontSize: DEFAULT_FONT_SIZE,
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
 };
 
 // Action types
@@ -21,41 +33,48 @@ type Action =
   | { type: 'CLOSE_SESSION'; payload: string }
   | { type: 'UPDATE_SESSION_STATUS'; payload: { id: string; status: TerminalSession['status']; errorMessage?: string } }
   | { type: 'SET_ACTIVE_SESSION'; payload: string | null }
-  | { type: 'SET_MAXIMIZED_SESSION'; payload: string | null }
   | { type: 'SET_LAYOUT_MODE'; payload: LayoutMode }
-  | { type: 'SWAP_WITH_MAXIMIZED'; payload: string };
+  | { type: 'SET_SPLIT_LAYOUT'; payload: SplitLayout }
+  | { type: 'FOCUS_SESSION'; payload: string }
+  | { type: 'UNFOCUS_SESSION'; payload: string }
+  | { type: 'TOGGLE_FOCUS'; payload: string }
+  | { type: 'FOCUS_ALL' }
+  | { type: 'UNFOCUS_ALL' }
+  | { type: 'SET_FONT_SIZE'; payload: number }
+  | { type: 'SET_SIDEBAR_WIDTH'; payload: number };
 
 // Reducer
 function commandCentreReducer(state: CommandCentreState, action: Action): CommandCentreState {
   switch (action.type) {
     case 'CREATE_SESSION': {
+      // New sessions are automatically focused
       return {
         ...state,
         sessions: [...state.sessions, action.payload],
         activeSessionId: action.payload.id,
+        focusedSessionIds: [...state.focusedSessionIds, action.payload.id],
       };
     }
     case 'CLOSE_SESSION': {
       const newSessions = state.sessions.filter(s => s.id !== action.payload);
+      const newFocusedIds = state.focusedSessionIds.filter(id => id !== action.payload);
       let newActiveSessionId = state.activeSessionId;
-      let newMaximizedSessionId = state.maximizedSessionId;
 
       // If closing the active session, switch to another one
       if (state.activeSessionId === action.payload) {
-        newActiveSessionId = newSessions.length > 0 ? newSessions[newSessions.length - 1].id : null;
-      }
-
-      // If closing the maximized session, restore grid
-      if (state.maximizedSessionId === action.payload) {
-        newMaximizedSessionId = null;
+        // Prefer focused sessions, then any session
+        newActiveSessionId = newFocusedIds.length > 0
+          ? newFocusedIds[newFocusedIds.length - 1]
+          : newSessions.length > 0
+            ? newSessions[newSessions.length - 1].id
+            : null;
       }
 
       return {
         ...state,
         sessions: newSessions,
         activeSessionId: newActiveSessionId,
-        maximizedSessionId: newMaximizedSessionId,
-        layoutMode: newMaximizedSessionId ? 'maximized' : 'grid',
+        focusedSessionIds: newFocusedIds,
       };
     }
     case 'UPDATE_SESSION_STATUS': {
@@ -74,27 +93,104 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         activeSessionId: action.payload,
       };
     }
-    case 'SET_MAXIMIZED_SESSION': {
-      return {
-        ...state,
-        maximizedSessionId: action.payload,
-        layoutMode: action.payload ? 'maximized' : 'grid',
-      };
-    }
     case 'SET_LAYOUT_MODE': {
+      // When switching to focus mode, focus all sessions if none are focused
+      let focusedIds = state.focusedSessionIds;
+      if (action.payload === 'focus' && focusedIds.length === 0 && state.sessions.length > 0) {
+        focusedIds = state.sessions.map(s => s.id);
+      }
       return {
         ...state,
         layoutMode: action.payload,
-        maximizedSessionId: action.payload === 'grid' ? null : state.maximizedSessionId,
+        focusedSessionIds: focusedIds,
       };
     }
-    case 'SWAP_WITH_MAXIMIZED': {
-      // Swap the clicked thumbnail with the maximized session
-      if (!state.maximizedSessionId) return state;
+    case 'SET_SPLIT_LAYOUT': {
       return {
         ...state,
-        maximizedSessionId: action.payload,
+        splitLayout: action.payload,
+      };
+    }
+    case 'FOCUS_SESSION': {
+      if (state.focusedSessionIds.includes(action.payload)) {
+        return state;
+      }
+      return {
+        ...state,
+        focusedSessionIds: [...state.focusedSessionIds, action.payload],
         activeSessionId: action.payload,
+      };
+    }
+    case 'UNFOCUS_SESSION': {
+      // Don't unfocus if it's the last focused session
+      if (state.focusedSessionIds.length <= 1) {
+        return state;
+      }
+      const newFocusedIds = state.focusedSessionIds.filter(id => id !== action.payload);
+      let newActiveId = state.activeSessionId;
+      // If unfocusing the active session, switch to another focused one
+      if (state.activeSessionId === action.payload) {
+        newActiveId = newFocusedIds[newFocusedIds.length - 1] || null;
+      }
+      return {
+        ...state,
+        focusedSessionIds: newFocusedIds,
+        activeSessionId: newActiveId,
+      };
+    }
+    case 'TOGGLE_FOCUS': {
+      const isFocused = state.focusedSessionIds.includes(action.payload);
+      if (isFocused) {
+        // Don't unfocus if it's the last one
+        if (state.focusedSessionIds.length <= 1) {
+          return state;
+        }
+        const newFocusedIds = state.focusedSessionIds.filter(id => id !== action.payload);
+        let newActiveId = state.activeSessionId;
+        if (state.activeSessionId === action.payload) {
+          newActiveId = newFocusedIds[newFocusedIds.length - 1] || null;
+        }
+        return {
+          ...state,
+          focusedSessionIds: newFocusedIds,
+          activeSessionId: newActiveId,
+        };
+      } else {
+        return {
+          ...state,
+          focusedSessionIds: [...state.focusedSessionIds, action.payload],
+          activeSessionId: action.payload,
+        };
+      }
+    }
+    case 'FOCUS_ALL': {
+      return {
+        ...state,
+        focusedSessionIds: state.sessions.map(s => s.id),
+      };
+    }
+    case 'UNFOCUS_ALL': {
+      // Keep only one session focused (the active one or the first one)
+      const keepFocused = state.activeSessionId || state.sessions[0]?.id;
+      if (!keepFocused) return state;
+      return {
+        ...state,
+        focusedSessionIds: [keepFocused],
+        activeSessionId: keepFocused,
+      };
+    }
+    case 'SET_FONT_SIZE': {
+      const size = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, action.payload));
+      return {
+        ...state,
+        fontSize: size,
+      };
+    }
+    case 'SET_SIDEBAR_WIDTH': {
+      const width = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, action.payload));
+      return {
+        ...state,
+        sidebarWidth: width,
       };
     }
     default:
@@ -119,6 +215,8 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     const existing = state.sessions.find(s => s.targetId === targetId && s.type === type);
     if (existing) {
       dispatch({ type: 'SET_ACTIVE_SESSION', payload: existing.id });
+      // Also focus it if in focus mode
+      dispatch({ type: 'FOCUS_SESSION', payload: existing.id });
       return;
     }
 
@@ -152,30 +250,48 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_ACTIVE_SESSION', payload: sessionId });
   }, []);
 
-  const maximizeSession = useCallback((sessionId: string) => {
-    dispatch({ type: 'SET_MAXIMIZED_SESSION', payload: sessionId });
-    dispatch({ type: 'SET_ACTIVE_SESSION', payload: sessionId });
-  }, []);
-
-  const restoreLayout = useCallback(() => {
-    dispatch({ type: 'SET_MAXIMIZED_SESSION', payload: null });
-  }, []);
-
-  const toggleMaximize = useCallback((sessionId: string) => {
-    if (state.maximizedSessionId === sessionId) {
-      dispatch({ type: 'SET_MAXIMIZED_SESSION', payload: null });
-    } else {
-      dispatch({ type: 'SET_MAXIMIZED_SESSION', payload: sessionId });
-      dispatch({ type: 'SET_ACTIVE_SESSION', payload: sessionId });
-    }
-  }, [state.maximizedSessionId]);
-
   const setLayoutMode = useCallback((mode: LayoutMode) => {
     dispatch({ type: 'SET_LAYOUT_MODE', payload: mode });
   }, []);
 
-  const swapWithMaximized = useCallback((sessionId: string) => {
-    dispatch({ type: 'SWAP_WITH_MAXIMIZED', payload: sessionId });
+  const setSplitLayout = useCallback((layout: SplitLayout) => {
+    dispatch({ type: 'SET_SPLIT_LAYOUT', payload: layout });
+  }, []);
+
+  const focusSession = useCallback((sessionId: string) => {
+    dispatch({ type: 'FOCUS_SESSION', payload: sessionId });
+  }, []);
+
+  const unfocusSession = useCallback((sessionId: string) => {
+    dispatch({ type: 'UNFOCUS_SESSION', payload: sessionId });
+  }, []);
+
+  const toggleFocus = useCallback((sessionId: string) => {
+    dispatch({ type: 'TOGGLE_FOCUS', payload: sessionId });
+  }, []);
+
+  const focusAll = useCallback(() => {
+    dispatch({ type: 'FOCUS_ALL' });
+  }, []);
+
+  const unfocusAll = useCallback(() => {
+    dispatch({ type: 'UNFOCUS_ALL' });
+  }, []);
+
+  const setFontSize = useCallback((size: number) => {
+    dispatch({ type: 'SET_FONT_SIZE', payload: size });
+  }, []);
+
+  const increaseFontSize = useCallback(() => {
+    dispatch({ type: 'SET_FONT_SIZE', payload: state.fontSize + 1 });
+  }, [state.fontSize]);
+
+  const decreaseFontSize = useCallback(() => {
+    dispatch({ type: 'SET_FONT_SIZE', payload: state.fontSize - 1 });
+  }, [state.fontSize]);
+
+  const setSidebarWidth = useCallback((width: number) => {
+    dispatch({ type: 'SET_SIDEBAR_WIDTH', payload: width });
   }, []);
 
   const value: CommandCentreContextValue = {
@@ -184,11 +300,17 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     closeSession,
     updateSessionStatus,
     setActiveSession,
-    maximizeSession,
-    restoreLayout,
-    toggleMaximize,
     setLayoutMode,
-    swapWithMaximized,
+    setSplitLayout,
+    focusSession,
+    unfocusSession,
+    toggleFocus,
+    focusAll,
+    unfocusAll,
+    setFontSize,
+    increaseFontSize,
+    decreaseFontSize,
+    setSidebarWidth,
   };
 
   return (

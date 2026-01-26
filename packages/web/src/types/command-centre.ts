@@ -25,14 +25,25 @@ export interface TileLayout {
   zIndex: number;
 }
 
-export type LayoutMode = 'grid' | 'maximized';
+// Split layouts for main view
+export type SplitLayout = 'grid' | 'vertical' | 'horizontal';
+
+// Main layout modes
+export type LayoutMode = 'split' | 'focus';
 
 export interface CommandCentreState {
   sessions: TerminalSession[];
   layouts: TileLayout[];
   activeSessionId: string | null;
-  maximizedSessionId: string | null;
-  layoutMode: LayoutMode;
+
+  // Layout
+  layoutMode: LayoutMode;           // 'split' = all in main, 'focus' = main + sidebar
+  splitLayout: SplitLayout;         // How to arrange sessions in main area
+  focusedSessionIds: string[];      // Sessions in main area (focus mode only)
+
+  // UI settings
+  fontSize: number;                 // Terminal font size in pixels
+  sidebarWidth: number;             // Preview sidebar width in pixels
 }
 
 export interface CommandCentreContextValue {
@@ -47,9 +58,21 @@ export interface CommandCentreContextValue {
   setActiveSession: (sessionId: string | null) => void;
 
   // Layout
-  maximizeSession: (sessionId: string) => void;
-  restoreLayout: () => void;
-  toggleMaximize: (sessionId: string) => void;
   setLayoutMode: (mode: LayoutMode) => void;
-  swapWithMaximized: (sessionId: string) => void;
+  setSplitLayout: (layout: SplitLayout) => void;
+
+  // Focus mode: move sessions between main and sidebar
+  focusSession: (sessionId: string) => void;      // Move to main area
+  unfocusSession: (sessionId: string) => void;    // Move to sidebar
+  toggleFocus: (sessionId: string) => void;       // Toggle between main/sidebar
+  focusAll: () => void;                           // Move all to main
+  unfocusAll: () => void;                         // Move all to sidebar (keep one)
+
+  // Font size
+  setFontSize: (size: number) => void;
+  increaseFontSize: () => void;
+  decreaseFontSize: () => void;
+
+  // Sidebar
+  setSidebarWidth: (width: number) => void;
 }

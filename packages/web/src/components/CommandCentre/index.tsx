@@ -17,4 +17,3 @@ export function CommandCentre() {
 export { ToolBar } from './ToolBar';
 export { SessionGrid } from './SessionGrid';
 export { SessionTile } from './SessionTile';
-export { SessionThumbnail } from './SessionThumbnail';

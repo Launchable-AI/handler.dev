@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { Plus, LayoutGrid, Maximize2, ChevronDown, Server, Container } from 'lucide-react';
+import {
+  Plus,
+  LayoutGrid,
+  Rows3,
+  Columns3,
+  PanelRight,
+  ChevronDown,
+  Server,
+  Container,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
 import { useVms, useContainers } from '../../hooks/useContainers';
 
@@ -8,11 +19,18 @@ interface ToolBarProps {
 }
 
 export function ToolBar({ className = '' }: ToolBarProps) {
-  const { state, setLayoutMode, restoreLayout } = useCommandCentre();
+  const {
+    state,
+    setLayoutMode,
+    setSplitLayout,
+    increaseFontSize,
+    decreaseFontSize,
+  } = useCommandCentre();
   const [showPicker, setShowPicker] = useState(false);
 
   const sessionCount = state.sessions.length;
-  const hasMaximized = state.maximizedSessionId !== null;
+  const { fontSize, layoutMode, splitLayout, focusedSessionIds } = state;
+  const unfocusedCount = sessionCount - focusedSessionIds.length;
 
   return (
     <div className={`flex items-center justify-between px-4 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))] ${className}`}>
@@ -24,41 +42,82 @@ export function ToolBar({ className = '' }: ToolBarProps) {
         {sessionCount > 0 && (
           <span className="px-2 py-0.5 text-[10px] font-medium bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded-full">
             {sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}
+            {layoutMode === 'focus' && unfocusedCount > 0 && (
+              <span className="ml-1 text-[hsl(var(--text-muted))]">
+                ({unfocusedCount} in sidebar)
+              </span>
+            )}
           </span>
         )}
       </div>
 
-      {/* Center: Layout mode toggle */}
-      <div className="flex items-center gap-1">
+      {/* Center: Layout controls & font size */}
+      <div className="flex items-center gap-3">
+        {/* Split layout buttons */}
+        <div className="flex items-center gap-0.5 bg-[hsl(var(--bg-elevated))] p-0.5 rounded">
+          <LayoutButton
+            icon={<LayoutGrid className="h-3.5 w-3.5" />}
+            active={splitLayout === 'grid'}
+            onClick={() => setSplitLayout('grid')}
+            title="Grid layout"
+          />
+          <LayoutButton
+            icon={<Columns3 className="h-3.5 w-3.5" />}
+            active={splitLayout === 'horizontal'}
+            onClick={() => setSplitLayout('horizontal')}
+            title="Horizontal split"
+          />
+          <LayoutButton
+            icon={<Rows3 className="h-3.5 w-3.5" />}
+            active={splitLayout === 'vertical'}
+            onClick={() => setSplitLayout('vertical')}
+            title="Vertical split"
+          />
+        </div>
+
+        {/* Separator */}
+        <div className="w-px h-5 bg-[hsl(var(--border))]" />
+
+        {/* Focus mode toggle */}
         <button
-          onClick={() => setLayoutMode('grid')}
-          className={`p-1.5 transition-colors ${
-            state.layoutMode === 'grid' && !hasMaximized
-              ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.15)]'
+          onClick={() => setLayoutMode(layoutMode === 'split' ? 'focus' : 'split')}
+          disabled={sessionCount < 2}
+          className={`flex items-center gap-1.5 px-2 py-1 text-xs transition-colors rounded ${
+            layoutMode === 'focus'
+              ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))]'
               : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
-          }`}
-          title="Grid layout"
+          } disabled:opacity-50`}
+          title={layoutMode === 'focus' ? 'Show all in main view' : 'Enable focus mode with sidebar'}
         >
-          <LayoutGrid className="h-4 w-4" />
+          <PanelRight className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Focus</span>
         </button>
-        <button
-          onClick={() => {
-            if (hasMaximized) {
-              restoreLayout();
-            } else if (state.activeSessionId) {
-              setLayoutMode('maximized');
-            }
-          }}
-          disabled={sessionCount === 0}
-          className={`p-1.5 transition-colors ${
-            hasMaximized
-              ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.15)]'
-              : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50'
-          }`}
-          title="Maximized layout"
-        >
-          <Maximize2 className="h-4 w-4" />
-        </button>
+
+        {/* Separator */}
+        <div className="w-px h-5 bg-[hsl(var(--border))]" />
+
+        {/* Font size controls */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={decreaseFontSize}
+            disabled={fontSize <= 8}
+            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] transition-colors disabled:opacity-50 rounded"
+            title="Decrease font size"
+          >
+            <ZoomOut className="h-3.5 w-3.5" />
+          </button>
+          <span className="text-[10px] text-[hsl(var(--text-secondary))] min-w-[28px] text-center font-mono">
+            {fontSize}px
+          </span>
+          <button
+            onClick={increaseFontSize}
+            disabled={fontSize >= 24}
+            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] transition-colors disabled:opacity-50 rounded"
+            title="Increase font size"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Right: Add session button */}
@@ -77,6 +136,30 @@ export function ToolBar({ className = '' }: ToolBarProps) {
         )}
       </div>
     </div>
+  );
+}
+
+// Layout button component
+interface LayoutButtonProps {
+  icon: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+  title: string;
+}
+
+function LayoutButton({ icon, active, onClick, title }: LayoutButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`p-1.5 rounded transition-colors ${
+        active
+          ? 'bg-[hsl(var(--cyan)/0.2)] text-[hsl(var(--cyan))]'
+          : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))]'
+      }`}
+      title={title}
+    >
+      {icon}
+    </button>
   );
 }
 

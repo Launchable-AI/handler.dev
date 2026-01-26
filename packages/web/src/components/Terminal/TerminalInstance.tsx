@@ -21,6 +21,7 @@ export interface TerminalInstanceProps {
   onStateChange?: (state: ConnectionState, errorMessage?: string) => void;
   showStatusBar?: boolean;
   className?: string;
+  fontSize?: number;
 }
 
 export function TerminalInstance({
@@ -28,6 +29,7 @@ export function TerminalInstance({
   onStateChange,
   showStatusBar = true,
   className = '',
+  fontSize = 13,
 }: TerminalInstanceProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -65,7 +67,7 @@ export function TerminalInstance({
       cursorBlink: true,
       cursorStyle: 'block',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-      fontSize: 13,
+      fontSize,
       lineHeight: 1.2,
       theme: {
         background: 'hsl(220 20% 6%)',
@@ -258,6 +260,27 @@ export function TerminalInstance({
       wsRef.current = null;
     };
   }, [target.type, target.id, target.ip, target.isDevNode, getWsUrl, updateState]);
+
+  // Update font size when prop changes
+  useEffect(() => {
+    if (xtermRef.current && fitAddonRef.current) {
+      xtermRef.current.options.fontSize = fontSize;
+      // Refit terminal after font size change
+      try {
+        fitAddonRef.current.fit();
+        // Send resize to server
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'resize',
+            cols: xtermRef.current.cols,
+            rows: xtermRef.current.rows,
+          }));
+        }
+      } catch (e) {
+        console.warn('[Terminal] Fit after font change failed:', e);
+      }
+    }
+  }, [fontSize]);
 
   // Focus the terminal when this component is clicked
   const handleClick = useCallback(() => {
