@@ -7,7 +7,7 @@ const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const CONFIG_FILE = join(PROJECT_ROOT, 'data', 'config.json');
 
 export interface DaytonaConfig {
-  apiUrl: string;      // e.g., https://api.daytona.io
+  apiUrl: string;      // e.g., https://app.daytona.io/api
   apiKey: string;      // User's API key
   enabled: boolean;
 }

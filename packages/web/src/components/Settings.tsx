@@ -61,7 +61,7 @@ export function Settings() {
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
 
   // Cloud backends state
-  const [daytonaApiUrl, setDaytonaApiUrl] = useState('https://api.daytona.io');
+  const [daytonaApiUrl, setDaytonaApiUrl] = useState('https://app.daytona.io/api');
   const [daytonaApiKey, setDaytonaApiKey] = useState('');
   const [daytonaEnabled, setDaytonaEnabled] = useState(false);
   const [daytonaConfigured, setDaytonaConfigured] = useState(false);
@@ -127,7 +127,7 @@ export function Settings() {
     setCloudLoading(true);
     try {
       const daytonaConfig = await api.getDaytonaConfig();
-      setDaytonaApiUrl(daytonaConfig.apiUrl || 'https://api.daytona.io');
+      setDaytonaApiUrl(daytonaConfig.apiUrl || 'https://app.daytona.io/api');
       setDaytonaEnabled(daytonaConfig.enabled);
       setDaytonaConfigured(daytonaConfig.configured);
       // Don't load API key - it's sensitive and we don't send it back from server
@@ -792,7 +792,7 @@ export function Settings() {
                           type="text"
                           value={daytonaApiUrl}
                           onChange={(e) => setDaytonaApiUrl(e.target.value)}
-                          placeholder="https://api.daytona.io"
+                          placeholder="https://app.daytona.io/api"
                           className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
                         />
                       </div>

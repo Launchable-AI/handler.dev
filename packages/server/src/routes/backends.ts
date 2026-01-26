@@ -183,7 +183,7 @@ async function getDaytonaStatus(): Promise<BackendInfo> {
     // If enabled, check if API is reachable
     if (daytona.enabled) {
       try {
-        const apiUrl = daytona.apiUrl || 'https://api.daytona.io';
+        const apiUrl = daytona.apiUrl || 'https://app.daytona.io/api';
         const response = await fetch(`${apiUrl}/health`, {
           method: 'GET',
           headers: {
@@ -451,7 +451,7 @@ backends.post('/daytona/configure', async (c) => {
 
     const config = await getConfig();
     const currentDaytona = config.cloudBackends?.daytona || {
-      apiUrl: 'https://api.daytona.io',
+      apiUrl: 'https://app.daytona.io/api',
       apiKey: '',
       enabled: false,
     };
@@ -482,7 +482,7 @@ backends.post('/daytona/test', async (c) => {
     const { apiUrl, apiKey } = body as { apiUrl?: string; apiKey?: string };
 
     const config = await getConfig();
-    const testApiUrl = apiUrl || config.cloudBackends?.daytona?.apiUrl || 'https://api.daytona.io';
+    const testApiUrl = apiUrl || config.cloudBackends?.daytona?.apiUrl || 'https://app.daytona.io/api';
     const testApiKey = apiKey || config.cloudBackends?.daytona?.apiKey;
 
     if (!testApiKey) {
@@ -524,7 +524,7 @@ backends.get('/daytona/config', async (c) => {
     if (!daytona) {
       return c.json({
         configured: false,
-        apiUrl: 'https://api.daytona.io',
+        apiUrl: 'https://app.daytona.io/api',
         enabled: false,
       });
     }

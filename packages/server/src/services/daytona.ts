@@ -30,7 +30,7 @@ export interface CreateDaytonaWorkspaceRequest {
 }
 
 export class DaytonaService {
-  private apiUrl: string = 'https://api.daytona.io';
+  private apiUrl: string = 'https://app.daytona.io/api';
   private apiKey: string = '';
   private initialized: boolean = false;
 
@@ -45,7 +45,7 @@ export class DaytonaService {
       throw new Error('Daytona API key not configured');
     }
 
-    this.apiUrl = daytona.apiUrl || 'https://api.daytona.io';
+    this.apiUrl = daytona.apiUrl || 'https://app.daytona.io/api';
     this.apiKey = daytona.apiKey;
     this.initialized = true;
 
