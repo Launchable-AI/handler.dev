@@ -38,6 +38,7 @@ interface TerminalPanelContextType {
   position: PanelPosition;
   tabs: TerminalTab[];
   activeTabId: string | null;
+  size: number;
   openTerminal: (vmId: string, vmName: string, vmIp: string) => void;
   openContainerTerminal: (containerId: string, containerName: string, isDevNode?: boolean) => void;
   closeTerminal: (tabId: string) => void;
@@ -62,6 +63,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
   const [position, setPosition] = useState<PanelPosition>('bottom');
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [size, setSize] = useState(350);
 
   const openTerminal = useCallback((vmId: string, vmName: string, vmIp: string) => {
     // Check if terminal for this VM already exists
@@ -136,6 +138,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
       position,
       tabs,
       activeTabId,
+      size,
       openTerminal,
       openContainerTerminal,
       closeTerminal,
@@ -149,6 +152,8 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
           tabs={tabs}
           activeTabId={activeTabId}
           position={position}
+          size={size}
+          onSizeChange={setSize}
           onTabClose={closeTerminal}
           onTabSelect={setActiveTabId}
           onClose={closePanel}
@@ -165,6 +170,8 @@ interface TerminalPanelUIProps {
   tabs: TerminalTab[];
   activeTabId: string | null;
   position: PanelPosition;
+  size: number;
+  onSizeChange: (size: number) => void;
   onTabClose: (tabId: string) => void;
   onTabSelect: (tabId: string) => void;
   onClose: () => void;
@@ -176,13 +183,14 @@ function TerminalPanelUI({
   tabs,
   activeTabId,
   position,
+  size,
+  onSizeChange,
   onTabClose,
   onTabSelect,
   onClose,
   onPositionChange,
   onTabStateChange,
 }: TerminalPanelUIProps) {
-  const [size, setSize] = useState(position === 'bottom' ? 350 : 500);
   const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -198,10 +206,10 @@ function TerminalPanelUI({
     const handleMouseMove = (e: MouseEvent) => {
       if (position === 'bottom') {
         const newSize = window.innerHeight - e.clientY;
-        setSize(Math.max(200, Math.min(newSize, window.innerHeight - 100)));
+        onSizeChange(Math.max(200, Math.min(newSize, window.innerHeight - 100)));
       } else {
         const newSize = window.innerWidth - e.clientX;
-        setSize(Math.max(300, Math.min(newSize, window.innerWidth - 300)));
+        onSizeChange(Math.max(300, Math.min(newSize, window.innerWidth - 300)));
       }
     };
 
@@ -216,15 +224,16 @@ function TerminalPanelUI({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, position]);
+  }, [isResizing, position, onSizeChange]);
 
   const panelClasses = position === 'bottom'
     ? 'fixed bottom-0 left-52 right-0 border-t'
     : 'fixed top-0 right-0 bottom-0 border-l';
 
+  // Resize handle extends along the entire edge
   const resizeHandleClasses = position === 'bottom'
-    ? 'absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-[hsl(var(--cyan)/0.3)] transition-colors flex items-center justify-center'
-    : 'absolute top-0 left-0 bottom-0 w-2 cursor-ew-resize hover:bg-[hsl(var(--cyan)/0.3)] transition-colors flex items-center justify-center';
+    ? 'absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize hover:bg-[hsl(var(--cyan)/0.5)] bg-[hsl(var(--border))] transition-colors group'
+    : 'absolute top-0 left-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-[hsl(var(--cyan)/0.5)] bg-[hsl(var(--border))] transition-colors group';
 
   return (
     <div
@@ -232,16 +241,19 @@ function TerminalPanelUI({
       className={`${panelClasses} z-40 flex flex-col bg-[hsl(var(--bg-base))] border-[hsl(var(--border))]`}
       style={position === 'bottom' ? { height: size } : { width: size }}
     >
-      {/* Resize handle */}
+      {/* Resize handle - full edge */}
       <div
         className={resizeHandleClasses}
         onMouseDown={handleMouseDown}
       >
-        {position === 'bottom' ? (
-          <GripHorizontal className="h-3 w-3 text-[hsl(var(--text-muted))] opacity-0 hover:opacity-100" />
-        ) : (
-          <GripVertical className="h-3 w-3 text-[hsl(var(--text-muted))] opacity-0 hover:opacity-100" />
-        )}
+        {/* Center grip indicator */}
+        <div className={`absolute ${position === 'bottom' ? 'left-1/2 -translate-x-1/2 top-0' : 'top-1/2 -translate-y-1/2 left-0'}`}>
+          {position === 'bottom' ? (
+            <GripHorizontal className="h-3 w-6 text-[hsl(var(--text-muted))] opacity-30 group-hover:opacity-100 transition-opacity" />
+          ) : (
+            <GripVertical className="h-6 w-3 text-[hsl(var(--text-muted))] opacity-30 group-hover:opacity-100 transition-opacity" />
+          )}
+        </div>
       </div>
 
       {/* Header with tabs */}
@@ -291,14 +303,14 @@ function TerminalPanelUI({
             )}
           </button>
           <button
-            onClick={() => setSize(s => Math.min(s + 100, position === 'bottom' ? 600 : 800))}
+            onClick={() => onSizeChange(Math.min(size + 100, position === 'bottom' ? 600 : 800))}
             className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
             title="Expand"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={() => setSize(s => Math.max(s - 100, position === 'bottom' ? 200 : 300))}
+            onClick={() => onSizeChange(Math.max(size - 100, position === 'bottom' ? 200 : 300))}
             className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
             title="Shrink"
           >

@@ -14,7 +14,7 @@ import { CommandCentre } from './components/CommandCentre';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
-import { TerminalPanelProvider } from './components/TerminalPanel';
+import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPanel';
 import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
 // All possible tabs - simplified to unified abstractions
@@ -44,6 +44,36 @@ type NavConfigItem = NavGroup | StandaloneNavItem;
 
 // Valid tabs for persistence
 const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'volumes', 'images', 'snapshots', 'dockerfiles', 'compose', 'mcp', 'notes', 'settings'];
+
+// Content area that adjusts for terminal panel
+function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; onCreateClick: () => void }) {
+  const { isOpen, position, size } = useTerminalPanel();
+
+  // Calculate style adjustments based on terminal panel
+  const style: React.CSSProperties = {};
+  if (isOpen) {
+    if (position === 'bottom') {
+      style.paddingBottom = size;
+    } else {
+      style.paddingRight = size;
+    }
+  }
+
+  return (
+    <div className="flex-1 overflow-hidden" style={style}>
+      {activeTab === 'command-centre' && <CommandCentre />}
+      {activeTab === 'sandboxes' && <SandboxList onCreateClick={onCreateClick} />}
+      {activeTab === 'volumes' && <UnifiedVolumeList />}
+      {activeTab === 'images' && <ImageList />}
+      {activeTab === 'snapshots' && <VMSnapshots />}
+      {activeTab === 'compose' && <ComposeManager />}
+      {activeTab === 'dockerfiles' && <DockerfileEditor />}
+      {activeTab === 'mcp' && <MCPRegistry />}
+      {activeTab === 'notes' && <Notes />}
+      {activeTab === 'settings' && <Settings />}
+    </div>
+  );
+}
 
 function App() {
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -481,19 +511,8 @@ function App() {
           </div>
         </header>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden">
-          {activeTab === 'command-centre' && <CommandCentre />}
-          {activeTab === 'sandboxes' && <SandboxList onCreateClick={() => setShowCreateForm(true)} />}
-          {activeTab === 'volumes' && <UnifiedVolumeList />}
-          {activeTab === 'images' && <ImageList />}
-          {activeTab === 'snapshots' && <VMSnapshots />}
-          {activeTab === 'compose' && <ComposeManager />}
-          {activeTab === 'dockerfiles' && <DockerfileEditor />}
-          {activeTab === 'mcp' && <MCPRegistry />}
-          {activeTab === 'notes' && <Notes />}
-          {activeTab === 'settings' && <Settings />}
-        </div>
+        {/* Content Area - uses TerminalAwareContent to adjust for terminal panel */}
+        <TerminalAwareContent activeTab={activeTab} onCreateClick={() => setShowCreateForm(true)} />
       </main>
 
       {/* Modals */}
