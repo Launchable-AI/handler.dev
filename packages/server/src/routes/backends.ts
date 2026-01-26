@@ -541,6 +541,72 @@ backends.get('/daytona/config', async (c) => {
   }
 });
 
+// ============ Daytona Volumes ============
+
+// GET /backends/daytona/volumes - List all Daytona volumes
+backends.get('/daytona/volumes', async (c) => {
+  try {
+    const daytona = getDaytonaService();
+    if (!await daytona.isAvailable()) {
+      return c.json({ error: 'Daytona is not configured or enabled' }, 400);
+    }
+    const volumes = await daytona.listVolumes();
+    return c.json(volumes);
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// GET /backends/daytona/volumes/:id - Get a specific Daytona volume
+backends.get('/daytona/volumes/:id', async (c) => {
+  try {
+    const daytona = getDaytonaService();
+    if (!await daytona.isAvailable()) {
+      return c.json({ error: 'Daytona is not configured or enabled' }, 400);
+    }
+    const volume = await daytona.getVolume(c.req.param('id'));
+    if (!volume) {
+      return c.json({ error: 'Volume not found' }, 404);
+    }
+    return c.json(volume);
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// POST /backends/daytona/volumes - Create a new Daytona volume
+backends.post('/daytona/volumes', async (c) => {
+  try {
+    const daytona = getDaytonaService();
+    if (!await daytona.isAvailable()) {
+      return c.json({ error: 'Daytona is not configured or enabled' }, 400);
+    }
+    const body = await c.req.json();
+    const { name } = body as { name: string };
+    if (!name) {
+      return c.json({ error: 'Volume name is required' }, 400);
+    }
+    const volume = await daytona.createVolume(name);
+    return c.json(volume, 201);
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// DELETE /backends/daytona/volumes/:id - Delete a Daytona volume
+backends.delete('/daytona/volumes/:id', async (c) => {
+  try {
+    const daytona = getDaytonaService();
+    if (!await daytona.isAvailable()) {
+      return c.json({ error: 'Daytona is not configured or enabled' }, 400);
+    }
+    await daytona.deleteVolume(c.req.param('id'));
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
 // ============ Host Stats ============
 
 interface HostStats {

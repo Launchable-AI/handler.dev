@@ -60,6 +60,33 @@ export interface DaytonaWorkspace {
   startedAt?: string;
 }
 
+export type DaytonaSizeClass = 'small' | 'medium' | 'large';
+
+// Size class resource configurations
+export const DAYTONA_SIZE_PRESETS: Record<DaytonaSizeClass, { cpu: number; memory: number; disk: number }> = {
+  small: { cpu: 1, memory: 1, disk: 3 },   // 1 vCPU, 1 GB RAM, 3 GB disk
+  medium: { cpu: 2, memory: 4, disk: 8 },  // 2 vCPU, 4 GB RAM, 8 GB disk
+  large: { cpu: 4, memory: 8, disk: 10 },  // 4 vCPU, 8 GB RAM, 10 GB disk
+};
+
+// Volume types
+export type DaytonaVolumeState = 'creating' | 'ready' | 'deleting' | 'error';
+
+export interface DaytonaVolume {
+  id: string;
+  organizationId: string;
+  name: string;
+  state: DaytonaVolumeState;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DaytonaVolumeMount {
+  volumeId: string;
+  mountPath: string;
+  subpath?: string;
+}
+
 export interface CreateDaytonaWorkspaceRequest {
   name?: string;
   language?: 'python' | 'typescript' | 'javascript';
@@ -69,9 +96,11 @@ export interface CreateDaytonaWorkspaceRequest {
     memory?: number;
     disk?: number;
   };
+  sizeClass?: DaytonaSizeClass;
   autoStopInterval?: number;
   ephemeral?: boolean;
   labels?: Record<string, string>;
+  volumes?: DaytonaVolumeMount[];
 }
 
 export class DaytonaService {
@@ -233,9 +262,27 @@ export class DaytonaService {
    * Create a new sandbox
    */
   async createWorkspace(request: CreateDaytonaWorkspaceRequest): Promise<DaytonaWorkspace> {
+    // If sizeClass is provided, use it to set resources (unless explicit resources are given)
+    const resources = request.resources ?? (
+      request.sizeClass ? DAYTONA_SIZE_PRESETS[request.sizeClass] : undefined
+    );
+
+    const payload = {
+      name: request.name,
+      language: request.language,
+      snapshot: request.snapshot,
+      resources,
+      autoStopInterval: request.autoStopInterval,
+      ephemeral: request.ephemeral,
+      labels: request.labels,
+      volumes: request.volumes,
+    };
+
+    console.log('[DaytonaService] Creating sandbox with payload:', JSON.stringify(payload));
+
     const workspace = await this.request<DaytonaWorkspace>('/sandbox', {
       method: 'POST',
-      body: JSON.stringify(request),
+      body: JSON.stringify(payload),
     });
     this.invalidateCache();
     return workspace;
@@ -384,12 +431,16 @@ export class DaytonaService {
   async createVm(request: {
     name: string;
     language?: 'python' | 'typescript' | 'javascript';
+    sizeClass?: DaytonaSizeClass;
     autoStopInterval?: number;
+    volumes?: DaytonaVolumeMount[];
   }): Promise<VmInfo> {
     const workspace = await this.createWorkspace({
       name: request.name,
       language: request.language || 'python',
+      sizeClass: request.sizeClass || 'small',
       autoStopInterval: request.autoStopInterval ?? 15, // 15 min default
+      volumes: request.volumes,
     });
     return this.workspaceToVmInfo(workspace);
   }
@@ -418,6 +469,78 @@ export class DaytonaService {
   async deleteVm(id: string): Promise<void> {
     const workspaceId = id.startsWith('daytona-') ? id.slice(8) : id;
     await this.deleteWorkspace(workspaceId);
+  }
+
+  // ==================== Volume Management ====================
+
+  /**
+   * List all Daytona volumes
+   */
+  async listVolumes(): Promise<DaytonaVolume[]> {
+    try {
+      const volumes = await this.request<DaytonaVolume[]>('/volume');
+      return volumes || [];
+    } catch (err) {
+      console.error('[DaytonaService] Failed to list volumes:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Get a specific volume by ID
+   */
+  async getVolume(id: string): Promise<DaytonaVolume | null> {
+    try {
+      return await this.request<DaytonaVolume>(`/volume/${id}`);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get a volume by name (or create if not exists)
+   */
+  async getVolumeByName(name: string, create: boolean = false): Promise<DaytonaVolume | null> {
+    try {
+      // First try to find the volume by name in the list
+      const volumes = await this.listVolumes();
+      const existing = volumes.find(v => v.name === name);
+      if (existing) {
+        return existing;
+      }
+
+      // If not found and create is true, create it
+      if (create) {
+        return await this.createVolume(name);
+      }
+
+      return null;
+    } catch (err) {
+      console.error('[DaytonaService] Failed to get volume by name:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Create a new volume
+   */
+  async createVolume(name: string): Promise<DaytonaVolume> {
+    const volume = await this.request<DaytonaVolume>('/volume', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    console.log('[DaytonaService] Created volume:', volume.name);
+    return volume;
+  }
+
+  /**
+   * Delete a volume
+   */
+  async deleteVolume(id: string): Promise<void> {
+    await this.request(`/volume/${id}`, {
+      method: 'DELETE',
+    });
+    console.log('[DaytonaService] Deleted volume:', id);
   }
 }
 

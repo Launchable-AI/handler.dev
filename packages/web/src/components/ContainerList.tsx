@@ -1,15 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useContainers } from '../hooks/useContainers';
 import { ContainerCard } from './ContainerCard';
-import { Loader2, Container, Plus, Eye, EyeOff } from 'lucide-react';
+import { ContainerCardCompact } from './ContainerCardCompact';
+import { ContainerRow } from './ContainerRow';
+import { Loader2, Container, Plus, Eye, EyeOff, LayoutGrid, LayoutList, Rows3 } from 'lucide-react';
 
 interface ContainerListProps {
   onCreateClick: () => void;
 }
 
+type ViewMode = 'compact' | 'detailed' | 'list';
+
+const CONTAINER_VIEW_MODE_KEY = 'caisson-container-view-mode';
+
 export function ContainerList({ onCreateClick }: ContainerListProps) {
   const { data: containers, isLoading, error } = useContainers();
   const [showOnlyRunning, setShowOnlyRunning] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const stored = localStorage.getItem(CONTAINER_VIEW_MODE_KEY);
+    if (stored === 'compact' || stored === 'detailed' || stored === 'list') {
+      return stored;
+    }
+    return 'detailed';
+  });
+
+  // Persist view mode to localStorage
+  useEffect(() => {
+    localStorage.setItem(CONTAINER_VIEW_MODE_KEY, viewMode);
+  }, [viewMode]);
 
   const filteredContainers = containers?.filter(c =>
     showOnlyRunning ? c.state === 'running' : true
@@ -31,6 +49,20 @@ export function ContainerList({ onCreateClick }: ContainerListProps) {
       </div>
     );
   }
+
+  const viewModeButton = (mode: ViewMode, icon: React.ReactNode, label: string) => (
+    <button
+      onClick={() => setViewMode(mode)}
+      className={`p-1.5 transition-colors ${
+        viewMode === mode
+          ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]'
+          : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
+      }`}
+      title={label}
+    >
+      {icon}
+    </button>
+  );
 
   if (!containers || containers.length === 0) {
     return (
@@ -72,6 +104,12 @@ export function ContainerList({ onCreateClick }: ContainerListProps) {
           New
         </button>
         <div className="flex items-center gap-3">
+          {/* View Mode Buttons */}
+          <div className="flex items-center border border-[hsl(var(--border))]">
+            {viewModeButton('compact', <LayoutGrid className="h-3.5 w-3.5" />, 'Compact view')}
+            {viewModeButton('detailed', <Rows3 className="h-3.5 w-3.5" />, 'Detailed view')}
+            {viewModeButton('list', <LayoutList className="h-3.5 w-3.5" />, 'List view')}
+          </div>
           <button
             onClick={() => setShowOnlyRunning(!showOnlyRunning)}
             className={`flex items-center gap-1.5 px-2 py-1 text-[10px] transition-colors ${
@@ -91,13 +129,37 @@ export function ContainerList({ onCreateClick }: ContainerListProps) {
           </span>
         </div>
       </div>
-      {/* Container Grid */}
+      {/* Container Grid/List */}
       <div className="flex-1 overflow-auto p-4">
-        <div className="grid gap-3 lg:grid-cols-2">
-          {filteredContainers?.map((container) => (
-            <ContainerCard key={container.id} container={container} />
-          ))}
-        </div>
+        {viewMode === 'compact' && (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredContainers?.map((container) => (
+              <ContainerCardCompact key={container.id} container={container} />
+            ))}
+          </div>
+        )}
+        {viewMode === 'detailed' && (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {filteredContainers?.map((container) => (
+              <ContainerCard key={container.id} container={container} />
+            ))}
+          </div>
+        )}
+        {viewMode === 'list' && (
+          <div className="border border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
+            {/* List header */}
+            <div className="grid grid-cols-[1fr_150px_100px_80px_120px] gap-4 px-4 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))]">
+              <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Container</span>
+              <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Image</span>
+              <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Status</span>
+              <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Ports</span>
+              <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Actions</span>
+            </div>
+            {filteredContainers?.map((container) => (
+              <ContainerRow key={container.id} container={container} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

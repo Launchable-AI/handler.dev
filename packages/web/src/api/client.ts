@@ -1283,6 +1283,15 @@ export interface VmInfo {
 
 export type HypervisorType = 'cloud-hypervisor' | 'firecracker' | 'daytona';
 
+export type DaytonaSizeClass = 'small' | 'medium' | 'large';
+
+// Daytona size class resource configurations (for display)
+export const DAYTONA_SIZE_PRESETS: Record<DaytonaSizeClass, { cpu: number; memoryGb: number; diskGb: number; label: string }> = {
+  small: { cpu: 1, memoryGb: 1, diskGb: 3, label: 'Small' },
+  medium: { cpu: 2, memoryGb: 4, diskGb: 8, label: 'Medium' },
+  large: { cpu: 4, memoryGb: 8, diskGb: 10, label: 'Large' },
+};
+
 export interface CreateVmRequest {
   name: string;
   baseImage?: string;
@@ -1299,6 +1308,10 @@ export interface CreateVmRequest {
   autoStart?: boolean;
   // Hypervisor to use for this VM
   hypervisor?: HypervisorType;
+  // Daytona-specific: size class (small, medium, large)
+  daytonaSizeClass?: DaytonaSizeClass;
+  // Daytona-specific: cloud volumes to mount
+  daytonaVolumes?: DaytonaVolumeMount[];
 }
 
 export interface VmStats {
@@ -1611,6 +1624,46 @@ export async function testDaytonaConnection(config?: {
 export async function refreshDaytonaCache(): Promise<{ success: boolean; message?: string; error?: string }> {
   return fetchAPI('/backends/daytona/refresh', {
     method: 'POST',
+  });
+}
+
+// ========== Daytona Volumes API ==========
+
+export type DaytonaVolumeState = 'creating' | 'ready' | 'deleting' | 'error';
+
+export interface DaytonaVolumeInfo {
+  id: string;
+  organizationId: string;
+  name: string;
+  state: DaytonaVolumeState;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DaytonaVolumeMount {
+  volumeId: string;
+  mountPath: string;
+  subpath?: string;
+}
+
+export async function listDaytonaVolumes(): Promise<DaytonaVolumeInfo[]> {
+  return fetchAPI('/backends/daytona/volumes');
+}
+
+export async function getDaytonaVolume(id: string): Promise<DaytonaVolumeInfo> {
+  return fetchAPI(`/backends/daytona/volumes/${id}`);
+}
+
+export async function createDaytonaVolume(name: string): Promise<DaytonaVolumeInfo> {
+  return fetchAPI('/backends/daytona/volumes', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteDaytonaVolume(id: string): Promise<void> {
+  await fetchAPI(`/backends/daytona/volumes/${id}`, {
+    method: 'DELETE',
   });
 }
 

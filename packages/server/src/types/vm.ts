@@ -199,6 +199,9 @@ export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = {
   defaultBaseImage: 'ubuntu-24.04',
 };
 
+// Daytona sandbox size classes
+export type DaytonaSizeClass = 'small' | 'medium' | 'large';
+
 // Zod schemas for validation
 export const CreateVmSchema = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/,
@@ -225,6 +228,14 @@ export const CreateVmSchema = z.object({
     readOnly: z.boolean().optional(),
   })).optional(),
   autoStart: z.boolean().optional(),
+  // Daytona-specific: size class (small, medium, large)
+  daytonaSizeClass: z.enum(['small', 'medium', 'large']).optional(),
+  // Daytona-specific: cloud volumes to mount
+  daytonaVolumes: z.array(z.object({
+    volumeId: z.string(),
+    mountPath: z.string(),
+    subpath: z.string().optional(),
+  })).optional(),
 });
 
 export type CreateVmRequest = z.infer<typeof CreateVmSchema>;

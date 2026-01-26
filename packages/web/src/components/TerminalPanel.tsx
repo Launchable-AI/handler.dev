@@ -17,12 +17,18 @@ import '@xterm/xterm/css/xterm.css';
 
 // Types
 export type PanelPosition = 'right' | 'bottom';
+export type TerminalType = 'vm' | 'container';
 
 interface TerminalTab {
   id: string;
   name: string;
-  vmId: string;
-  vmIp: string;
+  type: TerminalType;
+  // For VMs
+  vmId?: string;
+  vmIp?: string;
+  // For containers
+  containerId?: string;
+  isDevNode?: boolean;
   connectionState: 'connecting' | 'connected' | 'disconnected' | 'error';
   errorMessage?: string;
 }
@@ -33,6 +39,7 @@ interface TerminalPanelContextType {
   tabs: TerminalTab[];
   activeTabId: string | null;
   openTerminal: (vmId: string, vmName: string, vmIp: string) => void;
+  openContainerTerminal: (containerId: string, containerName: string, isDevNode?: boolean) => void;
   closeTerminal: (tabId: string) => void;
   closePanel: () => void;
   setPosition: (position: PanelPosition) => void;
@@ -58,7 +65,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
 
   const openTerminal = useCallback((vmId: string, vmName: string, vmIp: string) => {
     // Check if terminal for this VM already exists
-    const existingTab = tabs.find(t => t.vmId === vmId);
+    const existingTab = tabs.find(t => t.type === 'vm' && t.vmId === vmId);
     if (existingTab) {
       setActiveTabId(existingTab.id);
       setIsOpen(true);
@@ -66,10 +73,34 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
     }
 
     const newTab: TerminalTab = {
-      id: `term-${vmId}-${Date.now()}`,
+      id: `term-vm-${vmId}-${Date.now()}`,
       name: vmName,
+      type: 'vm',
       vmId,
       vmIp,
+      connectionState: 'connecting',
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+    setIsOpen(true);
+  }, [tabs]);
+
+  const openContainerTerminal = useCallback((containerId: string, containerName: string, isDevNode?: boolean) => {
+    // Check if terminal for this container already exists
+    const existingTab = tabs.find(t => t.type === 'container' && t.containerId === containerId);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      setIsOpen(true);
+      return;
+    }
+
+    const newTab: TerminalTab = {
+      id: `term-container-${containerId}-${Date.now()}`,
+      name: containerName,
+      type: 'container',
+      containerId,
+      isDevNode: isDevNode ?? true,
       connectionState: 'connecting',
     };
 
@@ -106,6 +137,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
       tabs,
       activeTabId,
       openTerminal,
+      openContainerTerminal,
       closeTerminal,
       closePanel,
       setPosition,
@@ -418,15 +450,29 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       } catch (e) {
         // Ignore fit errors on startup
       }
-      // Send start-vm message for VM terminals
-      ws.send(JSON.stringify({
-        type: 'start-vm',
-        vmId: tab.vmId,
-        vmIp: tab.vmIp,
-        shell: '/bin/bash',
-        cols: term.cols,
-        rows: term.rows,
-      }));
+
+      // Send appropriate start message based on terminal type
+      if (tab.type === 'container') {
+        // Container terminal - uses docker exec
+        ws.send(JSON.stringify({
+          type: 'start',
+          containerId: tab.containerId,
+          shell: '/bin/bash',
+          cols: term.cols,
+          rows: term.rows,
+          isDevNode: tab.isDevNode,
+        }));
+      } else {
+        // VM terminal - uses SSH
+        ws.send(JSON.stringify({
+          type: 'start-vm',
+          vmId: tab.vmId,
+          vmIp: tab.vmIp,
+          shell: '/bin/bash',
+          cols: term.cols,
+          rows: term.rows,
+        }));
+      }
     };
 
     ws.onmessage = (event) => {
@@ -519,7 +565,7 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       fitAddonRef.current = null;
       wsRef.current = null;
     };
-  }, [tab.vmId, tab.vmIp, getWsUrl]);
+  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.isDevNode, getWsUrl]);
 
   return (
     <div className="h-full flex flex-col">
@@ -534,7 +580,9 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
           <span className="uppercase tracking-wider">{tab.connectionState}</span>
         </span>
         <span className="text-[hsl(var(--text-muted))]">|</span>
-        <span className="text-[hsl(var(--text-secondary))]">agent@{tab.vmIp}</span>
+        <span className="text-[hsl(var(--text-secondary))]">
+          {tab.type === 'container' ? `dev@${tab.name}` : `agent@${tab.vmIp}`}
+        </span>
       </div>
 
       {/* Terminal */}

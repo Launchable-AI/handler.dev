@@ -46,18 +46,12 @@ async function ensureDaytonaInitialized() {
 }
 
 /**
- * Get the appropriate hypervisor service based on type
+ * Get the appropriate local hypervisor service based on type
+ * Note: Daytona is handled separately and should not use this function
  */
-async function getService(hypervisorType: HypervisorType = 'cloud-hypervisor') {
+async function getLocalHypervisorService(hypervisorType: 'cloud-hypervisor' | 'firecracker' = 'cloud-hypervisor') {
   if (hypervisorType === 'firecracker') {
     return ensureFirecrackerInitialized();
-  }
-  if (hypervisorType === 'daytona') {
-    const daytona = await ensureDaytonaInitialized();
-    if (!daytona) {
-      throw new Error('Daytona backend is not configured');
-    }
-    return daytona;
   }
   return ensureCloudHypervisorInitialized();
 }
@@ -356,14 +350,17 @@ vms.post('/', async (c) => {
       const vm = await daytona.createVm({
         name: config.name,
         language,
+        sizeClass: config.daytonaSizeClass || 'small',
         autoStopInterval: 15, // 15 minutes default
+        volumes: config.daytonaVolumes,
       });
 
       return c.json(vm, 201);
     }
 
-    // Get the appropriate service based on hypervisor type
-    const service = await getService(hypervisorType);
+    // Get the appropriate local hypervisor service
+    // Note: Daytona is handled above in a separate code path
+    const service = await getLocalHypervisorService(hypervisorType as 'cloud-hypervisor' | 'firecracker');
 
     const vm = await service.createVm({
       name: config.name,

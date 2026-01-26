@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, ChevronDown, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ExternalLink, Eye, EyeOff } from 'lucide-react';
-import { useConfig, useUpdateConfig, useImages, useRefreshDaytonaCache } from '../hooks/useContainers';
+import { useConfig, useUpdateConfig, useImages } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
 import type { ModelOption, BackendStatus } from '../api/client';

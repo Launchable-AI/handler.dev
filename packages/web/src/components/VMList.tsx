@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Plus, Server, AlertTriangle, Terminal, Play, Square, Trash2, Copy, Download, Cpu, MemoryStick, HardDrive, Network, Loader2, ScrollText, Check, Camera, ChevronDown, ChevronRight, TerminalSquare, LayoutGrid, LayoutList, Rows3, Zap, Flame, Cloud, FolderOpen, Globe, ExternalLink, Pencil, X, RotateCcw } from 'lucide-react';
 import { useVms, useStartVm, useStopVm, useDeleteVm, useVmNetworkStatus, useCreateVm, useVmBaseImages, useConfig, useVolumes, useVmSnapshots, useCreateVmSnapshot, useDeleteVmSnapshot, useUpdateVmPorts, useRollbackVmToSnapshot } from '../hooks/useContainers';
-import { VmInfo, downloadVmSshKey, VmSnapshotInfo, HypervisorType, getBackendStatus, BackendStatus } from '../api/client';
+import { VmInfo, downloadVmSshKey, VmSnapshotInfo, HypervisorType, getBackendStatus, BackendStatus, DaytonaSizeClass, DAYTONA_SIZE_PRESETS } from '../api/client';
 import { useConfirm } from './ConfirmModal';
 import { LogViewer } from './LogViewer';
 import { VMFileBrowser } from './VMFileBrowser';
@@ -1312,6 +1312,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
   ]);
   const [hypervisor, setHypervisor] = useState<HypervisorType | null>(null);
   const [backends, setBackends] = useState<BackendStatus | null>(null);
+  const [daytonaSizeClass, setDaytonaSizeClass] = useState<DaytonaSizeClass>('small');
 
   // Detect which preset matches current values (if any)
   const activePreset = useMemo<VmSizePreset | null>(() => {
@@ -1425,6 +1426,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
         ports: validPorts.length > 0 ? validPorts : undefined,
         autoStart: true,
         hypervisor: hypervisor || 'cloud-hypervisor',
+        daytonaSizeClass: hypervisor === 'daytona' ? daytonaSizeClass : undefined,
       });
       onClose();
     } catch (error) {
@@ -1545,6 +1547,35 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
                     <span className="text-xs font-medium">{VM_SIZE_PRESETS[preset].label}</span>
                     <span className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
                       {VM_SIZE_PRESETS[preset].vcpus} vCPU / {VM_SIZE_PRESETS[preset].memoryMb / 1024} GB
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Daytona Size Class - only for Daytona backend */}
+          {hypervisor === 'daytona' && (
+            <div>
+              <label className="block text-xs text-[hsl(var(--text-muted))] mb-2">Sandbox Size</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['small', 'medium', 'large'] as const).map((sizeClass) => (
+                  <button
+                    key={sizeClass}
+                    type="button"
+                    onClick={() => setDaytonaSizeClass(sizeClass)}
+                    className={`flex flex-col items-center px-3 py-2 border transition-colors ${
+                      daytonaSizeClass === sizeClass
+                        ? 'border-[hsl(var(--amber))] bg-[hsl(var(--amber)/0.1)] text-[hsl(var(--amber))]'
+                        : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--amber)/0.5)]'
+                    }`}
+                  >
+                    <span className="text-xs font-medium">{DAYTONA_SIZE_PRESETS[sizeClass].label}</span>
+                    <span className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+                      {DAYTONA_SIZE_PRESETS[sizeClass].cpu} vCPU / {DAYTONA_SIZE_PRESETS[sizeClass].memoryGb} GB
+                    </span>
+                    <span className="text-[10px] text-[hsl(var(--text-muted))]">
+                      {DAYTONA_SIZE_PRESETS[sizeClass].diskGb} GB disk
                     </span>
                   </button>
                 ))}

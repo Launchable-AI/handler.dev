@@ -28,10 +28,10 @@ import {
   useConfig,
 } from '../hooks/useContainers';
 import { ReconfigureModal } from './ReconfigureModal';
-import { Terminal } from './Terminal';
 import { useConfirm } from './ConfirmModal';
 import { UploadModal } from './UploadModal';
 import { LogViewer } from './LogViewer';
+import { useTerminalPanel } from './TerminalPanel';
 
 interface ContainerCardProps {
   container: ContainerInfo;
@@ -42,7 +42,6 @@ type ConnectionMode = 'docker' | 'ssh';
 export function ContainerCard({ container }: ContainerCardProps) {
   const [copied, setCopied] = useState(false);
   const [showReconfigure, setShowReconfigure] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showBuildLogs, setShowBuildLogs] = useState(false);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('docker');
@@ -53,6 +52,7 @@ export function ContainerCard({ container }: ContainerCardProps) {
   const removeMutation = useRemoveContainer();
   const { data: config } = useConfig();
   const confirm = useConfirm();
+  const terminalPanel = useTerminalPanel();
 
   // Track mutation errors
   useEffect(() => {
@@ -203,7 +203,7 @@ export function ContainerCard({ container }: ContainerCardProps) {
               {isRunning && (
                 <>
                   <button
-                    onClick={() => setShowTerminal(true)}
+                    onClick={() => terminalPanel.openContainerTerminal(container.id, container.name, true)}
                     className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
                     title="Open Terminal"
                   >
@@ -442,16 +442,6 @@ export function ContainerCard({ container }: ContainerCardProps) {
         <ReconfigureModal
           container={container}
           onClose={() => setShowReconfigure(false)}
-        />
-      )}
-
-      {/* Terminal - standalone containers are always dev containers */}
-      {showTerminal && (
-        <Terminal
-          containerId={container.id}
-          containerName={container.name}
-          onClose={() => setShowTerminal(false)}
-          isDevNode={true}
         />
       )}
 
