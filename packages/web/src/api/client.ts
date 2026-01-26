@@ -49,7 +49,7 @@ export interface CreateContainerRequest {
   env?: Record<string, string>;
 }
 
-async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
+export async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const apiBase = await getApiBase();
 
   const response = await fetch(`${apiBase}${path}`, {
@@ -1884,4 +1884,527 @@ export async function downloadBaseImage(
       reject(err);
     });
   });
+}
+
+// ==================== Unified Sandbox API ====================
+
+/**
+ * Backend types for sandboxes
+ */
+export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona';
+
+/**
+ * Unified status across all backends
+ */
+export type SandboxStatus =
+  | 'creating'
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'paused'
+  | 'error'
+  | 'archived'
+  | 'building';
+
+/**
+ * Port mapping for sandboxes
+ */
+export interface SandboxPortMapping {
+  container: number;
+  host: number;
+  protocol?: string;
+}
+
+/**
+ * Docker-specific metadata
+ */
+export interface DockerMeta {
+  type: 'docker';
+  containerId: string;
+  volumes: Array<{ name: string; mountPath: string }>;
+  dockerState?: string;
+  buildId?: string;
+}
+
+/**
+ * VM-specific metadata
+ */
+export interface VmMeta {
+  type: 'vm';
+  hypervisor: 'cloud-hypervisor' | 'firecracker';
+  networkMode: string;
+  hasSnapshots: boolean;
+  tapDevice?: string;
+  bootTimeMs?: number;
+  volumes?: Array<{ name: string; mountPath: string; sizeGb: number }>;
+}
+
+/**
+ * Daytona-specific metadata
+ */
+export interface DaytonaMeta {
+  type: 'daytona';
+  sizeClass: 'small' | 'medium' | 'large';
+  organizationId: string;
+  target: string;
+  daytonaState?: string;
+}
+
+/**
+ * Unified Sandbox type - represents any compute environment
+ */
+export interface Sandbox {
+  /** Prefixed ID: 'docker-xxx', 'vm-xxx', 'fc-xxx', 'daytona-xxx' */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Backend type */
+  backend: SandboxBackend;
+  /** Current status */
+  status: SandboxStatus;
+  /** Error message if status is 'error' */
+  error?: string;
+
+  // Resources
+  vcpus: number;
+  memoryMb: number;
+  diskGb: number;
+
+  // Network
+  ports: SandboxPortMapping[];
+  guestIp?: string;
+
+  // Access
+  terminalType: 'ssh' | 'docker-exec';
+  sshHost?: string;
+  sshPort?: number;
+  sshUser?: string;
+  sshCommand?: string;
+  /** Docker exec command for direct container access */
+  dockerExecCommand?: string;
+  /** SSH key identifier for download */
+  sshKeyId?: string;
+
+  // Metadata
+  image: string;
+  createdAt: string;
+  startedAt?: string;
+
+  /** Backend-specific metadata */
+  backendMeta?: DockerMeta | VmMeta | DaytonaMeta;
+}
+
+/**
+ * Response from listing sandboxes
+ */
+export interface SandboxListResponse {
+  sandboxes: Sandbox[];
+  backends: {
+    docker: boolean;
+    'cloud-hypervisor': boolean;
+    firecracker: boolean;
+    daytona: boolean;
+  };
+}
+
+/**
+ * Filter options for listing sandboxes
+ */
+export interface SandboxListFilter {
+  backends?: SandboxBackend[];
+  status?: SandboxStatus[];
+  search?: string;
+}
+
+/**
+ * Request to create a new sandbox
+ */
+export interface CreateSandboxRequest {
+  name: string;
+  backend: SandboxBackend;
+  image: string;
+
+  vcpus?: number;
+  memoryMb?: number;
+  diskGb?: number;
+
+  ports?: SandboxPortMapping[];
+
+  dockerOptions?: {
+    dockerfile?: string;
+    volumes?: Array<{ name: string; mountPath: string }>;
+    env?: Record<string, string>;
+    enableSsh?: boolean;
+  };
+
+  vmOptions?: {
+    hypervisor?: 'cloud-hypervisor' | 'firecracker';
+    networkMode?: 'bridged' | 'nat';
+    volumes?: Array<{ id: string; mountPath: string }>;
+  };
+
+  daytonaOptions?: {
+    sizeClass?: 'small' | 'medium' | 'large';
+    language?: string;
+    volumes?: Array<{ name: string; mountPath: string }>;
+  };
+}
+
+/**
+ * List all sandboxes with optional filtering
+ */
+export async function listSandboxes(filter?: SandboxListFilter): Promise<SandboxListResponse> {
+  const params = new URLSearchParams();
+  if (filter?.backends?.length) {
+    params.set('backend', filter.backends.join(','));
+  }
+  if (filter?.status?.length) {
+    params.set('status', filter.status.join(','));
+  }
+  if (filter?.search) {
+    params.set('search', filter.search);
+  }
+
+  const query = params.toString();
+  return fetchAPI(`/sandboxes${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get backend availability status
+ */
+export async function getSandboxBackends(): Promise<Record<SandboxBackend, boolean>> {
+  return fetchAPI('/sandboxes/backends');
+}
+
+/**
+ * Get a specific sandbox by ID
+ */
+export async function getSandbox(id: string): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Create a new sandbox
+ */
+export async function createSandbox(request: CreateSandboxRequest): Promise<Sandbox> {
+  return fetchAPI('/sandboxes', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Start a stopped sandbox
+ */
+export async function startSandbox(id: string): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}/start`, { method: 'POST' });
+}
+
+/**
+ * Stop a running sandbox
+ */
+export async function stopSandbox(id: string): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}/stop`, { method: 'POST' });
+}
+
+/**
+ * Delete a sandbox
+ */
+export async function deleteSandbox(id: string): Promise<void> {
+  await fetchAPI(`/sandboxes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Get sandbox logs
+ */
+export async function getSandboxLogs(id: string, tail: number = 200): Promise<string> {
+  const result = await fetchAPI<{ logs: string }>(`/sandboxes/${encodeURIComponent(id)}/logs?tail=${tail}`);
+  return result.logs;
+}
+
+/**
+ * Stream sandbox logs via SSE
+ */
+export async function streamSandboxLogs(
+  id: string,
+  callbacks: {
+    onLog: (line: string) => void;
+    onError?: (error: string) => void;
+    onDone?: () => void;
+  },
+  tail: number = 100
+): Promise<() => void> {
+  const apiBase = await getApiBase();
+  const controller = new AbortController();
+
+  fetch(`${apiBase}/sandboxes/${encodeURIComponent(id)}/logs/stream?tail=${tail}`, {
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        callbacks.onError?.(`HTTP error: ${response.status}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        callbacks.onError?.('No response body');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          callbacks.onDone?.();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            // Skip event line, data comes next
+          } else if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              callbacks.onLog(data);
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    })
+    .catch((error) => {
+      if (error.name !== 'AbortError') {
+        callbacks.onError?.(error.message);
+      }
+    });
+
+  // Return cleanup function
+  return () => controller.abort();
+}
+
+/**
+ * Download SSH key for a sandbox
+ */
+export async function downloadSandboxSshKey(id: string): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/sandboxes/${encodeURIComponent(id)}/ssh-key`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to download SSH key' }));
+    throw new Error(error.error || 'Failed to download SSH key');
+  }
+  return response.blob();
+}
+
+// ==================== Unified Volume API ====================
+
+/**
+ * Volume backend types
+ */
+export type UnifiedVolumeBackend = 'docker' | 'vm' | 'daytona';
+
+/**
+ * Volume status types
+ */
+export type UnifiedVolumeStatus = 'creating' | 'ready' | 'attached' | 'error' | 'deleting';
+
+/**
+ * Volume attachment info
+ */
+export interface UnifiedVolumeAttachment {
+  sandboxId: string;
+  sandboxName: string;
+  mountPath: string;
+}
+
+/**
+ * Docker volume metadata
+ */
+export interface UnifiedDockerVolumeMeta {
+  type: 'docker';
+  driver: string;
+  mountpoint: string;
+}
+
+/**
+ * VM volume metadata
+ */
+export interface UnifiedVmVolumeMeta {
+  type: 'vm';
+  format: 'ext4' | 'xfs';
+  devicePath: string;
+  lastAttachedAt?: string;
+}
+
+/**
+ * Daytona volume metadata
+ */
+export interface UnifiedDaytonaVolumeMeta {
+  type: 'daytona';
+  organizationId: string;
+  daytonaState?: string;
+}
+
+/**
+ * Unified Volume type
+ */
+export interface UnifiedVolume {
+  id: string;
+  name: string;
+  backend: UnifiedVolumeBackend;
+  status: UnifiedVolumeStatus;
+  sizeGb?: number;
+  actualSizeMb?: number;
+  mountPath?: string;
+  attachedTo: UnifiedVolumeAttachment[];
+  createdAt: string;
+  error?: string;
+  backendMeta?: UnifiedDockerVolumeMeta | UnifiedVmVolumeMeta | UnifiedDaytonaVolumeMeta;
+}
+
+/**
+ * Response from listing unified volumes
+ */
+export interface UnifiedVolumeListResponse {
+  volumes: UnifiedVolume[];
+  backends: Record<UnifiedVolumeBackend, boolean>;
+}
+
+/**
+ * Filter options for listing unified volumes
+ */
+export interface UnifiedVolumeListFilter {
+  backends?: UnifiedVolumeBackend[];
+  status?: UnifiedVolumeStatus[];
+  search?: string;
+}
+
+/**
+ * Request to create a unified volume
+ */
+export interface CreateUnifiedVolumeRequest {
+  name: string;
+  backend?: UnifiedVolumeBackend;
+  sizeGb?: number;
+  format?: 'ext4' | 'xfs';
+  mountPath?: string;
+}
+
+/**
+ * File info for volume file listing
+ */
+export interface UnifiedVolumeFileInfo {
+  name: string;
+  type: 'file' | 'directory';
+  size: number;
+  modified?: string;
+}
+
+/**
+ * List all unified volumes
+ */
+export async function listUnifiedVolumes(filter?: UnifiedVolumeListFilter): Promise<UnifiedVolumeListResponse> {
+  const params = new URLSearchParams();
+  if (filter?.backends?.length) {
+    params.set('backend', filter.backends.join(','));
+  }
+  if (filter?.status?.length) {
+    params.set('status', filter.status.join(','));
+  }
+  if (filter?.search) {
+    params.set('search', filter.search);
+  }
+
+  const query = params.toString();
+  return fetchAPI(`/unified-volumes${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get unified volume backend availability
+ */
+export async function getUnifiedVolumeBackends(): Promise<Record<UnifiedVolumeBackend, boolean>> {
+  return fetchAPI('/unified-volumes/backends');
+}
+
+/**
+ * Get a specific unified volume
+ */
+export async function getUnifiedVolume(id: string): Promise<UnifiedVolume> {
+  return fetchAPI(`/unified-volumes/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Create a new unified volume
+ */
+export async function createUnifiedVolume(request: CreateUnifiedVolumeRequest): Promise<UnifiedVolume> {
+  return fetchAPI('/unified-volumes', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Delete a unified volume
+ */
+export async function deleteUnifiedVolume(id: string): Promise<void> {
+  await fetchAPI(`/unified-volumes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * List files in a unified volume
+ */
+export async function listUnifiedVolumeFiles(id: string, path: string = '/'): Promise<{ files: UnifiedVolumeFileInfo[]; path: string }> {
+  return fetchAPI(`/unified-volumes/${encodeURIComponent(id)}/files?path=${encodeURIComponent(path)}`);
+}
+
+/**
+ * Upload a file to a unified volume
+ */
+export async function uploadToUnifiedVolume(id: string, file: File, destPath: string = '/'): Promise<{ success: boolean; path: string }> {
+  const apiBase = await getApiBase();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('path', destPath);
+
+  const response = await fetch(`${apiBase}/unified-volumes/${encodeURIComponent(id)}/files`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || 'Upload failed');
+  }
+
+  return response.json();
+}
+
+/**
+ * Download a file from a unified volume
+ */
+export async function downloadFromUnifiedVolume(id: string, filePath: string): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/unified-volumes/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(filePath)}`);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Download failed' }));
+    throw new Error(error.error || 'Download failed');
+  }
+
+  return response.blob();
+}
+
+/**
+ * Delete a file from a unified volume
+ */
+export async function deleteUnifiedVolumeFile(id: string, filePath: string): Promise<void> {
+  await fetchAPI(`/unified-volumes/${encodeURIComponent(id)}/files?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
 }

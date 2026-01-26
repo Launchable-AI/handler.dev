@@ -69,6 +69,9 @@ import notes from './routes/notes.js';
 import vms from './routes/vms.js';
 import backends from './routes/backends.js';
 import vmVolumes from './routes/vm-volumes.js';
+import sandboxes from './routes/sandboxes.js';
+import unifiedVolumes from './routes/unified-volumes.js';
+import templateRoutes from './routes/templates.js';
 
 const app = new Hono();
 
@@ -124,6 +127,9 @@ app.route('/api/notes', notes);
 app.route('/api/vms', vms);
 app.route('/api/backends', backends);
 app.route('/api/vm-volumes', vmVolumes);
+app.route('/api/sandboxes', sandboxes);
+app.route('/api/unified-volumes', unifiedVolumes);
+app.route('/api/templates', templateRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {

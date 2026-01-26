@@ -1,18 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Plus, Settings as SettingsIcon, Container, FileCode, Layers, HardDrive, Image, Package, StickyNote, Server, ChevronDown, ChevronRight, Box, Camera, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid } from 'lucide-react';
-import { ContainerList } from './components/ContainerList';
-import { CreateContainerForm } from './components/CreateContainerForm';
-import { VolumeManager } from './components/VolumeManager';
+import { Plus, Settings as SettingsIcon, FileCode, Layers, HardDrive, Image, Package, StickyNote, ChevronDown, ChevronRight, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes } from 'lucide-react';
+// VolumeManager replaced by UnifiedVolumeList
 import { DockerfileEditor } from './components/DockerfileEditor';
 import { ImageList } from './components/ImageList';
 import { Settings } from './components/Settings';
 import { ComposeManager } from './components/ComposeManager';
 import { MCPRegistry } from './components/MCPRegistry';
 import { Notes } from './components/Notes';
-import { VMList } from './components/VMList';
-import { VMBaseImages } from './components/VMBaseImages';
-import { VMSnapshots } from './components/VMSnapshots';
-import { VMVolumes } from './components/VMVolumes';
+import { SandboxList, CreateSandboxForm } from './components/sandbox';
+import { UnifiedVolumeList } from './components/volume/UnifiedVolumeList';
 import { CommandCentre } from './components/CommandCentre';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
@@ -20,22 +16,22 @@ import { ThemeProvider } from './hooks/useTheme';
 import { TerminalPanelProvider } from './components/TerminalPanel';
 import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
-// All possible tabs including nested ones
-type Tab = 'command-centre' | 'containers' | 'compose' | 'dockerfiles' | 'images' | 'instances' | 'base-images' | 'snapshots' | 'vm-volumes' | 'volumes' | 'mcp' | 'notes' | 'settings';
+// All possible tabs - simplified to unified abstractions
+type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'images' | 'dockerfiles' | 'compose' | 'mcp' | 'notes' | 'settings';
 
 // Navigation group identifiers
-type NavGroupId = 'docker' | 'vms';
+type NavGroupId = 'advanced';
 
 interface NavItem {
   id: Tab;
   label: string;
-  icon: typeof Container;
+  icon: typeof Boxes;
 }
 
 interface NavGroup {
   id: NavGroupId;
   label: string;
-  icon: typeof Container;
+  icon: typeof Boxes;
   items: NavItem[];
 }
 
@@ -46,7 +42,7 @@ interface StandaloneNavItem extends NavItem {
 type NavConfigItem = NavGroup | StandaloneNavItem;
 
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['command-centre', 'containers', 'compose', 'dockerfiles', 'images', 'instances', 'base-images', 'snapshots', 'vm-volumes', 'volumes', 'mcp', 'notes', 'settings'];
+const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'volumes', 'images', 'dockerfiles', 'compose', 'mcp', 'notes', 'settings'];
 
 function App() {
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -55,9 +51,9 @@ function App() {
     if (saved && VALID_TABS.includes(saved as Tab)) {
       return saved as Tab;
     }
-    return 'instances';
+    return 'sandboxes';
   });
-  const [expandedGroups, setExpandedGroups] = useState<Set<NavGroupId>>(new Set(['docker', 'vms']));
+  const [expandedGroups, setExpandedGroups] = useState<Set<NavGroupId>>(new Set(['advanced']));
   const [showHostTooltip, setShowHostTooltip] = useState(false);
   const { data: health } = useHealth();
   const { data: config } = useConfig();
@@ -105,27 +101,16 @@ function App() {
 
   const navConfig: NavConfigItem[] = [
     { id: 'command-centre', label: 'Command Centre', icon: LayoutGrid, standalone: true },
+    { id: 'sandboxes', label: 'Sandboxes', icon: Boxes, standalone: true },
+    { id: 'volumes', label: 'Volumes', icon: HardDrive, standalone: true },
+    { id: 'images', label: 'Images', icon: Image, standalone: true },
     {
-      id: 'vms',
-      label: 'VMs',
-      icon: Server,
+      id: 'advanced',
+      label: 'Advanced',
+      icon: Layers,
       items: [
-        { id: 'instances', label: 'Instances', icon: Server },
-        { id: 'base-images', label: 'Base Images', icon: HardDrive },
-        { id: 'snapshots', label: 'Snapshots', icon: Camera },
-        { id: 'vm-volumes', label: 'Volumes', icon: HardDrive },
-      ],
-    },
-    {
-      id: 'docker',
-      label: 'Docker',
-      icon: Box,
-      items: [
-        { id: 'containers', label: 'Containers', icon: Container },
-        { id: 'compose', label: 'Compose', icon: Layers },
         { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
-        { id: 'images', label: 'Images', icon: Image },
-        { id: 'volumes', label: 'Volumes', icon: HardDrive },
+        { id: 'compose', label: 'Compose', icon: Layers },
       ],
     },
     { id: 'mcp', label: 'MCP Servers', icon: Package, standalone: true },
@@ -435,7 +420,7 @@ function App() {
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors"
           >
             <Plus className="h-3.5 w-3.5" />
-            New Container
+            New Sandbox
           </button>
         </div>
 
@@ -497,15 +482,11 @@ function App() {
         {/* Content Area */}
         <div className="flex-1 overflow-hidden">
           {activeTab === 'command-centre' && <CommandCentre />}
-          {activeTab === 'containers' && <ContainerList onCreateClick={() => setShowCreateForm(true)} />}
-          {activeTab === 'instances' && <VMList onCreateClick={() => {}} />}
-          {activeTab === 'base-images' && <VMBaseImages />}
-          {activeTab === 'snapshots' && <VMSnapshots />}
-          {activeTab === 'vm-volumes' && <VMVolumes />}
+          {activeTab === 'sandboxes' && <SandboxList onCreateClick={() => setShowCreateForm(true)} />}
+          {activeTab === 'volumes' && <UnifiedVolumeList />}
+          {activeTab === 'images' && <ImageList />}
           {activeTab === 'compose' && <ComposeManager />}
           {activeTab === 'dockerfiles' && <DockerfileEditor />}
-          {activeTab === 'images' && <ImageList />}
-          {activeTab === 'volumes' && <VolumeManager />}
           {activeTab === 'mcp' && <MCPRegistry />}
           {activeTab === 'notes' && <Notes />}
           {activeTab === 'settings' && <Settings />}
@@ -514,7 +495,7 @@ function App() {
 
       {/* Modals */}
       {showCreateForm && (
-        <CreateContainerForm onClose={() => setShowCreateForm(false)} />
+        <CreateSandboxForm onClose={() => setShowCreateForm(false)} />
       )}
     </div>
     </TerminalPanelProvider>
