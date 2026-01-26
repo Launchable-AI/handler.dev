@@ -7,9 +7,10 @@
 # Usage: ./scripts/download-fc-image.sh [options]
 #
 # Options:
-#   --image NAME    Image to download (default: ubuntu-24.04)
-#   --force         Re-download even if already exists
-#   -h, --help      Show this help
+#   --image NAME       Image to download (default: ubuntu-24.04)
+#   --force            Re-download even if already exists
+#   --keep-compressed  Keep the .gz file after decompression (for development)
+#   -h, --help         Show this help
 
 set -e
 
@@ -29,6 +30,7 @@ IMAGES_DIR="$DATA_DIR/base-images"
 # Defaults
 IMAGE_NAME="ubuntu-24.04"
 FORCE=false
+KEEP_COMPRESSED=false
 
 # Colors
 RED='\033[0;31m'
@@ -48,9 +50,10 @@ usage() {
     echo "Usage: $0 [options]"
     echo ""
     echo "Options:"
-    echo "  --image NAME    Image to download (default: ubuntu-24.04)"
-    echo "  --force         Re-download even if already exists"
-    echo "  -h, --help      Show this help"
+    echo "  --image NAME       Image to download (default: ubuntu-24.04)"
+    echo "  --force            Re-download even if already exists"
+    echo "  --keep-compressed  Keep rootfs.ext4.gz after decompression (for dev/re-upload)"
+    echo "  -h, --help         Show this help"
     echo ""
     echo "Environment variables:"
     echo "  CAISSON_IMAGE_URL   Base URL for image downloads"
@@ -67,6 +70,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --force)
             FORCE=true
+            shift
+            ;;
+        --keep-compressed)
+            KEEP_COMPRESSED=true
             shift
             ;;
         -h|--help)
@@ -162,8 +169,13 @@ else
     log "Decompression complete"
 fi
 
-# Clean up compressed file to save space
-rm -f "$ROOTFS_GZ"
+# Clean up compressed file to save space (unless --keep-compressed)
+if [ "$KEEP_COMPRESSED" = true ]; then
+    log "Keeping compressed file: $ROOTFS_GZ"
+else
+    rm -f "$ROOTFS_GZ"
+    log "Removed compressed file to save space"
+fi
 
 # Set permissions
 chmod 644 "$IMAGE_DIR/rootfs.ext4" "$IMAGE_DIR/vmlinux"
