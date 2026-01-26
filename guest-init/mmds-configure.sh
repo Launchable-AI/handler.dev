@@ -41,7 +41,9 @@ get_token() {
 get_metadata() {
     local path="$1"
     local token="$2"
-    curl -s "http://${MMDS_IP}${path}" -H "X-metadata-token: ${token}" 2>/dev/null
+    curl -s "http://${MMDS_IP}${path}" \
+        -H "X-metadata-token: ${token}" \
+        -H "Accept: application/json" 2>/dev/null
 }
 
 log "Starting MMDS network configuration"
