@@ -57,13 +57,32 @@ export function useTerminalPanel() {
   return context;
 }
 
+const TERMINAL_POSITION_KEY = 'caisson-terminal-position';
+
+// Determine default position based on screen size
+function getDefaultPosition(): PanelPosition {
+  // Check localStorage first
+  const stored = localStorage.getItem(TERMINAL_POSITION_KEY);
+  if (stored === 'right' || stored === 'bottom') {
+    return stored;
+  }
+  // Default to right for screens 1920px or wider, otherwise bottom
+  return window.innerWidth >= 1920 ? 'right' : 'bottom';
+}
+
 // Provider component
 export function TerminalPanelProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [position, setPosition] = useState<PanelPosition>('bottom');
+  const [position, setPositionState] = useState<PanelPosition>(getDefaultPosition);
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [size, setSize] = useState(350);
+
+  // Persist position changes to localStorage
+  const setPosition = useCallback((newPosition: PanelPosition) => {
+    setPositionState(newPosition);
+    localStorage.setItem(TERMINAL_POSITION_KEY, newPosition);
+  }, []);
 
   const openTerminal = useCallback((vmId: string, vmName: string, vmIp: string) => {
     // Check if terminal for this VM already exists
