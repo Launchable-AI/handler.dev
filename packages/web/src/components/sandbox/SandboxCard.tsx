@@ -24,12 +24,16 @@ import {
   ScrollText,
   Camera,
   FolderUp,
+  ChevronDown,
+  ChevronRight,
+  RotateCcw,
 } from 'lucide-react';
-import type { Sandbox, DockerMeta, VmMeta } from '../../api/client';
+import type { Sandbox, DockerMeta, VmMeta, VmSnapshotInfo } from '../../api/client';
 import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox, uploadDirectoryToSandbox, getSandboxSshCommand } from '../../api/client';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
+import { useVmSnapshots, useDeleteVmSnapshot, useRollbackVmToSnapshot, useCreateVm } from '../../hooks/useContainers';
 import { useConfirm } from '../ConfirmModal';
 import { useTerminalPanel } from '../TerminalPanel';
 import { SandboxLogViewer } from './SandboxLogViewer';
@@ -73,7 +77,10 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
 
   const [copied, setCopied] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [showSnapshots, setShowSnapshots] = useState(false);
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
+  const [launchingSnapshot, setLaunchingSnapshot] = useState<string | null>(null);
+  const [rollingBackSnapshot, setRollingBackSnapshot] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(sandbox.name);
   // Default to docker exec for Docker containers, SSH for VMs
@@ -113,6 +120,12 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   // Check if this is a VM-based sandbox that supports snapshots
   const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
+
+  // Snapshot hooks (only fetch for VMs)
+  const { data: snapshots, isLoading: snapshotsLoading } = useVmSnapshots(isVm ? sandbox.id : '');
+  const deleteSnapshot = useDeleteVmSnapshot();
+  const rollbackSnapshot = useRollbackVmToSnapshot();
+  const createVm = useCreateVm();
 
   // Renaming is supported for Firecracker VMs and Docker containers
   const canRename = sandbox.backend === 'firecracker' || sandbox.backend === 'docker';
@@ -259,6 +272,69 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     } finally {
       setIsCreatingSnapshot(false);
     }
+  };
+
+  const handleDeleteSnapshot = async (snapshot: VmSnapshotInfo) => {
+    const confirmed = await confirm({
+      title: 'Delete Snapshot',
+      message: `Are you sure you want to delete "${snapshot.name || snapshot.id}"?`,
+      confirmText: 'Delete',
+      variant: 'danger',
+    });
+
+    if (confirmed) {
+      deleteSnapshot.mutate({ vmId: sandbox.id, snapshotId: snapshot.id });
+    }
+  };
+
+  const handleLaunchFromSnapshot = async (snapshot: VmSnapshotInfo) => {
+    setLaunchingSnapshot(snapshot.id);
+    try {
+      const baseName = (snapshot.name || sandbox.name).replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase().slice(0, 20);
+      const vmName = `${baseName}-${Date.now().toString(36)}`;
+
+      await createVm.mutateAsync({
+        name: vmName,
+        fromSnapshot: {
+          vmId: sandbox.id,
+          snapshotId: snapshot.id,
+        },
+        autoStart: true,
+      });
+    } catch (err) {
+      console.error('Failed to launch from snapshot:', err);
+      setError(err instanceof Error ? err.message : 'Failed to launch from snapshot');
+    } finally {
+      setLaunchingSnapshot(null);
+    }
+  };
+
+  const handleRollbackToSnapshot = async (snapshot: VmSnapshotInfo) => {
+    const confirmed = await confirm({
+      title: 'Rollback Sandbox',
+      message: `This will restore "${sandbox.name}" to the state saved in "${snapshot.name || snapshot.id}". The sandbox will be stopped and its current disk state will be replaced. Continue?`,
+      confirmText: 'Rollback',
+      variant: 'danger',
+    });
+
+    if (confirmed) {
+      setRollingBackSnapshot(snapshot.id);
+      try {
+        await rollbackSnapshot.mutateAsync({ vmId: sandbox.id, snapshotId: snapshot.id });
+      } catch (err) {
+        console.error('Failed to rollback:', err);
+        setError(err instanceof Error ? err.message : 'Failed to rollback');
+      } finally {
+        setRollingBackSnapshot(null);
+      }
+    }
+  };
+
+  const formatSnapshotSize = (bytes?: number) => {
+    if (!bytes) return 'Unknown';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
   const handleRename = async () => {
@@ -806,6 +882,90 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Snapshots (VMs only) */}
+          {isVm && (
+            <div>
+              <button
+                onClick={() => setShowSnapshots(!showSnapshots)}
+                className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] mb-2"
+              >
+                {showSnapshots ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <Camera className="h-3 w-3" />
+                Snapshots ({snapshots?.length || 0})
+              </button>
+
+              {showSnapshots && (
+                <div className="space-y-2 pl-4">
+                  {/* Snapshots list */}
+                  {snapshotsLoading ? (
+                    <div className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-muted))]">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Loading...
+                    </div>
+                  ) : snapshots && snapshots.length > 0 ? (
+                    <div className="space-y-1">
+                      {snapshots.map(snapshot => (
+                        <div
+                          key={snapshot.id}
+                          className="flex items-center justify-between p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-[10px]"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-[hsl(var(--text-primary))] truncate">
+                              {snapshot.name || snapshot.id}
+                            </div>
+                            <div className="text-[hsl(var(--text-muted))]">
+                              {new Date(snapshot.createdAt).toLocaleString()} • {formatSnapshotSize(snapshot.sizeBytes)}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleRollbackToSnapshot(snapshot)}
+                              disabled={rollingBackSnapshot === snapshot.id || launchingSnapshot === snapshot.id}
+                              className="flex items-center gap-1 px-1.5 py-0.5 text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] disabled:opacity-50"
+                              title="Restore this sandbox to the snapshot state (stops sandbox and replaces disk)"
+                            >
+                              {rollingBackSnapshot === snapshot.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3 w-3" />
+                              )}
+                              <span>Rollback</span>
+                            </button>
+                            <button
+                              onClick={() => handleLaunchFromSnapshot(snapshot)}
+                              disabled={launchingSnapshot === snapshot.id || rollingBackSnapshot === snapshot.id}
+                              className="flex items-center gap-1 px-1.5 py-0.5 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
+                              title="Create a new independent sandbox from this snapshot"
+                            >
+                              {launchingSnapshot === snapshot.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Play className="h-3 w-3" />
+                              )}
+                              <span>New</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSnapshot(snapshot)}
+                              disabled={deleteSnapshot.isPending || launchingSnapshot === snapshot.id || rollingBackSnapshot === snapshot.id}
+                              className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] disabled:opacity-50"
+                              title="Delete snapshot"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-[hsl(var(--text-muted))] italic">
+                      No snapshots yet. Take a snapshot while the sandbox is running.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

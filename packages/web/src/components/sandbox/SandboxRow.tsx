@@ -17,17 +17,21 @@ import {
   FolderUp,
   Copy,
   Check,
+  ChevronDown,
+  ChevronRight,
+  RotateCcw,
 } from 'lucide-react';
-import type { Sandbox, VmMeta } from '../../api/client';
+import type { Sandbox, VmMeta, VmSnapshotInfo } from '../../api/client';
 import * as api from '../../api/client';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
+import { useVmSnapshots, useDeleteVmSnapshot, useRollbackVmToSnapshot, useCreateVm } from '../../hooks/useContainers';
 import { useConfirm } from '../ConfirmModal';
 import { useTerminalPanel } from '../TerminalPanel';
 
-type ColumnId = 'status' | 'name' | 'backend' | 'resources' | 'connect' | 'image' | 'ip' | 'created' | 'volumes' | 'actions';
+type ColumnId = 'status' | 'name' | 'backend' | 'resources' | 'connect' | 'image' | 'ip' | 'created' | 'volumes' | 'snapshots' | 'actions';
 
 /** Get the default workspace path based on sandbox backend */
 function getDefaultWorkspacePath(backend: Sandbox['backend']): string {
@@ -70,10 +74,23 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
 
+  // Determine sandbox type early (needed for hooks)
+  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const vmMeta = sandbox.backendMeta as VmMeta | undefined;
+
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
+  const [showSnapshots, setShowSnapshots] = useState(false);
+  const [launchingSnapshot, setLaunchingSnapshot] = useState<string | null>(null);
+  const [rollingBackSnapshot, setRollingBackSnapshot] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(sandbox.name);
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Snapshot hooks (only fetch for VMs)
+  const { data: snapshots, isLoading: snapshotsLoading } = useVmSnapshots(isVm ? sandbox.id : '');
+  const deleteSnapshot = useDeleteVmSnapshot();
+  const rollbackSnapshot = useRollbackVmToSnapshot();
+  const createVmMutation = useCreateVm();
 
   // Focus input when editing starts
   useEffect(() => {
@@ -95,9 +112,6 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
   const isTransition = isTransitioning(sandbox.status);
 
-  // Check if this is a VM-based sandbox that supports snapshots
-  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
-  const vmMeta = sandbox.backendMeta as VmMeta | undefined;
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
 
   const canStart = isStopped && !isTransition;
@@ -161,6 +175,67 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
     } finally {
       setIsCreatingSnapshot(false);
     }
+  };
+
+  const handleDeleteSnapshot = async (snapshot: VmSnapshotInfo) => {
+    const confirmed = await confirm({
+      title: 'Delete Snapshot',
+      message: `Are you sure you want to delete "${snapshot.name || snapshot.id}"?`,
+      confirmText: 'Delete',
+      variant: 'danger',
+    });
+
+    if (confirmed) {
+      deleteSnapshot.mutate({ vmId: sandbox.id, snapshotId: snapshot.id });
+    }
+  };
+
+  const handleLaunchFromSnapshot = async (snapshot: VmSnapshotInfo) => {
+    setLaunchingSnapshot(snapshot.id);
+    try {
+      const baseName = (snapshot.name || sandbox.name).replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase().slice(0, 20);
+      const vmName = `${baseName}-${Date.now().toString(36)}`;
+
+      await createVmMutation.mutateAsync({
+        name: vmName,
+        fromSnapshot: {
+          vmId: sandbox.id,
+          snapshotId: snapshot.id,
+        },
+        autoStart: true,
+      });
+    } catch (error) {
+      console.error('Failed to launch from snapshot:', error);
+    } finally {
+      setLaunchingSnapshot(null);
+    }
+  };
+
+  const handleRollbackToSnapshot = async (snapshot: VmSnapshotInfo) => {
+    const confirmed = await confirm({
+      title: 'Rollback Sandbox',
+      message: `This will restore "${sandbox.name}" to the state saved in "${snapshot.name || snapshot.id}". Continue?`,
+      confirmText: 'Rollback',
+      variant: 'danger',
+    });
+
+    if (confirmed) {
+      setRollingBackSnapshot(snapshot.id);
+      try {
+        await rollbackSnapshot.mutateAsync({ vmId: sandbox.id, snapshotId: snapshot.id });
+      } catch (error) {
+        console.error('Failed to rollback:', error);
+      } finally {
+        setRollingBackSnapshot(null);
+      }
+    }
+  };
+
+  const formatSnapshotSize = (bytes?: number) => {
+    if (!bytes) return '?';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}K`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)}M`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}G`;
   };
 
   const handleUploadToSandbox = async (event: React.ChangeEvent<HTMLInputElement>, isFolder = false) => {
@@ -409,6 +484,24 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
         </td>
       )}
 
+      {/* Snapshots (VMs only) */}
+      {isColumnVisible('snapshots') && (
+        <td className="px-3 py-2">
+          {isVm ? (
+            <button
+              onClick={() => setShowSnapshots(!showSnapshots)}
+              className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))]"
+            >
+              <Camera className="h-3 w-3" />
+              <span>{snapshots?.length || 0}</span>
+              {showSnapshots ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            </button>
+          ) : (
+            <span className="text-[10px] text-[hsl(var(--text-muted))]">-</span>
+          )}
+        </td>
+      )}
+
       {/* Actions */}
       {isColumnVisible('actions') && (
         <td className="px-3 py-2">
@@ -517,6 +610,80 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
         </td>
       )}
     </tr>
+
+    {/* Expanded Snapshots Row */}
+    {showSnapshots && isVm && (
+      <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+        <td colSpan={visibleColumns.size} className="px-6 py-3">
+          {snapshotsLoading ? (
+            <div className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-muted))]">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading snapshots...
+            </div>
+          ) : snapshots && snapshots.length > 0 ? (
+            <div className="space-y-1">
+              {snapshots.map(snapshot => (
+                <div
+                  key={snapshot.id}
+                  className="flex items-center justify-between p-2 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] text-[10px]"
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <Camera className="h-3 w-3 text-[hsl(var(--purple))] flex-shrink-0" />
+                    <div className="font-medium text-[hsl(var(--text-primary))] truncate">
+                      {snapshot.name || snapshot.id}
+                    </div>
+                    <div className="text-[hsl(var(--text-muted))]">
+                      {new Date(snapshot.createdAt).toLocaleDateString()}
+                    </div>
+                    <div className="text-[hsl(var(--text-muted))]">
+                      {formatSnapshotSize(snapshot.sizeBytes)}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleRollbackToSnapshot(snapshot)}
+                      disabled={rollingBackSnapshot === snapshot.id || launchingSnapshot === snapshot.id}
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] disabled:opacity-50"
+                      title="Rollback"
+                    >
+                      {rollingBackSnapshot === snapshot.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3 w-3" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleLaunchFromSnapshot(snapshot)}
+                      disabled={launchingSnapshot === snapshot.id || rollingBackSnapshot === snapshot.id}
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
+                      title="Launch new sandbox"
+                    >
+                      {launchingSnapshot === snapshot.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Play className="h-3 w-3" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSnapshot(snapshot)}
+                      disabled={deleteSnapshot.isPending}
+                      className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] disabled:opacity-50"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-[hsl(var(--text-muted))] italic">
+              No snapshots. Create one while sandbox is running.
+            </p>
+          )}
+        </td>
+      </tr>
+    )}
 
     {/* Volume File Browser Modal */}
     {browsingVolume && (

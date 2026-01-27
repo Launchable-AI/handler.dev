@@ -5,7 +5,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Loader2, Plus, Check, HardDrive, Box, Server, Cloud, Eye, EyeOff, RefreshCw, Settings } from 'lucide-react';
 import { useCreateSandbox, useSandboxBackends, useSandboxes } from '../../hooks/useSandboxes';
-import { useVolumes, useImages, useConfig, useCreateVolume } from '../../hooks/useContainers';
+import { useVolumes, useImages, useConfig, useCreateVolume, useVmBaseImages } from '../../hooks/useContainers';
 import type { SandboxBackend, DaytonaSnapshot } from '../../api/client';
 import * as api from '../../api/client';
 
@@ -76,6 +76,7 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
   const { data: backends } = useSandboxBackends();
   const { data: volumes } = useVolumes();
   const { data: images } = useImages();
+  const { data: vmBaseImages } = useVmBaseImages();
   const { data: sandboxes } = useSandboxes();
   const { data: config } = useConfig();
 
@@ -145,6 +146,13 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
       loadDaytonaSnapshots();
     }
   }, [backend]);
+
+  // Auto-select first VM base image when Firecracker/Cloud-Hypervisor is selected
+  useEffect(() => {
+    if ((backend === 'firecracker' || backend === 'cloud-hypervisor') && vmBaseImages && vmBaseImages.length > 0 && !image) {
+      setImage(vmBaseImages[0].name);
+    }
+  }, [backend, vmBaseImages, image]);
 
   // Persist show Daytona-managed preference
   useEffect(() => {
@@ -396,6 +404,35 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
                 </select>
                 <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
                   Built images launch instantly. Base images require a one-time build.
+                </p>
+              </div>
+            )}
+
+            {/* Base Image (VMs only) */}
+            {(backend === 'cloud-hypervisor' || backend === 'firecracker') && (
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
+                  Base Image
+                </label>
+                {vmBaseImages && vmBaseImages.length > 0 ? (
+                  <select
+                    value={image}
+                    onChange={(e) => setImage(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--cyan-dim)/0.3)]"
+                  >
+                    {vmBaseImages.map((img) => (
+                      <option key={img.name} value={img.name}>
+                        {img.name} {img.hasWarmupSnapshot ? '(fast boot)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="px-3 py-2 text-sm text-[hsl(var(--text-muted))] bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]">
+                    No base images available. Go to Base Images tab to add one.
+                  </div>
+                )}
+                <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
+                  Promoted snapshots appear here. Visit Base Images to download or import images.
                 </p>
               </div>
             )}
@@ -743,7 +780,12 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
               </button>
               <button
                 type="submit"
-                disabled={createMutation.isPending || !name || (backend === 'daytona' && !image)}
+                disabled={
+                  createMutation.isPending ||
+                  !name ||
+                  (backend === 'daytona' && !image) ||
+                  ((backend === 'firecracker' || backend === 'cloud-hypervisor') && (!vmBaseImages || vmBaseImages.length === 0))
+                }
                 className="flex items-center gap-2 px-4 py-2 text-xs font-medium bg-[hsl(var(--cyan))] text-white hover:bg-[hsl(var(--cyan-dim))] disabled:opacity-50 transition-colors"
               >
                 {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

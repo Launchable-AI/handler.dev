@@ -1376,6 +1376,9 @@ export interface BaseImageInfo {
   name: string;
   hasKernel: boolean;
   hasWarmupSnapshot: boolean;
+  isLayered?: boolean;
+  parent?: string;
+  layerSizeMB?: number;
 }
 
 export async function listVms(): Promise<VmInfo[]> {
