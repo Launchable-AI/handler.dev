@@ -21,7 +21,7 @@ interface SlotRect {
 }
 
 export function SessionGrid({ className = '' }: SessionGridProps) {
-  const { state, reorderFocusedSessions, focusSession, unfocusSession, swapFocus } = useCommandCentre();
+  const { state, reorderFocusedSessions, focusSession, focusSessionAtIndex, unfocusSession, swapFocus } = useCommandCentre();
   const { sessions, activeSessionId, splitLayout, focusedSessionIds, fontSize, maximizedSessionId } = state;
 
   // Sidebar width state (in pixels) - start at max size
@@ -333,6 +333,7 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
               index={index}
               onReorder={isFocused && !isMaximized ? reorderFocusedSessions : undefined}
               onSwap={isFocused && !isMaximized ? swapFocus : undefined}
+              onInsertAt={isFocused && !isMaximized ? focusSessionAtIndex : undefined}
               isDraggable={!isMaximized} // All sessions draggable (for focus/unfocus), except maximized
             />
           </div>

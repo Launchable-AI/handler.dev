@@ -21,8 +21,12 @@ interface SessionTileProps {
   index?: number;
   onReorder?: (fromIndex: number, toIndex: number) => void;
   onSwap?: (focusedId: string, unfocusedId: string) => void; // Swap focused/unfocused
+  onInsertAt?: (sessionId: string, index: number) => void; // Insert unfocused at specific position
   isDraggable?: boolean;
 }
+
+// Drop zone detection: edge (insert) vs center (swap/reorder)
+type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center' | null;
 
 export function SessionTile({
   session,
@@ -35,6 +39,7 @@ export function SessionTile({
   index,
   onReorder,
   onSwap,
+  onInsertAt,
   isDraggable = true,
 }: SessionTileProps) {
   const {
@@ -51,10 +56,12 @@ export function SessionTile({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const tileRef = useRef<HTMLDivElement>(null);
 
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dropZone, setDropZone] = useState<DropZone>(null);
 
   // Drag handlers - session ID is always set, index only if available (for reordering)
   const handleDragStart = useCallback((e: React.DragEvent) => {
@@ -71,23 +78,46 @@ export function SessionTile({
     setIsDragging(false);
   }, []);
 
+  // Detect which zone of the tile the cursor is in (for insert vs swap)
+  const getDropZone = useCallback((e: React.DragEvent): DropZone => {
+    if (!tileRef.current) return 'center';
+    const rect = tileRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const edgeThreshold = 0.25; // 25% from edge triggers insert
+
+    // Check horizontal position
+    if (x < rect.width * edgeThreshold) return 'left';
+    if (x > rect.width * (1 - edgeThreshold)) return 'right';
+    // Check vertical position (for vertical layouts)
+    if (y < rect.height * edgeThreshold) return 'top';
+    if (y > rect.height * (1 - edgeThreshold)) return 'bottom';
+    return 'center';
+  }, []);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    // Allow drops for reordering (focused sessions) or swapping (unfocused onto focused)
+    // Allow drops for reordering, swapping, or inserting
     const hasReorder = index !== undefined && onReorder;
-    const hasSwap = !isThumbnail && onSwap; // Can swap if this is a focused session
-    if (!hasReorder && !hasSwap) return;
+    const hasSwap = !isThumbnail && onSwap;
+    const hasInsert = !isThumbnail && onInsertAt && index !== undefined;
+    if (!hasReorder && !hasSwap && !hasInsert) return;
+
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setIsDragOver(true);
-  }, [index, onReorder, onSwap, isThumbnail]);
+    setDropZone(getDropZone(e));
+  }, [index, onReorder, onSwap, onInsertAt, isThumbnail, getDropZone]);
 
   const handleDragLeave = useCallback(() => {
     setIsDragOver(false);
+    setDropZone(null);
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    const zone = getDropZone(e);
     setIsDragOver(false);
+    setDropZone(null);
 
     const draggedSessionId = e.dataTransfer.getData('application/x-session-id');
     const fromIndexStr = e.dataTransfer.getData('text/plain');
@@ -102,13 +132,29 @@ export function SessionTile({
     if (draggedIsFocused && index !== undefined && onReorder) {
       // Reorder: focused session dropped on another focused session
       if (fromIndex !== index) {
-        onReorder(fromIndex, index);
+        // Determine target index based on drop zone
+        let targetIndex = index;
+        if (zone === 'left' || zone === 'top') {
+          targetIndex = fromIndex < index ? index : index;
+        } else if (zone === 'right' || zone === 'bottom') {
+          targetIndex = fromIndex < index ? index : index + 1;
+        }
+        onReorder(fromIndex, targetIndex);
       }
-    } else if (!draggedIsFocused && !isThumbnail && onSwap && draggedSessionId) {
-      // Swap: unfocused session dropped on focused session
-      onSwap(session.id, draggedSessionId);
+    } else if (!draggedIsFocused && index !== undefined && draggedSessionId) {
+      // Unfocused session dropped on focused session
+      if ((zone === 'left' || zone === 'top') && onInsertAt) {
+        // Insert before this position
+        onInsertAt(draggedSessionId, index);
+      } else if ((zone === 'right' || zone === 'bottom') && onInsertAt) {
+        // Insert after this position
+        onInsertAt(draggedSessionId, index + 1);
+      } else if (zone === 'center' && onSwap) {
+        // Swap
+        onSwap(session.id, draggedSessionId);
+      }
     }
-  }, [session.id, index, onReorder, onSwap, isThumbnail]);
+  }, [session.id, index, onReorder, onSwap, onInsertAt, getDropZone]);
 
   const handleStateChange = useCallback((state: 'connecting' | 'connected' | 'disconnected' | 'error', errorMessage?: string) => {
     updateSessionStatus(session.id, state, errorMessage);
@@ -180,25 +226,44 @@ export function SessionTile({
     ...style,
     transition: style?.transition || `all ${SPRING_DURATION} ${SPRING_EASING}`,
     opacity: isDragging ? 0.5 : 1,
-    transform: isDragOver ? 'scale(1.02)' : undefined,
-  }), [style, isDragging, isDragOver]);
+    transform: isDragOver && dropZone === 'center' ? 'scale(1.02)' : undefined,
+  }), [style, isDragging, isDragOver, dropZone]);
+
+  // Drop zone indicator styles
+  const dropZoneIndicator = useMemo(() => {
+    if (!isDragOver || !dropZone || dropZone === 'center') return null;
+    const isHorizontal = dropZone === 'left' || dropZone === 'right';
+    const position = dropZone === 'left' || dropZone === 'top' ? 'start' : 'end';
+    return { isHorizontal, position };
+  }, [isDragOver, dropZone]);
 
   return (
     <div
+      ref={tileRef}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        flex flex-col bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))]
+        relative flex flex-col bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))]
         overflow-hidden
         ${isActive && !isThumbnail ? 'ring-2 ring-[hsl(var(--cyan)/0.5)]' : ''}
         ${isThumbnail ? 'hover:border-[hsl(var(--cyan)/0.5)]' : ''}
-        ${isDragOver ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)]' : ''}
+        ${isDragOver && dropZone === 'center' ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)]' : ''}
         ${className}
       `}
       style={mergedStyle}
       onClick={!isThumbnail ? handleClick : undefined}
     >
+      {/* Drop zone edge indicator */}
+      {dropZoneIndicator && (
+        <div
+          className={`absolute bg-[hsl(var(--cyan))] z-50 pointer-events-none ${
+            dropZoneIndicator.isHorizontal
+              ? `w-1 top-0 bottom-0 ${dropZoneIndicator.position === 'start' ? 'left-0' : 'right-0'}`
+              : `h-1 left-0 right-0 ${dropZoneIndicator.position === 'start' ? 'top-0' : 'bottom-0'}`
+          }`}
+        />
+      )}
       {/* Hidden file input for uploads */}
       <input
         ref={fileInputRef}
