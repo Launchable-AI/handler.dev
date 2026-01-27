@@ -21,7 +21,7 @@ interface SlotRect {
 }
 
 export function SessionGrid({ className = '' }: SessionGridProps) {
-  const { state, reorderFocusedSessions, focusSession, focusSessionAtIndex, unfocusSession, swapFocus } = useCommandCentre();
+  const { state, reorderFocusedSessions, reorderSessions, focusSession, focusSessionAtIndex, unfocusSession, swapFocus } = useCommandCentre();
   const { sessions, activeSessionId, splitLayout, focusedSessionIds, fontSize, maximizedSessionId } = state;
 
   // Sidebar width state (in pixels) - start at max size
@@ -170,6 +170,21 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
     }
   }, [focusedSessionIds, focusSession]);
 
+  // Handler to reorder unfocused sessions (translates unfocused index to main sessions index)
+  const reorderUnfocusedSessions = useCallback((fromIndex: number, toIndex: number) => {
+    // Get the actual session objects
+    const fromSession = unfocusedSessions[fromIndex];
+    const toSession = unfocusedSessions[toIndex];
+    if (!fromSession || !toSession) return;
+
+    // Find their indices in the main sessions array
+    const fromMainIndex = sessions.findIndex(s => s.id === fromSession.id);
+    const toMainIndex = sessions.findIndex(s => s.id === toSession.id);
+    if (fromMainIndex === -1 || toMainIndex === -1) return;
+
+    reorderSessions(fromMainIndex, toMainIndex);
+  }, [unfocusedSessions, sessions, reorderSessions]);
+
   // Empty state
   if (sessions.length === 0) {
     return (
@@ -308,7 +323,10 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
         const rect = slotRects[session.id];
         const isFocused = focusedSessionIds.includes(session.id);
         const isMaximized = maximizedSessionId === session.id;
-        const index = isFocused ? focusedSessionIds.indexOf(session.id) : undefined;
+        // Index depends on whether focused or unfocused
+        const focusedIndex = isFocused ? focusedSessionIds.indexOf(session.id) : undefined;
+        const unfocusedIndex = !isFocused ? unfocusedSessions.findIndex(s => s.id === session.id) : undefined;
+        const index = focusedIndex ?? unfocusedIndex;
 
         return (
           <div
@@ -331,7 +349,11 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
               fontSize={fontSize}
               className="h-full w-full"
               index={index}
-              onReorder={isFocused && !isMaximized ? reorderFocusedSessions : undefined}
+              onReorder={
+                isMaximized ? undefined :
+                isFocused ? reorderFocusedSessions :
+                reorderUnfocusedSessions
+              }
               onSwap={isFocused && !isMaximized ? swapFocus : undefined}
               onInsertAt={isFocused && !isMaximized ? focusSessionAtIndex : undefined}
               isDraggable={!isMaximized} // All sessions draggable (for focus/unfocus), except maximized
