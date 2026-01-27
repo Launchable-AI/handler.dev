@@ -64,6 +64,20 @@ function workspaceToSandbox(workspace: DaytonaWorkspace): Sandbox {
     daytonaState: workspace.state,
   };
 
+  // Determine image display - show snapshot if available, otherwise show size/language
+  let imageDisplay = `daytona-${sizeClass} (${language})`;
+  if (workspace.snapshot) {
+    // Extract clean name from snapshot (remove registry path and tags)
+    let snapshotName = workspace.snapshot;
+    if (snapshotName.includes('/')) {
+      snapshotName = snapshotName.split('/').pop() || snapshotName;
+    }
+    if (snapshotName.includes(':')) {
+      snapshotName = snapshotName.split(':')[0];
+    }
+    imageDisplay = snapshotName;
+  }
+
   return {
     id: `daytona-${workspace.id}`,
     name: workspace.name,
@@ -90,7 +104,7 @@ function workspaceToSandbox(workspace: DaytonaWorkspace): Sandbox {
       : undefined,
 
     // Metadata
-    image: `daytona-${sizeClass} (${language})`,
+    image: imageDisplay,
     createdAt: workspace.createdAt,
     startedAt: workspace.startedAt,
 
@@ -144,8 +158,17 @@ export class DaytonaAdapter implements SandboxAdapter {
       }
     }
 
+    // Determine snapshot to use from the image field
+    // The image can be a snapshot name, or left to use Daytona defaults
+    let snapshot: string | undefined;
+    if (request.image && !request.image.startsWith('ubuntu:') && !request.image.startsWith('debian:')) {
+      // Use the selected snapshot - the image field contains the snapshot name for Daytona
+      snapshot = request.image;
+    }
+
     const workspace = await this.daytona.createWorkspace({
       name: request.name,
+      snapshot,
       language: request.daytonaOptions?.language as 'python' | 'typescript' | 'javascript',
       sizeClass,
       volumes: request.daytonaOptions?.volumes?.map((v) => ({

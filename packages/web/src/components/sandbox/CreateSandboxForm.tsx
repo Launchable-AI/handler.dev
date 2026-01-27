@@ -18,9 +18,13 @@ function generateRandomSuffix(): string {
   return Math.random().toString(36).substring(2, 8);
 }
 
-// Format display name: remove "caisson-" prefix and timestamp/latest tags
+// Format display name: remove registry paths, "caisson-" prefix, and timestamp/latest tags
 function formatDisplayName(name: string): string {
   let display = name;
+  // Remove registry path (e.g., "cr.app.daytona.io/sbox-transient/my-image" -> "my-image")
+  if (display.includes('/')) {
+    display = display.split('/').pop() || display;
+  }
   // Remove caisson- prefix
   if (display.startsWith('caisson-')) {
     display = display.slice(8);
