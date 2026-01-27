@@ -21,6 +21,8 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Search,
+  Columns3,
+  Check,
 } from 'lucide-react';
 import type { SandboxBackend, SandboxStatus } from '../../api/client';
 import { useSandboxes, useSandboxCounts } from '../../hooks/useSandboxes';
@@ -38,6 +40,32 @@ const VIEW_MODE_KEY = 'caisson-sandbox-view-mode';
 const BACKEND_FILTER_KEY = 'caisson-sandbox-backend-filter';
 const RUNNING_FILTER_KEY = 'caisson-sandbox-running-filter';
 const SEARCH_KEY = 'caisson-sandbox-search';
+const VISIBLE_COLUMNS_KEY = 'caisson-sandbox-visible-columns';
+
+// Column definitions for list view
+type ColumnId = 'status' | 'name' | 'backend' | 'resources' | 'connect' | 'image' | 'ip' | 'created' | 'volumes' | 'actions';
+
+interface ColumnDef {
+  id: ColumnId;
+  label: string;
+  sortable: boolean;
+  sortKey?: SortColumn;
+  defaultVisible: boolean;
+  minWidth?: string;
+}
+
+const COLUMNS: ColumnDef[] = [
+  { id: 'status', label: 'Status', sortable: true, sortKey: 'status', defaultVisible: true, minWidth: '60px' },
+  { id: 'name', label: 'Name', sortable: true, sortKey: 'name', defaultVisible: true, minWidth: '120px' },
+  { id: 'backend', label: 'Backend', sortable: true, sortKey: 'backend', defaultVisible: true, minWidth: '100px' },
+  { id: 'connect', label: 'Connect', sortable: false, defaultVisible: true, minWidth: '180px' },
+  { id: 'resources', label: 'Resources', sortable: false, defaultVisible: false, minWidth: '100px' },
+  { id: 'image', label: 'Image', sortable: true, sortKey: 'image', defaultVisible: false, minWidth: '150px' },
+  { id: 'ip', label: 'IP', sortable: true, sortKey: 'ip', defaultVisible: false, minWidth: '100px' },
+  { id: 'created', label: 'Created', sortable: true, sortKey: 'created', defaultVisible: false, minWidth: '90px' },
+  { id: 'volumes', label: 'Volumes', sortable: false, defaultVisible: true, minWidth: '80px' },
+  { id: 'actions', label: 'Actions', sortable: false, defaultVisible: true, minWidth: '120px' },
+];
 
 const BACKEND_OPTIONS: Array<{ value: SandboxBackend; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { value: 'docker', label: 'Docker', icon: Container },
@@ -156,6 +184,21 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
     return 'asc';
   });
 
+  // Column visibility state with persistence
+  const [visibleColumns, setVisibleColumns] = useState<Set<ColumnId>>(() => {
+    const stored = localStorage.getItem(VISIBLE_COLUMNS_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        return new Set(parsed as ColumnId[]);
+      } catch {
+        // Fall through to default
+      }
+    }
+    return new Set(COLUMNS.filter(c => c.defaultVisible).map(c => c.id));
+  });
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+
   // Persist settings
   useEffect(() => {
     localStorage.setItem(VIEW_MODE_KEY, viewMode);
@@ -168,6 +211,10 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
   useEffect(() => {
     localStorage.setItem(SORT_KEY, JSON.stringify({ column: sortColumn, direction: sortDirection }));
   }, [sortColumn, sortDirection]);
+
+  useEffect(() => {
+    localStorage.setItem(VISIBLE_COLUMNS_KEY, JSON.stringify([...visibleColumns]));
+  }, [visibleColumns]);
 
   useEffect(() => {
     localStorage.setItem(RUNNING_FILTER_KEY, showOnlyRunning.toString());
@@ -245,6 +292,24 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
       setSortDirection('asc');
     }
   };
+
+  // Toggle column visibility
+  const toggleColumn = (columnId: ColumnId) => {
+    setVisibleColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(columnId)) {
+        // Don't allow hiding all columns - keep at least name and actions
+        if (columnId !== 'name' && columnId !== 'actions') {
+          next.delete(columnId);
+        }
+      } else {
+        next.add(columnId);
+      }
+      return next;
+    });
+  };
+
+  const isColumnVisible = (columnId: ColumnId) => visibleColumns.has(columnId);
 
   // Sortable header component
   const SortableHeader = ({ column, children, className = '' }: { column: SortColumn; children: React.ReactNode; className?: string }) => (
@@ -358,8 +423,59 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
               {viewModeButton('list', <LayoutList className="h-3.5 w-3.5" />, 'List view')}
             </div>
 
+            {/* Column visibility toggle (only for list view) */}
+            {viewMode === 'list' && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowColumnMenu(!showColumnMenu)}
+                  className={`p-1.5 transition-colors border border-[hsl(var(--border))] ${
+                    showColumnMenu
+                      ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]'
+                      : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
+                  }`}
+                  title="Toggle columns"
+                >
+                  <Columns3 className="h-3.5 w-3.5" />
+                </button>
+                {showColumnMenu && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowColumnMenu(false)}
+                    />
+                    <div className="absolute right-0 top-full mt-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg z-50 min-w-[160px]">
+                      <div className="px-2 py-1.5 text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider border-b border-[hsl(var(--border))]">
+                        Show Columns
+                      </div>
+                      {COLUMNS.map((col) => (
+                        <button
+                          key={col.id}
+                          onClick={() => toggleColumn(col.id)}
+                          disabled={col.id === 'name' || col.id === 'actions'}
+                          className={`w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-left transition-colors ${
+                            col.id === 'name' || col.id === 'actions'
+                              ? 'text-[hsl(var(--text-muted))] cursor-not-allowed'
+                              : 'text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))]'
+                          }`}
+                        >
+                          <span className={`w-4 h-4 flex items-center justify-center border ${
+                            isColumnVisible(col.id)
+                              ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan))] text-white'
+                              : 'border-[hsl(var(--border))]'
+                          }`}>
+                            {isColumnVisible(col.id) && <Check className="h-3 w-3" />}
+                          </span>
+                          {col.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Count */}
-            <span className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider">
+            <span className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider whitespace-nowrap">
               {counts.running}/{counts.total} running
             </span>
           </div>
@@ -455,30 +571,58 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
             )}
 
             {viewMode === 'list' && (
-              <div className="border border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
-                <table className="w-full text-left">
+              <div className="border border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))] overflow-x-auto">
+                <table className="w-full text-left min-w-max">
                   <thead>
                     <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
-                      <SortableHeader column="status" className="w-10">Status</SortableHeader>
-                      <SortableHeader column="name">Name</SortableHeader>
-                      <SortableHeader column="backend">Backend</SortableHeader>
-                      <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider">
-                        Resources
-                      </th>
-                      <SortableHeader column="image">Image</SortableHeader>
-                      <SortableHeader column="ip">IP</SortableHeader>
-                      <SortableHeader column="created">Created</SortableHeader>
-                      <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider">
-                        Volumes
-                      </th>
-                      <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider w-24">
-                        Actions
-                      </th>
+                      {isColumnVisible('status') && (
+                        <SortableHeader column="status" className="w-16">Status</SortableHeader>
+                      )}
+                      {isColumnVisible('name') && (
+                        <SortableHeader column="name">Name</SortableHeader>
+                      )}
+                      {isColumnVisible('backend') && (
+                        <SortableHeader column="backend">Backend</SortableHeader>
+                      )}
+                      {isColumnVisible('connect') && (
+                        <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider">
+                          Connect
+                        </th>
+                      )}
+                      {isColumnVisible('resources') && (
+                        <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider">
+                          Resources
+                        </th>
+                      )}
+                      {isColumnVisible('image') && (
+                        <SortableHeader column="image">Image</SortableHeader>
+                      )}
+                      {isColumnVisible('ip') && (
+                        <SortableHeader column="ip">IP</SortableHeader>
+                      )}
+                      {isColumnVisible('created') && (
+                        <SortableHeader column="created">Created</SortableHeader>
+                      )}
+                      {isColumnVisible('volumes') && (
+                        <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider">
+                          Volumes
+                        </th>
+                      )}
+                      {isColumnVisible('actions') && (
+                        <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider">
+                          Actions
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {sortedSandboxes.map((sandbox) => (
-                      <SandboxRow key={sandbox.id} sandbox={sandbox} highlight={highlightId === sandbox.id} />
+                      <SandboxRow
+                        key={sandbox.id}
+                        sandbox={sandbox}
+                        highlight={highlightId === sandbox.id}
+                        visibleColumns={visibleColumns}
+                      />
                     ))}
                   </tbody>
                 </table>
