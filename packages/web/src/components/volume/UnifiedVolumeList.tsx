@@ -15,6 +15,8 @@ import {
   Cloud,
   Box,
   Filter,
+  Link,
+  Unlink,
 } from 'lucide-react';
 import type { UnifiedVolume, UnifiedVolumeBackend } from '../../api/client';
 import {
@@ -23,7 +25,10 @@ import {
   useDeleteUnifiedVolume,
   useUnifiedVolumeFiles,
   useUploadToUnifiedVolume,
+  useAttachUnifiedVolume,
+  useDetachUnifiedVolume,
 } from '../../hooks/useVolumes';
+import { useSandboxes } from '../../hooks/useSandboxes';
 import { useConfirm } from '../ConfirmModal';
 
 /**
@@ -71,7 +76,17 @@ function VolumeStatus({ status }: { status: string }) {
 /**
  * Volume card component
  */
-function VolumeCard({ volume, onDelete }: { volume: UnifiedVolume; onDelete: () => void }) {
+function VolumeCard({
+  volume,
+  onDelete,
+  onAttach,
+  onDetach,
+}: {
+  volume: UnifiedVolume;
+  onDelete: () => void;
+  onAttach?: () => void;
+  onDetach?: () => void;
+}) {
   const [showFiles, setShowFiles] = useState(false);
   const { data: filesData, isLoading: filesLoading } = useUnifiedVolumeFiles(
     volume.id,
@@ -81,6 +96,8 @@ function VolumeCard({ volume, onDelete }: { volume: UnifiedVolume; onDelete: () 
 
   const canDelete = volume.status !== 'attached' && volume.attachedTo.length === 0;
   const supportsFiles = volume.backend === 'vm';
+  const supportsAttach = volume.backend === 'vm';
+  const isAttached = volume.attachedTo.length > 0;
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -119,6 +136,24 @@ function VolumeCard({ volume, onDelete }: { volume: UnifiedVolume; onDelete: () 
               title="Browse Files"
             >
               <FolderOpen className="h-4 w-4" />
+            </button>
+          )}
+          {supportsAttach && !isAttached && onAttach && (
+            <button
+              onClick={onAttach}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] transition-colors"
+              title="Attach to Sandbox"
+            >
+              <Link className="h-4 w-4" />
+            </button>
+          )}
+          {supportsAttach && isAttached && onDetach && (
+            <button
+              onClick={onDetach}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] transition-colors"
+              title="Detach from Sandbox"
+            >
+              <Unlink className="h-4 w-4" />
             </button>
           )}
           {canDelete && (
@@ -334,6 +369,103 @@ function CreateVolumeModal({
   );
 }
 
+/**
+ * Attach volume modal
+ */
+function AttachVolumeModal({
+  volume,
+  onClose,
+  onSubmit,
+  isLoading,
+}: {
+  volume: UnifiedVolume;
+  onClose: () => void;
+  onSubmit: (sandboxId: string) => void;
+  isLoading: boolean;
+}) {
+  const { data: sandboxesData } = useSandboxes();
+  const [selectedSandboxId, setSelectedSandboxId] = useState('');
+
+  // Filter to only show Firecracker sandboxes (volume attachment only works for Firecracker)
+  const vmSandboxes = useMemo(() => {
+    if (!sandboxesData?.sandboxes) return [];
+    return sandboxesData.sandboxes.filter((s) => s.backend === 'firecracker');
+  }, [sandboxesData]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedSandboxId) {
+      onSubmit(selectedSandboxId);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="w-full max-w-md bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
+          <h2 className="text-sm font-medium text-[hsl(var(--text-primary))]">
+            Attach Volume: {volume.name}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wide mb-1">
+              Select Sandbox
+            </label>
+            <select
+              value={selectedSandboxId}
+              onChange={(e) => setSelectedSandboxId(e.target.value)}
+              required
+              className="w-full px-3 py-2 text-sm bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:outline-none focus:border-[hsl(var(--cyan))]"
+            >
+              <option value="">Select a sandbox...</option>
+              {vmSandboxes.map((sandbox) => (
+                <option key={sandbox.id} value={sandbox.id}>
+                  {sandbox.name} ({sandbox.backend} - {sandbox.status})
+                </option>
+              ))}
+            </select>
+            {vmSandboxes.length === 0 && (
+              <p className="mt-2 text-[10px] text-[hsl(var(--text-muted))]">
+                No Firecracker sandboxes available. Create a Firecracker sandbox first.
+              </p>
+            )}
+            <p className="mt-2 text-[10px] text-[hsl(var(--text-muted))]">
+              Note: Attaching to a running VM will restart it. The volume will appear as /dev/vdc (or higher) inside the VM.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !selectedSandboxId}
+              className="px-4 py-2 text-sm bg-[hsl(var(--green))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--green)/0.8)] disabled:opacity-50 transition-colors"
+            >
+              {isLoading ? 'Attaching...' : 'Attach'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // Backend filter button
 function BackendFilterButton({
   label,
@@ -370,8 +502,11 @@ export function UnifiedVolumeList() {
   const { data, isLoading, error } = useUnifiedVolumes();
   const createVolume = useCreateUnifiedVolume();
   const deleteVolume = useDeleteUnifiedVolume();
+  const attachVolume = useAttachUnifiedVolume();
+  const detachVolume = useDetachUnifiedVolume();
   const confirm = useConfirm();
   const [showCreate, setShowCreate] = useState(false);
+  const [attachingVolume, setAttachingVolume] = useState<UnifiedVolume | null>(null);
   const [selectedBackends, setSelectedBackends] = useState<Set<UnifiedVolumeBackend>>(new Set());
 
   // Get available backends from data
@@ -428,6 +563,33 @@ export function UnifiedVolumeList() {
       setShowCreate(false);
     } catch (err) {
       console.error('Failed to create volume:', err);
+    }
+  };
+
+  const handleAttach = async (sandboxId: string) => {
+    if (!attachingVolume) return;
+    try {
+      await attachVolume.mutateAsync({ volumeId: attachingVolume.id, sandboxId });
+      setAttachingVolume(null);
+    } catch (err) {
+      console.error('Failed to attach volume:', err);
+    }
+  };
+
+  const handleDetach = async (volume: UnifiedVolume) => {
+    const confirmed = await confirm({
+      title: 'Detach Volume',
+      message: `Are you sure you want to detach "${volume.name}" from its sandbox?`,
+      confirmText: 'Detach',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (confirmed) {
+      try {
+        await detachVolume.mutateAsync(volume.id);
+      } catch (err) {
+        console.error('Failed to detach volume:', err);
+      }
     }
   };
 
@@ -518,6 +680,8 @@ export function UnifiedVolumeList() {
                 key={volume.id}
                 volume={volume}
                 onDelete={() => handleDelete(volume)}
+                onAttach={volume.backend === 'vm' ? () => setAttachingVolume(volume) : undefined}
+                onDetach={volume.backend === 'vm' && volume.attachedTo.length > 0 ? () => handleDetach(volume) : undefined}
               />
             ))}
           </div>
@@ -531,6 +695,16 @@ export function UnifiedVolumeList() {
           onSubmit={handleCreate}
           isLoading={createVolume.isPending}
           availableBackends={availableBackends}
+        />
+      )}
+
+      {/* Attach Modal */}
+      {attachingVolume && (
+        <AttachVolumeModal
+          volume={attachingVolume}
+          onClose={() => setAttachingVolume(null)}
+          onSubmit={handleAttach}
+          isLoading={attachVolume.isPending}
         />
       )}
     </div>

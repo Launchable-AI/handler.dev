@@ -29,6 +29,9 @@ interface VolumeAdapter {
   uploadFile(id: string, filename: string, content: Buffer, destPath?: string): Promise<void>;
   downloadFile(id: string, filePath: string): Promise<Buffer>;
   deleteFile(id: string, filePath: string): Promise<void>;
+  // Optional: attach/detach (only VM volumes support this)
+  attach?(id: string, sandboxId: string): Promise<Volume>;
+  detach?(id: string): Promise<Volume>;
 }
 
 export class VolumeService {
@@ -253,6 +256,42 @@ export class VolumeService {
     }
 
     return adapter.deleteFile(id, filePath);
+  }
+
+  /**
+   * Attach a volume to a sandbox (VM volumes only)
+   */
+  async attach(id: string, sandboxId: string): Promise<Volume> {
+    const backend = this.getBackendFromId(id);
+    const adapter = this.adapters.get(backend);
+
+    if (!adapter) {
+      throw new Error(`Backend '${backend}' is not available`);
+    }
+
+    if (!adapter.attach) {
+      throw new Error(`Backend '${backend}' does not support volume attachment`);
+    }
+
+    return adapter.attach(id, sandboxId);
+  }
+
+  /**
+   * Detach a volume from a sandbox (VM volumes only)
+   */
+  async detach(id: string): Promise<Volume> {
+    const backend = this.getBackendFromId(id);
+    const adapter = this.adapters.get(backend);
+
+    if (!adapter) {
+      throw new Error(`Backend '${backend}' is not available`);
+    }
+
+    if (!adapter.detach) {
+      throw new Error(`Backend '${backend}' does not support volume detachment`);
+    }
+
+    return adapter.detach(id);
   }
 
   /**

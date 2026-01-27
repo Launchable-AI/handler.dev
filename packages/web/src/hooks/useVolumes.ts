@@ -202,3 +202,58 @@ export function useUnifiedVolumesByBackend(filter?: UnifiedVolumeListFilter) {
 
   return grouped;
 }
+
+/**
+ * Attach a volume to a sandbox (VM volumes only)
+ */
+export function useAttachUnifiedVolume() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ volumeId, sandboxId }: { volumeId: string; sandboxId: string }) =>
+      api.attachUnifiedVolume(volumeId, sandboxId),
+    onSuccess: (updatedVolume, { volumeId }) => {
+      // Update the volume in the list
+      queryClient.setQueriesData<api.UnifiedVolumeListResponse>(
+        { queryKey: ['unified-volumes'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            volumes: old.volumes.map((v) =>
+              v.id === volumeId ? updatedVolume : v
+            ),
+          };
+        }
+      );
+      queryClient.invalidateQueries({ queryKey: ['unified-volumes'] });
+    },
+  });
+}
+
+/**
+ * Detach a volume from its sandbox (VM volumes only)
+ */
+export function useDetachUnifiedVolume() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (volumeId: string) => api.detachUnifiedVolume(volumeId),
+    onSuccess: (updatedVolume, volumeId) => {
+      // Update the volume in the list
+      queryClient.setQueriesData<api.UnifiedVolumeListResponse>(
+        { queryKey: ['unified-volumes'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            volumes: old.volumes.map((v) =>
+              v.id === volumeId ? updatedVolume : v
+            ),
+          };
+        }
+      );
+      queryClient.invalidateQueries({ queryKey: ['unified-volumes'] });
+    },
+  });
+}

@@ -2432,3 +2432,22 @@ export async function downloadFromUnifiedVolume(id: string, filePath: string): P
 export async function deleteUnifiedVolumeFile(id: string, filePath: string): Promise<void> {
   await fetchAPI(`/unified-volumes/${encodeURIComponent(id)}/files?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
 }
+
+/**
+ * Attach a volume to a sandbox (VM volumes only)
+ */
+export async function attachUnifiedVolume(volumeId: string, sandboxId: string): Promise<UnifiedVolume> {
+  return fetchAPI(`/unified-volumes/${encodeURIComponent(volumeId)}/attach`, {
+    method: 'POST',
+    body: JSON.stringify({ sandboxId }),
+  });
+}
+
+/**
+ * Detach a volume from its sandbox (VM volumes only)
+ */
+export async function detachUnifiedVolume(volumeId: string): Promise<UnifiedVolume> {
+  return fetchAPI(`/unified-volumes/${encodeURIComponent(volumeId)}/detach`, {
+    method: 'POST',
+  });
+}

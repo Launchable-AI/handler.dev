@@ -702,7 +702,26 @@ export class FirecrackerService extends EventEmitter {
         is_read_only: false,  // WRITABLE: VM-specific changes go here
       } as Drive);
 
-      // 3. Configure network interface (if TAP available)
+      // 4. Configure attached volume drives (appear as /dev/vdc, /dev/vdd, etc.)
+      if (vm.volumes && vm.volumes.length > 0) {
+        for (let i = 0; i < vm.volumes.length; i++) {
+          const volume = vm.volumes[i];
+          if (volume.hostPath && fs.existsSync(volume.hostPath)) {
+            const driveId = `data${i}`;
+            console.log(`[FirecrackerService] Configuring volume drive ${driveId}: ${volume.hostPath} -> ${volume.mountPath}`);
+            await this.sendApiRequest(apiSocket, 'PUT', `/drives/${driveId}`, {
+              drive_id: driveId,
+              path_on_host: volume.hostPath,
+              is_root_device: false,
+              is_read_only: volume.readOnly || false,
+            } as Drive);
+          } else {
+            console.warn(`[FirecrackerService] Volume ${volume.name} path not found: ${volume.hostPath}`);
+          }
+        }
+      }
+
+      // 5. Configure network interface (if TAP available)
       if (vm.networkConfig.mode === 'tap' && vm.networkConfig.tapDevice) {
         await this.sendApiRequest(apiSocket, 'PUT', '/network-interfaces/eth0', {
           iface_id: 'eth0',
@@ -711,13 +730,13 @@ export class FirecrackerService extends EventEmitter {
         } as NetworkInterface);
       }
 
-      // 4. Configure machine
+      // 6. Configure machine
       await this.sendApiRequest(apiSocket, 'PUT', '/machine-config', {
         vcpu_count: vm.vcpus,
         mem_size_mib: vm.memoryMb,
       } as MachineConfig);
 
-      // 5. Configure MMDS
+      // 7. Configure MMDS
       if (vm.networkConfig.mode === 'tap') {
         await this.sendApiRequest(apiSocket, 'PUT', '/mmds/config', {
           network_interfaces: ['eth0'],
@@ -725,13 +744,13 @@ export class FirecrackerService extends EventEmitter {
           ipv4_address: '169.254.169.254',
         } as MmdsConfig);
 
-        // 6. Set MMDS metadata
+        // 8. Set MMDS metadata
         if (vm.mmdsMetadata) {
           await this.sendApiRequest(apiSocket, 'PUT', '/mmds', vm.mmdsMetadata);
         }
       }
 
-      // 7. Start the VM
+      // 9. Start the VM
       await this.sendApiRequest(apiSocket, 'PUT', '/actions', {
         action_type: 'InstanceStart',
       });
@@ -743,6 +762,14 @@ export class FirecrackerService extends EventEmitter {
 
       // Wait for SSH to be reachable
       await this.waitForSshReady(id);
+
+      // Configure hostname in /etc/hosts to avoid sudo warnings
+      await this.configureHostname(id);
+
+      // Mount attached volumes inside the guest
+      if (vm.volumes && vm.volumes.length > 0) {
+        await this.mountVolumesInGuest(id);
+      }
 
       vm.status = 'running';
       await this.saveVmState(vm);
@@ -890,6 +917,69 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
+   * Configure hostname in /etc/hosts to avoid sudo warnings
+   */
+  private async configureHostname(vmId: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm) return;
+
+    const sshKeyPath = this.getSshKeyPath();
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+    const hostname = vm.mmdsMetadata?.instance?.hostname || vm.name;
+
+    try {
+      // Add hostname to /etc/hosts if not already present
+      const hostsCmd = `grep -q "127.0.0.1.*${hostname}" /etc/hosts || echo "127.0.0.1 ${hostname}" | sudo tee -a /etc/hosts >/dev/null`;
+      const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o IdentitiesOnly=yes agent@${host} -p ${port} '${hostsCmd}'`;
+
+      execSync(sshCmd, { stdio: 'pipe', timeout: 15000 });
+      console.log(`[FirecrackerService] Configured hostname ${hostname} in /etc/hosts`);
+    } catch (error) {
+      console.warn(`[FirecrackerService] Failed to configure hostname:`, error);
+      // Non-fatal - sudo will still work, just with a warning
+    }
+  }
+
+  /**
+   * Mount attached volumes inside the guest VM
+   * Volumes are configured as drives data0, data1, etc. which appear as /dev/vdc, /dev/vdd, etc.
+   */
+  private async mountVolumesInGuest(vmId: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm || !vm.volumes || vm.volumes.length === 0) return;
+
+    const sshKeyPath = this.getSshKeyPath();
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+
+    // Device letters: vda=rootfs, vdb=overlay, vdc=data0, vdd=data1, etc.
+    const deviceLetters = 'cdefghijklmnop'; // Starting from 'c' for first data volume
+
+    for (let i = 0; i < vm.volumes.length; i++) {
+      const volume = vm.volumes[i];
+      const deviceLetter = deviceLetters[i];
+      const device = `/dev/vd${deviceLetter}`;
+      const mountPath = volume.mountPath || '/mnt/data';
+
+      console.log(`[FirecrackerService] Mounting ${device} at ${mountPath} in VM ${vmId}`);
+
+      try {
+        // Create mount directory and mount the device
+        // Use sudo since agent user needs root for mounting
+        const mountCmd = `sudo mkdir -p ${mountPath} && sudo mount ${device} ${mountPath} 2>/dev/null && sudo chown agent:agent ${mountPath}`;
+        const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o IdentitiesOnly=yes agent@${host} -p ${port} '${mountCmd}'`;
+
+        execSync(sshCmd, { stdio: 'pipe', timeout: 30000 });
+        console.log(`[FirecrackerService] Mounted ${volume.name} at ${mountPath}`);
+      } catch (error) {
+        console.warn(`[FirecrackerService] Failed to mount volume ${volume.name} at ${mountPath}:`, error);
+        // Don't fail the VM start if mounting fails - the volume is still accessible
+      }
+    }
+  }
+
+  /**
    * Stop a VM
    */
   async stopVm(id: string): Promise<VmInfo> {
@@ -980,6 +1070,87 @@ export class FirecrackerService extends EventEmitter {
 
       check();
     });
+  }
+
+  /**
+   * Attach a volume to a VM
+   * Note: Firecracker doesn't support hot-plugging, so this requires a VM restart
+   */
+  async attachVolume(
+    vmId: string,
+    volumeConfig: { name: string; hostPath: string; mountPath: string; readOnly?: boolean }
+  ): Promise<VmInfo> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    // Check if volume is already attached
+    const existingIndex = vm.volumes.findIndex(v => v.name === volumeConfig.name);
+    if (existingIndex !== -1) {
+      throw new Error(`Volume ${volumeConfig.name} is already attached to VM ${vmId}`);
+    }
+
+    console.log(`[FirecrackerService] Attaching volume ${volumeConfig.name} to VM ${vmId}`);
+
+    // Add volume to VM state
+    vm.volumes.push({
+      name: volumeConfig.name,
+      hostPath: volumeConfig.hostPath,
+      mountPath: volumeConfig.mountPath,
+      readOnly: volumeConfig.readOnly,
+    });
+
+    const wasRunning = vm.status === 'running' || vm.status === 'booting';
+
+    // If VM is running, we need to restart it for the drive to be configured
+    if (wasRunning) {
+      console.log(`[FirecrackerService] Restarting VM ${vmId} to attach volume`);
+      await this.stopVm(vmId);
+      await this.startVm(vmId);
+    } else {
+      // Just save the state - volume will be configured on next start
+      await this.saveVmState(vm);
+    }
+
+    this.emit('vm:volume-attached', { vmId, volumeName: volumeConfig.name });
+    return this.vmToInfo(this.vms.get(vmId)!);
+  }
+
+  /**
+   * Detach a volume from a VM
+   * Note: Firecracker doesn't support hot-unplugging, so this requires a VM restart
+   */
+  async detachVolume(vmId: string, volumeName: string): Promise<VmInfo> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    const volumeIndex = vm.volumes.findIndex(v => v.name === volumeName);
+    if (volumeIndex === -1) {
+      throw new Error(`Volume ${volumeName} is not attached to VM ${vmId}`);
+    }
+
+    console.log(`[FirecrackerService] Detaching volume ${volumeName} from VM ${vmId}`);
+
+    // Remove volume from VM state
+    vm.volumes.splice(volumeIndex, 1);
+
+    const wasRunning = vm.status === 'running' || vm.status === 'booting';
+
+    // If VM is running, we need to restart it for the drive to be removed
+    if (wasRunning) {
+      console.log(`[FirecrackerService] Restarting VM ${vmId} to detach volume`);
+      await this.stopVm(vmId);
+      await this.startVm(vmId);
+    } else {
+      // Just save the state
+      await this.saveVmState(vm);
+    }
+
+    this.emit('vm:volume-detached', { vmId, volumeName });
+    return this.vmToInfo(this.vms.get(vmId)!);
   }
 
   /**

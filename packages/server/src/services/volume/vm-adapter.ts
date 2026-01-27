@@ -11,6 +11,7 @@ import type {
   VmVolumeMeta,
 } from '../../types/volume.js';
 import { getVmVolumeService, initializeVmVolumeService, VmVolumeService } from '../vm-volumes.js';
+import { getFirecrackerService } from '../firecracker.js';
 
 /**
  * Converts a VM volume to the unified Volume type
@@ -133,5 +134,84 @@ export class VmVolumeAdapter {
     const service = await this.ensureInitialized();
     const vmVolId = id.replace(/^vol-vm-/, '');
     await service.deleteFile(vmVolId, filePath);
+  }
+
+  /**
+   * Attach a volume to a VM/sandbox
+   * This updates metadata AND configures the actual Firecracker drive
+   */
+  async attach(id: string, sandboxId: string): Promise<Volume> {
+    const service = await this.ensureInitialized();
+    const vmVolId = id.replace(/^vol-vm-/, '');
+
+    // Get volume info
+    const vol = service.getVolume(vmVolId);
+    if (!vol) throw new Error(`Volume ${id} not found`);
+
+    // Get volume path
+    const volumePath = service.getVolumePath(vmVolId);
+    if (!volumePath) throw new Error(`Volume ${id} path not found`);
+
+    // Check if this is a Firecracker VM (starts with fc-)
+    if (sandboxId.startsWith('fc-')) {
+      const firecrackerService = getFirecrackerService();
+
+      // Attach the volume in Firecracker (this will restart the VM if running)
+      await firecrackerService.attachVolume(sandboxId, {
+        name: vol.name,
+        hostPath: volumePath,
+        mountPath: vol.mountPath || '/mnt/data',
+        readOnly: false,
+      });
+    }
+
+    // Update volume metadata (track which VM it's attached to)
+    // Extract raw VM ID for metadata (fc-xxx -> xxx to match internal storage)
+    const rawVmId = sandboxId.replace(/^(fc-|vm-)/, '');
+    service.attachVolume(vmVolId, rawVmId);
+
+    const updatedVol = service.getVolume(vmVolId);
+    if (!updatedVol) throw new Error(`Volume ${id} not found after attach`);
+    return vmVolumeToVolume(updatedVol, service);
+  }
+
+  /**
+   * Detach a volume from a VM/sandbox
+   * This updates metadata AND removes the Firecracker drive configuration
+   */
+  async detach(id: string): Promise<Volume> {
+    const service = await this.ensureInitialized();
+    const vmVolId = id.replace(/^vol-vm-/, '');
+
+    // Get volume info to find which VM it's attached to
+    const vol = service.getVolume(vmVolId);
+    if (!vol) throw new Error(`Volume ${id} not found`);
+
+    if (!vol.attachedTo) {
+      throw new Error(`Volume ${id} is not attached to any VM`);
+    }
+
+    // Try to detach from Firecracker
+    // The attachedTo field stores the raw VM ID, we need to try with fc- prefix
+    const firecrackerService = getFirecrackerService();
+    const fcVmId = `fc-${vol.attachedTo}`;
+
+    try {
+      const fcVm = firecrackerService.getVm(fcVmId);
+      if (fcVm) {
+        // It's a Firecracker VM - detach the volume (this will restart the VM if running)
+        await firecrackerService.detachVolume(fcVmId, vol.name);
+      }
+    } catch (error) {
+      // VM might not exist anymore or might be a different type - continue with metadata cleanup
+      console.warn(`[VmVolumeAdapter] Could not detach from Firecracker VM ${fcVmId}:`, error);
+    }
+
+    // Update volume metadata
+    service.detachVolume(vmVolId);
+
+    const updatedVol = service.getVolume(vmVolId);
+    if (!updatedVol) throw new Error(`Volume ${id} not found after detach`);
+    return vmVolumeToVolume(updatedVol, service);
   }
 }

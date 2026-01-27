@@ -50,6 +50,10 @@ const CreateVolumeSchema = z.object({
   mountPath: z.string().optional(),
 });
 
+const AttachVolumeSchema = z.object({
+  sandboxId: z.string().min(1),
+});
+
 /**
  * GET /api/volumes
  * List all volumes with optional filtering
@@ -161,6 +165,41 @@ unifiedVolumes.delete('/:id', async (c) => {
     return c.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to delete volume';
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
+ * POST /api/volumes/:id/attach
+ * Attach a volume to a sandbox (VM volumes only)
+ */
+unifiedVolumes.post('/:id/attach', zValidator('json', AttachVolumeSchema), async (c) => {
+  const id = c.req.param('id');
+  const { sandboxId } = c.req.valid('json');
+  const service = await ensureVolumeServiceInitialized();
+
+  try {
+    const volume = await service.attach(id, sandboxId);
+    return c.json(volume);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to attach volume';
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
+ * POST /api/volumes/:id/detach
+ * Detach a volume from its sandbox (VM volumes only)
+ */
+unifiedVolumes.post('/:id/detach', async (c) => {
+  const id = c.req.param('id');
+  const service = await ensureVolumeServiceInitialized();
+
+  try {
+    const volume = await service.detach(id);
+    return c.json(volume);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to detach volume';
     return c.json({ error: message }, 500);
   }
 });
