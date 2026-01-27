@@ -54,12 +54,13 @@ export function SessionTile({
   const [isDragging, setIsDragging] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  // Drag handlers
+  // Drag handlers - session ID is always set, index only if available (for reordering)
   const handleDragStart = useCallback((e: React.DragEvent) => {
     if (!isDraggable) return;
-    // Include both session ID and index for flexibility
     e.dataTransfer.setData('application/x-session-id', session.id);
-    e.dataTransfer.setData('text/plain', String(index ?? -1));
+    if (index !== undefined) {
+      e.dataTransfer.setData('text/plain', String(index));
+    }
     e.dataTransfer.effectAllowed = 'move';
     setIsDragging(true);
   }, [isDraggable, index, session.id]);
@@ -186,12 +187,12 @@ export function SessionTile({
         onChange={handleFileSelect}
       />
 
-      {/* Tile header - draggable for reordering */}
+      {/* Tile header - draggable for reordering and focus/unfocus */}
       <div
-        draggable={isDraggable && index !== undefined}
+        draggable={isDraggable}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        className={`flex items-center justify-between bg-[hsl(var(--bg-elevated))] border-b border-[hsl(var(--border))] ${isThumbnail ? 'px-2 py-1' : 'px-3 py-1.5'} ${isDraggable && index !== undefined ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        className={`flex items-center justify-between bg-[hsl(var(--bg-elevated))] border-b border-[hsl(var(--border))] ${isThumbnail ? 'px-2 py-1' : 'px-3 py-1.5'} ${isDraggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
       >
         <div className="flex items-center gap-2 min-w-0">
           {session.type === 'vm' ? (
