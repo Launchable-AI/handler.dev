@@ -257,6 +257,14 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
+   * Normalize image name for filesystem paths
+   * Docker-style names use colons (ubuntu:24.04) but we store dirs with hyphens (ubuntu-24.04)
+   */
+  private normalizeImageName(imageName: string): string {
+    return imageName.replace(/:/g, '-');
+  }
+
+  /**
    * Generate a MAC address
    */
   private generateMacAddress(): string {
@@ -513,7 +521,9 @@ export class FirecrackerService extends EventEmitter {
    * Returns: { basePath, overlayPath } for configuring Firecracker drives
    */
   private async prepareDiskImage(vm: FirecrackerVmState, vmDir: string): Promise<{ basePath: string; overlayPath: string }> {
-    const baseImageDir = path.join(this.config.baseImagesDir, vm.baseImage);
+    // Normalize image name: Docker-style ubuntu:24.04 -> filesystem ubuntu-24.04
+    const normalizedImageName = this.normalizeImageName(vm.baseImage);
+    const baseImageDir = path.join(this.config.baseImagesDir, normalizedImageName);
     const baseImagePath = path.join(baseImageDir, 'rootfs.ext4');
     const overlayPath = path.join(vmDir, 'overlay.ext4');
 
@@ -644,7 +654,8 @@ export class FirecrackerService extends EventEmitter {
       // Get kernel path - prefer Firecracker-optimized kernel (vmlinux-fc)
       // The FC kernel has CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=n which prevents
       // conflicts with Firecracker's direct device setup
-      const baseImageDir = path.join(this.config.baseImagesDir, vm.baseImage);
+      const normalizedImageName = this.normalizeImageName(vm.baseImage);
+      const baseImageDir = path.join(this.config.baseImagesDir, normalizedImageName);
       const fcKernelPath = path.join(baseImageDir, 'vmlinux-fc');
       const defaultKernelPath = path.join(baseImageDir, 'vmlinux');
       const kernelPath = fs.existsSync(fcKernelPath) ? fcKernelPath : defaultKernelPath;
@@ -1357,8 +1368,9 @@ export class FirecrackerService extends EventEmitter {
     }
     fs.mkdirSync(newImageDir, { recursive: true });
 
-    // Get the original base image
-    const baseImageDir = path.join(this.config.baseImagesDir, snapshotMeta.baseImage);
+    // Get the original base image (normalize name for filesystem path)
+    const normalizedImageName = this.normalizeImageName(snapshotMeta.baseImage);
+    const baseImageDir = path.join(this.config.baseImagesDir, normalizedImageName);
     const baseRootfs = path.join(baseImageDir, 'rootfs.ext4');
     const baseKernel = path.join(baseImageDir, 'vmlinux');
 

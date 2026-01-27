@@ -17,6 +17,8 @@ interface VmTerminalSession {
 const sessions = new Map<string, VmTerminalSession>();
 
 // Get SSH key path
+// SSH keys are stored at dataDir/ssh-keys/id_ed25519
+// dataDir should be the caisson data directory (e.g., ~/.local/share/caisson)
 function getSshKeyPath(dataDir: string): string {
   return path.join(dataDir, 'ssh-keys', 'id_ed25519');
 }
