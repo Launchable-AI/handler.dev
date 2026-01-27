@@ -25,6 +25,9 @@ import {
   ChevronUp,
   Copy,
   Check,
+  Eye,
+  EyeOff,
+  Settings,
 } from 'lucide-react';
 import { useImages } from '../hooks/useContainers';
 import { useConfirm } from './ConfirmModal';
@@ -45,6 +48,15 @@ export function ImageManager() {
   const [daytonaSnapshots, setDaytonaSnapshots] = useState<api.DaytonaSnapshot[]>([]);
   const [isLoadingSnapshots, setIsLoadingSnapshots] = useState(false);
   const [deletingSnapshotId, setDeletingSnapshotId] = useState<string | null>(null);
+  const [showDaytonaManaged, setShowDaytonaManaged] = useState<boolean>(() => {
+    const saved = localStorage.getItem('caisson:show-daytona-managed');
+    return saved !== 'false'; // Default to true
+  });
+
+  // Check if a snapshot is Daytona-managed (not user-created)
+  const isDaytonaManaged = (snapshot: api.DaytonaSnapshot) => {
+    return snapshot.imageName?.startsWith('daytonaio/') || snapshot.general;
+  };
 
   const { data: images, refetch: refetchImages } = useImages();
   const confirm = useConfirm();
@@ -55,6 +67,14 @@ export function ImageManager() {
       loadDaytonaSnapshots();
     }
   }, [activeTab]);
+
+  // Persist show Daytona-managed preference
+  useEffect(() => {
+    localStorage.setItem('caisson:show-daytona-managed', String(showDaytonaManaged));
+  }, [showDaytonaManaged]);
+
+  // Filter snapshots based on managed toggle
+  const filteredSnapshots = daytonaSnapshots.filter(s => showDaytonaManaged || !isDaytonaManaged(s));
 
   const loadDaytonaSnapshots = async () => {
     setIsLoadingSnapshots(true);
@@ -337,39 +357,67 @@ export function ImageManager() {
           <>
             <div className="flex items-center justify-between mb-4">
               <span className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider">Daytona Snapshots</span>
-              <button
-                onClick={loadDaytonaSnapshots}
-                disabled={isLoadingSnapshots}
-                className="flex items-center gap-1.5 px-2 py-1 text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] border border-[hsl(var(--border))]"
-                title="Refresh"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isLoadingSnapshots ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowDaytonaManaged(!showDaytonaManaged)}
+                  className={`flex items-center gap-1.5 px-2 py-1 text-xs border ${
+                    showDaytonaManaged
+                      ? 'text-[hsl(var(--purple))] border-[hsl(var(--purple)/0.3)]'
+                      : 'text-[hsl(var(--text-muted))] border-[hsl(var(--border))]'
+                  }`}
+                  title={showDaytonaManaged ? 'Hide Daytona-managed snapshots' : 'Show Daytona-managed snapshots'}
+                >
+                  {showDaytonaManaged ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                  Managed
+                </button>
+                <button
+                  onClick={loadDaytonaSnapshots}
+                  disabled={isLoadingSnapshots}
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] border border-[hsl(var(--border))]"
+                  title="Refresh"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isLoadingSnapshots ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
             </div>
 
             {isLoadingSnapshots && daytonaSnapshots.length === 0 ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="h-8 w-8 animate-spin text-[hsl(var(--text-muted))]" />
               </div>
-            ) : daytonaSnapshots.length === 0 ? (
+            ) : filteredSnapshots.length === 0 ? (
               <div className="text-center py-16">
                 <Cloud className="h-12 w-12 mx-auto mb-4 text-[hsl(var(--text-muted))] opacity-30" />
                 <p className="text-sm text-[hsl(var(--text-muted))]">No Daytona snapshots</p>
-                <p className="text-xs text-[hsl(var(--text-muted))] mt-1">Push a local image to create one</p>
+                <p className="text-xs text-[hsl(var(--text-muted))] mt-1">
+                  {daytonaSnapshots.length > 0 && !showDaytonaManaged
+                    ? 'Enable "Managed" toggle to see Daytona system snapshots'
+                    : 'Push a local image to create one'}
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
-                {daytonaSnapshots.map((snapshot) => {
+                {filteredSnapshots.map((snapshot) => {
                   const isDeleting = deletingSnapshotId === snapshot.id;
+                  const isManaged = isDaytonaManaged(snapshot);
 
                   return (
                     <div key={snapshot.id} className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))]">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <Circle className={`h-2.5 w-2.5 ${getSnapshotStateColor(snapshot.state)} fill-current`} />
+                            {isManaged ? (
+                              <Settings className="h-3.5 w-3.5 text-[hsl(var(--purple))]" />
+                            ) : (
+                              <Circle className={`h-2.5 w-2.5 ${getSnapshotStateColor(snapshot.state)} fill-current`} />
+                            )}
                             <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{snapshot.name}</span>
+                            {isManaged && (
+                              <span className="px-1 py-0.5 text-[8px] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))] border border-[hsl(var(--purple)/0.2)]">
+                                managed
+                              </span>
+                            )}
                             <span className={`text-xs ${getSnapshotStateColor(snapshot.state)}`}>{snapshot.state}</span>
                           </div>
                           <div className="flex items-center gap-3 mt-2 text-xs text-[hsl(var(--text-muted))]">
@@ -383,29 +431,31 @@ export function ImageManager() {
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          {(snapshot.state === 'active' || snapshot.state === 'inactive') && (
+                        {!isManaged && (
+                          <div className="flex items-center gap-1.5">
+                            {(snapshot.state === 'active' || snapshot.state === 'inactive') && (
+                              <button
+                                onClick={() => handleToggleSnapshotActive(snapshot)}
+                                className={`flex items-center gap-1 px-2 py-1 text-xs border ${
+                                  snapshot.state === 'active'
+                                    ? 'text-[hsl(var(--amber))] border-[hsl(var(--amber)/0.3)] hover:bg-[hsl(var(--amber)/0.1)]'
+                                    : 'text-[hsl(var(--green))] border-[hsl(var(--green)/0.3)] hover:bg-[hsl(var(--green)/0.1)]'
+                                }`}
+                                title={snapshot.state === 'active' ? 'Deactivate' : 'Activate'}
+                              >
+                                {snapshot.state === 'active' ? <><Pause className="h-3.5 w-3.5" />Deactivate</> : <><Play className="h-3.5 w-3.5" />Activate</>}
+                              </button>
+                            )}
                             <button
-                              onClick={() => handleToggleSnapshotActive(snapshot)}
-                              className={`flex items-center gap-1 px-2 py-1 text-xs border ${
-                                snapshot.state === 'active'
-                                  ? 'text-[hsl(var(--amber))] border-[hsl(var(--amber)/0.3)] hover:bg-[hsl(var(--amber)/0.1)]'
-                                  : 'text-[hsl(var(--green))] border-[hsl(var(--green)/0.3)] hover:bg-[hsl(var(--green)/0.1)]'
-                              }`}
-                              title={snapshot.state === 'active' ? 'Deactivate' : 'Activate'}
+                              onClick={() => handleDeleteSnapshot(snapshot.id, snapshot.name)}
+                              disabled={isDeleting}
+                              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
+                              title="Delete"
                             >
-                              {snapshot.state === 'active' ? <><Pause className="h-3.5 w-3.5" />Deactivate</> : <><Play className="h-3.5 w-3.5" />Activate</>}
+                              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                             </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteSnapshot(snapshot.id, snapshot.name)}
-                            disabled={isDeleting}
-                            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
-                            title="Delete"
-                          >
-                            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                          </button>
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
