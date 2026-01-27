@@ -178,6 +178,7 @@ import vmVolumes from './routes/vm-volumes.js';
 import sandboxes from './routes/sandboxes.js';
 import unifiedVolumes from './routes/unified-volumes.js';
 import templateRoutes from './routes/templates.js';
+import daytonaRoutes from './routes/daytona.js';
 
 const app = new Hono();
 
@@ -236,6 +237,7 @@ app.route('/api/vm-volumes', vmVolumes);
 app.route('/api/sandboxes', sandboxes);
 app.route('/api/unified-volumes', unifiedVolumes);
 app.route('/api/templates', templateRoutes);
+app.route('/api/daytona', daytonaRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {
