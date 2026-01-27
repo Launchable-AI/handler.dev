@@ -8,7 +8,6 @@ import {
   Plus,
   Trash2,
   FolderOpen,
-  Upload,
   X,
   Loader2,
   Server,
@@ -23,13 +22,12 @@ import {
   useUnifiedVolumes,
   useCreateUnifiedVolume,
   useDeleteUnifiedVolume,
-  useUnifiedVolumeFiles,
-  useUploadToUnifiedVolume,
   useAttachUnifiedVolume,
   useDetachUnifiedVolume,
 } from '../../hooks/useVolumes';
 import { useSandboxes } from '../../hooks/useSandboxes';
 import { useConfirm } from '../ConfirmModal';
+import { VolumeFileBrowser } from '../VolumeFileBrowser';
 
 /**
  * Backend badge component
@@ -81,40 +79,18 @@ function VolumeCard({
   onDelete,
   onAttach,
   onDetach,
+  onBrowseFiles,
 }: {
   volume: UnifiedVolume;
   onDelete: () => void;
   onAttach?: () => void;
   onDetach?: () => void;
+  onBrowseFiles?: () => void;
 }) {
-  const [showFiles, setShowFiles] = useState(false);
-  const { data: filesData, isLoading: filesLoading } = useUnifiedVolumeFiles(
-    volume.id,
-    '/',
-  );
-  const uploadMutation = useUploadToUnifiedVolume();
-
   const canDelete = volume.status !== 'attached' && volume.attachedTo.length === 0;
   const supportsFiles = volume.backend === 'vm';
   const supportsAttach = volume.backend === 'vm';
   const isAttached = volume.attachedTo.length > 0;
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      await uploadMutation.mutateAsync({
-        volumeId: volume.id,
-        file,
-        destPath: '/',
-      });
-    } catch (err) {
-      console.error('Upload failed:', err);
-    }
-
-    e.target.value = '';
-  };
 
   return (
     <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))] transition-colors">
@@ -129,9 +105,9 @@ function VolumeCard({
           <VolumeStatus status={volume.status} />
         </div>
         <div className="flex items-center gap-1">
-          {supportsFiles && (
+          {supportsFiles && onBrowseFiles && (
             <button
-              onClick={() => setShowFiles(!showFiles)}
+              onClick={onBrowseFiles}
               className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] transition-colors"
               title="Browse Files"
             >
@@ -211,57 +187,6 @@ function VolumeCard({
       {volume.error && (
         <div className="mt-2 p-2 text-[10px] text-[hsl(var(--red))] bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.3)]">
           {volume.error}
-        </div>
-      )}
-
-      {/* Files Browser */}
-      {showFiles && supportsFiles && (
-        <div className="mt-3 p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wide">
-              Files
-            </span>
-            <label className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] hover:bg-[hsl(var(--cyan)/0.2)] cursor-pointer transition-colors">
-              <Upload className="h-3 w-3" />
-              Upload
-              <input type="file" className="hidden" onChange={handleFileSelect} />
-            </label>
-          </div>
-
-          {filesLoading ? (
-            <div className="flex items-center justify-center py-4 text-[hsl(var(--text-muted))]">
-              <Loader2 className="h-4 w-4 animate-spin" />
-            </div>
-          ) : filesData?.files.length === 0 ? (
-            <div className="text-[10px] text-[hsl(var(--text-muted))] text-center py-4">
-              No files
-            </div>
-          ) : (
-            <div className="space-y-1 max-h-40 overflow-auto">
-              {filesData?.files.map((file) => (
-                <div
-                  key={file.name}
-                  className="flex items-center gap-2 px-2 py-1 text-[10px] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
-                >
-                  {file.type === 'directory' ? (
-                    <FolderOpen className="h-3 w-3 text-[hsl(var(--amber))]" />
-                  ) : (
-                    <HardDrive className="h-3 w-3 text-[hsl(var(--text-muted))]" />
-                  )}
-                  <span className="flex-1 truncate text-[hsl(var(--text-secondary))]">
-                    {file.name}
-                  </span>
-                  <span className="text-[hsl(var(--text-muted))]">
-                    {file.size > 1024 * 1024
-                      ? `${(file.size / 1024 / 1024).toFixed(1)}MB`
-                      : file.size > 1024
-                      ? `${(file.size / 1024).toFixed(1)}KB`
-                      : `${file.size}B`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -525,6 +450,7 @@ function BackendFilterButton({
  */
 export function UnifiedVolumeList() {
   const { data, isLoading, error } = useUnifiedVolumes();
+  const { data: sandboxesData } = useSandboxes();
   const createVolume = useCreateUnifiedVolume();
   const deleteVolume = useDeleteUnifiedVolume();
   const attachVolume = useAttachUnifiedVolume();
@@ -532,7 +458,16 @@ export function UnifiedVolumeList() {
   const confirm = useConfirm();
   const [showCreate, setShowCreate] = useState(false);
   const [attachingVolume, setAttachingVolume] = useState<UnifiedVolume | null>(null);
+  const [browsingVolume, setBrowsingVolume] = useState<UnifiedVolume | null>(null);
   const [selectedBackends, setSelectedBackends] = useState<Set<UnifiedVolumeBackend>>(new Set());
+
+  // Check if the VM a volume is attached to is running
+  const isAttachedVmRunning = (volume: UnifiedVolume): boolean => {
+    if (volume.attachedTo.length === 0) return false;
+    const attachedId = volume.attachedTo[0].sandboxId;
+    const fullId = volume.backend === 'vm' ? `fc-${attachedId}` : attachedId;
+    return sandboxesData?.sandboxes.some(s => s.id === fullId && s.status === 'running') ?? false;
+  };
 
   // Get available backends from data
   const availableBackends = useMemo(() => {
@@ -707,6 +642,7 @@ export function UnifiedVolumeList() {
                 onDelete={() => handleDelete(volume)}
                 onAttach={volume.backend === 'vm' ? () => setAttachingVolume(volume) : undefined}
                 onDetach={volume.backend === 'vm' && volume.attachedTo.length > 0 ? () => handleDetach(volume) : undefined}
+                onBrowseFiles={volume.backend === 'vm' ? () => setBrowsingVolume(volume) : undefined}
               />
             ))}
           </div>
@@ -730,6 +666,17 @@ export function UnifiedVolumeList() {
           onClose={() => setAttachingVolume(null)}
           onSubmit={handleAttach}
           isLoading={attachVolume.isPending}
+        />
+      )}
+
+      {/* File Browser Modal */}
+      {browsingVolume && (
+        <VolumeFileBrowser
+          volumeId={browsingVolume.id}
+          volumeName={browsingVolume.name}
+          isAttached={browsingVolume.attachedTo.length > 0}
+          isVmRunning={isAttachedVmRunning(browsingVolume)}
+          onClose={() => setBrowsingVolume(null)}
         />
       )}
     </div>

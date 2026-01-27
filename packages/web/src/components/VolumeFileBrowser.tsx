@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Folder, File, Upload, Download, Trash2, ChevronRight, Home, RefreshCw, Loader2, AlertTriangle, X, FolderUp } from 'lucide-react';
-import { useVmVolumeFiles, useUploadFileToVmVolume, useDeleteVmVolumeFile } from '../hooks/useContainers';
-import { downloadFileFromVmVolume, VmVolumeFileInfo } from '../api/client';
+import { useUnifiedVolumeFiles, useUploadToUnifiedVolume, useDeleteUnifiedVolumeFile } from '../hooks/useVolumes';
+import { downloadFromUnifiedVolume, UnifiedVolumeFileInfo } from '../api/client';
 import { useConfirm } from './ConfirmModal';
 
 interface VolumeFileBrowserProps {
@@ -22,9 +22,9 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, isVmRunnin
   // Can upload if not attached OR if attached and VM is running (SSH upload)
   const canUpload = !isAttached || isVmRunning;
 
-  const { data, isLoading, error, refetch } = useVmVolumeFiles(volumeId, currentPath);
-  const uploadFile = useUploadFileToVmVolume();
-  const deleteFile = useDeleteVmVolumeFile();
+  const { data, isLoading, error, refetch } = useUnifiedVolumeFiles(volumeId, currentPath);
+  const uploadFile = useUploadToUnifiedVolume();
+  const deleteFile = useDeleteUnifiedVolumeFile();
 
   const navigateTo = (path: string) => {
     setCurrentPath(path);
@@ -38,7 +38,7 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, isVmRunnin
     }
   };
 
-  const handleFileClick = (file: VmVolumeFileInfo) => {
+  const handleFileClick = (file: UnifiedVolumeFileInfo) => {
     if (file.type === 'directory') {
       const newPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
       navigateTo(newPath);
@@ -84,10 +84,10 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, isVmRunnin
     }
   };
 
-  const handleDownload = async (file: VmVolumeFileInfo) => {
+  const handleDownload = async (file: UnifiedVolumeFileInfo) => {
     try {
       const filePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-      const blob = await downloadFileFromVmVolume(volumeId, filePath);
+      const blob = await downloadFromUnifiedVolume(volumeId, filePath);
 
       // Create download link
       const url = URL.createObjectURL(blob);
@@ -103,7 +103,7 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, isVmRunnin
     }
   };
 
-  const handleDelete = async (file: VmVolumeFileInfo) => {
+  const handleDelete = async (file: UnifiedVolumeFileInfo) => {
     const confirmed = await confirm({
       title: 'Delete File',
       message: `Are you sure you want to delete "${file.name}"?`,

@@ -369,7 +369,7 @@ export function VMVolumes() {
       {/* File Browser Modal */}
       {showFileBrowser && (
         <VolumeFileBrowser
-          volumeId={showFileBrowser.id}
+          volumeId={`vol-vm-${showFileBrowser.id}`}
           volumeName={showFileBrowser.name}
           isAttached={!!showFileBrowser.attachedTo}
           isVmRunning={
