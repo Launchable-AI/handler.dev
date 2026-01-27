@@ -20,6 +20,7 @@ interface SessionTileProps {
   // Drag and drop
   index?: number;
   onReorder?: (fromIndex: number, toIndex: number) => void;
+  onSwap?: (focusedId: string, unfocusedId: string) => void; // Swap focused/unfocused
   isDraggable?: boolean;
 }
 
@@ -33,6 +34,7 @@ export function SessionTile({
   onClick,
   index,
   onReorder,
+  onSwap,
   isDraggable = true,
 }: SessionTileProps) {
   const {
@@ -70,25 +72,43 @@ export function SessionTile({
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!isDraggable || index === undefined) return;
+    // Allow drops for reordering (focused sessions) or swapping (unfocused onto focused)
+    const hasReorder = index !== undefined && onReorder;
+    const hasSwap = !isThumbnail && onSwap; // Can swap if this is a focused session
+    if (!hasReorder && !hasSwap) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setIsDragOver(true);
-  }, [isDraggable, index]);
+  }, [index, onReorder, onSwap, isThumbnail]);
 
   const handleDragLeave = useCallback(() => {
     setIsDragOver(false);
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
-    if (!isDraggable || index === undefined || !onReorder) return;
     e.preventDefault();
     setIsDragOver(false);
-    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
-    if (!isNaN(fromIndex) && fromIndex !== index) {
-      onReorder(fromIndex, index);
+
+    const draggedSessionId = e.dataTransfer.getData('application/x-session-id');
+    const fromIndexStr = e.dataTransfer.getData('text/plain');
+    const fromIndex = fromIndexStr ? parseInt(fromIndexStr, 10) : NaN;
+
+    // Don't drop on self
+    if (draggedSessionId === session.id) return;
+
+    // Check if dragged session is focused (has valid fromIndex) or unfocused
+    const draggedIsFocused = !isNaN(fromIndex) && fromIndex >= 0;
+
+    if (draggedIsFocused && index !== undefined && onReorder) {
+      // Reorder: focused session dropped on another focused session
+      if (fromIndex !== index) {
+        onReorder(fromIndex, index);
+      }
+    } else if (!draggedIsFocused && !isThumbnail && onSwap && draggedSessionId) {
+      // Swap: unfocused session dropped on focused session
+      onSwap(session.id, draggedSessionId);
     }
-  }, [isDraggable, index, onReorder]);
+  }, [session.id, index, onReorder, onSwap, isThumbnail]);
 
   const handleStateChange = useCallback((state: 'connecting' | 'connected' | 'disconnected' | 'error', errorMessage?: string) => {
     updateSessionStatus(session.id, state, errorMessage);

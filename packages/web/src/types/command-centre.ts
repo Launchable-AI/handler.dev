@@ -61,8 +61,10 @@ export interface CommandCentreContextValue {
   setSplitLayout: (layout: SplitLayout) => void;
 
   // Move sessions between main area and sidebar
-  focusSession: (sessionId: string) => void;      // Move to main area
+  focusSession: (sessionId: string) => void;      // Move to main area (append)
+  focusSessionAtIndex: (sessionId: string, index: number) => void; // Move to main at specific position
   unfocusSession: (sessionId: string) => void;    // Move to sidebar
+  swapFocus: (focusedId: string, unfocusedId: string) => void; // Swap focused/unfocused sessions
   toggleFocus: (sessionId: string) => void;       // Toggle between main/sidebar
   focusAll: () => void;                           // Move all to main
   unfocusAll: () => void;                         // Move all to sidebar (keep one)

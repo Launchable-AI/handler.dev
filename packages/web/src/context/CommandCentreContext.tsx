@@ -35,7 +35,9 @@ type Action =
   | { type: 'SET_ACTIVE_SESSION'; payload: string | null }
   | { type: 'SET_SPLIT_LAYOUT'; payload: SplitLayout }
   | { type: 'FOCUS_SESSION'; payload: string }
+  | { type: 'FOCUS_SESSION_AT_INDEX'; payload: { sessionId: string; index: number } }
   | { type: 'UNFOCUS_SESSION'; payload: string }
+  | { type: 'SWAP_FOCUS'; payload: { focusedId: string; unfocusedId: string } }
   | { type: 'TOGGLE_FOCUS'; payload: string }
   | { type: 'FOCUS_ALL' }
   | { type: 'UNFOCUS_ALL' }
@@ -113,6 +115,22 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         activeSessionId: action.payload,
       };
     }
+    case 'FOCUS_SESSION_AT_INDEX': {
+      const { sessionId, index } = action.payload;
+      // Remove from current position if already focused
+      const filtered = state.focusedSessionIds.filter(id => id !== sessionId);
+      // Insert at specified index
+      const newFocusedIds = [
+        ...filtered.slice(0, index),
+        sessionId,
+        ...filtered.slice(index),
+      ];
+      return {
+        ...state,
+        focusedSessionIds: newFocusedIds,
+        activeSessionId: sessionId,
+      };
+    }
     case 'UNFOCUS_SESSION': {
       // Don't unfocus if it's the last focused session
       if (state.focusedSessionIds.length <= 1) {
@@ -128,6 +146,20 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         ...state,
         focusedSessionIds: newFocusedIds,
         activeSessionId: newActiveId,
+      };
+    }
+    case 'SWAP_FOCUS': {
+      const { focusedId, unfocusedId } = action.payload;
+      // Find the index of the focused session
+      const focusedIndex = state.focusedSessionIds.indexOf(focusedId);
+      if (focusedIndex === -1) return state;
+      // Replace the focused session with the unfocused one at the same position
+      const newFocusedIds = [...state.focusedSessionIds];
+      newFocusedIds[focusedIndex] = unfocusedId;
+      return {
+        ...state,
+        focusedSessionIds: newFocusedIds,
+        activeSessionId: unfocusedId,
       };
     }
     case 'TOGGLE_FOCUS': {
@@ -288,8 +320,16 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'FOCUS_SESSION', payload: sessionId });
   }, []);
 
+  const focusSessionAtIndex = useCallback((sessionId: string, index: number) => {
+    dispatch({ type: 'FOCUS_SESSION_AT_INDEX', payload: { sessionId, index } });
+  }, []);
+
   const unfocusSession = useCallback((sessionId: string) => {
     dispatch({ type: 'UNFOCUS_SESSION', payload: sessionId });
+  }, []);
+
+  const swapFocus = useCallback((focusedId: string, unfocusedId: string) => {
+    dispatch({ type: 'SWAP_FOCUS', payload: { focusedId, unfocusedId } });
   }, []);
 
   const toggleFocus = useCallback((sessionId: string) => {
@@ -348,7 +388,9 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     setActiveSession,
     setSplitLayout,
     focusSession,
+    focusSessionAtIndex,
     unfocusSession,
+    swapFocus,
     toggleFocus,
     focusAll,
     unfocusAll,
