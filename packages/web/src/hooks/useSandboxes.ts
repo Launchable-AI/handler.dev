@@ -55,9 +55,9 @@ export function useCreateSandbox() {
   return useMutation({
     mutationFn: api.createSandbox,
     onSuccess: (newSandbox) => {
-      // Optimistically add the new sandbox to the list
-      queryClient.setQueryData<api.SandboxListResponse>(
-        ['sandboxes', undefined],
+      // Add the new sandbox to ALL sandbox list queries
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
         (old) => {
           if (!old) return old;
           return {
@@ -85,28 +85,31 @@ export function useStartSandbox() {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['sandboxes'] });
 
-      // Snapshot the previous value
-      const previousData = queryClient.getQueryData<api.SandboxListResponse>(['sandboxes', undefined]);
+      // Snapshot all sandbox queries for rollback
+      const previousQueries = queryClient.getQueriesData<api.SandboxListResponse>({
+        queryKey: ['sandboxes'],
+      });
 
-      // Optimistically update to starting state
-      if (previousData) {
-        queryClient.setQueryData<api.SandboxListResponse>(
-          ['sandboxes', undefined],
-          {
-            ...previousData,
-            sandboxes: previousData.sandboxes.map((s) =>
+      // Optimistically update to starting state in ALL sandbox list queries
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            sandboxes: old.sandboxes.map((s) =>
               s.id === sandboxId ? { ...s, status: 'starting' as const } : s
             ),
-          }
-        );
-      }
+          };
+        }
+      );
 
-      return { previousData, sandboxId };
+      return { previousQueries, sandboxId };
     },
     onSuccess: (updatedSandbox, sandboxId) => {
-      // Update the sandbox in the list with actual data
-      queryClient.setQueryData<api.SandboxListResponse>(
-        ['sandboxes', undefined],
+      // Update the sandbox with actual server response in all queries
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
         (old) => {
           if (!old) return old;
           return {
@@ -119,9 +122,11 @@ export function useStartSandbox() {
       );
     },
     onError: (_err, _sandboxId, context) => {
-      // Rollback on error
-      if (context?.previousData) {
-        queryClient.setQueryData(['sandboxes', undefined], context.previousData);
+      // Rollback all queries to their previous state
+      if (context?.previousQueries) {
+        for (const [queryKey, data] of context.previousQueries) {
+          queryClient.setQueryData(queryKey, data);
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['sandboxes'] });
     },
@@ -140,26 +145,31 @@ export function useStopSandbox() {
     onMutate: async (sandboxId) => {
       await queryClient.cancelQueries({ queryKey: ['sandboxes'] });
 
-      const previousData = queryClient.getQueryData<api.SandboxListResponse>(['sandboxes', undefined]);
+      // Snapshot all sandbox queries for rollback
+      const previousQueries = queryClient.getQueriesData<api.SandboxListResponse>({
+        queryKey: ['sandboxes'],
+      });
 
-      // Optimistically update to stopping state
-      if (previousData) {
-        queryClient.setQueryData<api.SandboxListResponse>(
-          ['sandboxes', undefined],
-          {
-            ...previousData,
-            sandboxes: previousData.sandboxes.map((s) =>
+      // Optimistically update to stopping state in ALL sandbox list queries
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            sandboxes: old.sandboxes.map((s) =>
               s.id === sandboxId ? { ...s, status: 'stopping' as const } : s
             ),
-          }
-        );
-      }
+          };
+        }
+      );
 
-      return { previousData, sandboxId };
+      return { previousQueries, sandboxId };
     },
     onSuccess: (updatedSandbox, sandboxId) => {
-      queryClient.setQueryData<api.SandboxListResponse>(
-        ['sandboxes', undefined],
+      // Update the sandbox with actual server response in all queries
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
         (old) => {
           if (!old) return old;
           return {
@@ -172,8 +182,11 @@ export function useStopSandbox() {
       );
     },
     onError: (_err, _sandboxId, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(['sandboxes', undefined], context.previousData);
+      // Rollback all queries to their previous state
+      if (context?.previousQueries) {
+        for (const [queryKey, data] of context.previousQueries) {
+          queryClient.setQueryData(queryKey, data);
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['sandboxes'] });
     },
@@ -192,24 +205,31 @@ export function useDeleteSandbox() {
     onMutate: async (sandboxId) => {
       await queryClient.cancelQueries({ queryKey: ['sandboxes'] });
 
-      const previousData = queryClient.getQueryData<api.SandboxListResponse>(['sandboxes', undefined]);
+      // Snapshot all sandbox queries for rollback
+      const previousQueries = queryClient.getQueriesData<api.SandboxListResponse>({
+        queryKey: ['sandboxes'],
+      });
 
-      // Optimistically remove the sandbox from the list
-      if (previousData) {
-        queryClient.setQueryData<api.SandboxListResponse>(
-          ['sandboxes', undefined],
-          {
-            ...previousData,
-            sandboxes: previousData.sandboxes.filter((s) => s.id !== sandboxId),
-          }
-        );
-      }
+      // Optimistically remove the sandbox from ALL sandbox list queries
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            sandboxes: old.sandboxes.filter((s) => s.id !== sandboxId),
+          };
+        }
+      );
 
-      return { previousData, sandboxId };
+      return { previousQueries, sandboxId };
     },
     onError: (_err, _sandboxId, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(['sandboxes', undefined], context.previousData);
+      // Rollback all queries to their previous state
+      if (context?.previousQueries) {
+        for (const [queryKey, data] of context.previousQueries) {
+          queryClient.setQueryData(queryKey, data);
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['sandboxes'] });
     },
