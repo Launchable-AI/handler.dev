@@ -64,7 +64,7 @@ function getServiceType(name: string, image: string): { icon: React.ReactNode; c
 
   // Dev containers
   if (combined.includes('dev') || combined.includes('node') || combined.includes('python') ||
-      combined.includes('ubuntu') || combined.includes('debian') || combined.includes('acm-')) {
+      combined.includes('ubuntu') || combined.includes('debian') || combined.includes('caisson-')) {
     return { icon: <Code className="h-5 w-5" />, category: 'development', color: 'hsl(var(--cyan))' };
   }
 

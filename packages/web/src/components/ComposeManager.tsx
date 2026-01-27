@@ -94,7 +94,7 @@ function getServiceIcon(image: string): React.ComponentType<{ className?: string
   }
 
   // Development containers
-  if (imageLower.includes('acm-') || imageLower.includes('dev') || imageLower.includes('node') ||
+  if (imageLower.includes('caisson-') || imageLower.includes('dev') || imageLower.includes('node') ||
       imageLower.includes('python') || imageLower.includes('ubuntu') || imageLower.includes('debian')) {
     return Wrench;
   }
@@ -181,9 +181,9 @@ export function ComposeManager() {
 
   const selectedProjectData = projects?.find(p => p.name === selectedProject);
 
-  // Filter to show only custom-built images (acm-* tags)
+  // Filter to show only custom-built images (caisson-* tags)
   const customImages = images?.filter(img =>
-    img.repoTags?.some(tag => tag.startsWith('acm-'))
+    img.repoTags?.some(tag => tag.startsWith('caisson-'))
   ) || [];
 
   // Load content when project is selected
@@ -1019,7 +1019,7 @@ export function ComposeManager() {
           </div>
           <div className="flex flex-wrap gap-2">
             {customImages.map((img) => {
-              const tag = img.repoTags?.find(t => t.startsWith('acm-')) || img.repoTags?.[0];
+              const tag = img.repoTags?.find(t => t.startsWith('caisson-')) || img.repoTags?.[0];
               if (!tag) return null;
               const isCopied = copiedImage === tag;
               return (

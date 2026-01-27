@@ -36,7 +36,7 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
 
   if (dockerfile) {
     // Build from user's dockerfile with SSH key baked in
-    imageName = `acm-${name}:latest`;
+    imageName = `caisson-${name}:latest`;
     const dockerfileWithKey = injectPublicKey(dockerfile, publicKey);
     logCallback?.(`Building image ${imageName} from Dockerfile...`);
     await dockerService.buildImageWithLogs(dockerfileWithKey, imageName, logCallback || (() => {}));
@@ -51,7 +51,7 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
       logCallback?.(`Using existing Caisson image: ${imageName}`);
     } else {
       // Base image needs SSH setup - build a new image with key baked in
-      imageName = `acm-${name}:latest`;
+      imageName = `caisson-${name}:latest`;
       const baseDockerfile = createSshDockerfile(image, publicKey);
       logCallback?.(`Building SSH-enabled image ${imageName} from ${image}...`);
       await dockerService.buildImageWithLogs(baseDockerfile, imageName, logCallback || (() => {}));

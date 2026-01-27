@@ -23,13 +23,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
   const [showImageDropdown, setShowImageDropdown] = useState(false);
 
-  // Get list of custom-built images (acm-* tags)
+  // Get list of custom-built images (caisson-* tags)
   const customImages = useMemo(() => {
     if (!images) return [];
     const imageList: string[] = [];
     for (const img of images) {
-      const acmTags = img.repoTags?.filter(tag => tag.startsWith('acm-')) || [];
-      imageList.push(...acmTags);
+      const caissonTags = img.repoTags?.filter(tag => tag.startsWith('caisson-')) || [];
+      imageList.push(...caissonTags);
     }
     return imageList.sort();
   }, [images]);

@@ -218,7 +218,7 @@ dockerfiles.post('/:name/build', async (c) => {
   try {
     const content = await readFile(filePath, 'utf-8');
     // Docker image tags must be lowercase
-    const tag = `acm-${name.toLowerCase()}:latest`;
+    const tag = `caisson-${name.toLowerCase()}:latest`;
 
     // Inject SSH public key (replaces {{PUBLIC_KEY}} placeholder)
     const publicKey = await getPublicKey();

@@ -134,12 +134,12 @@ export function AppComposer({ onApplyCompose, onClose, currentContent, inline = 
     return existingVolumes?.map(v => v.name) || [];
   }, [existingVolumes]);
 
-  // Custom images (acm-* images) for dev container dropdown
+  // Custom images (caisson-* images) for dev container dropdown
   const customImages = useMemo(() => {
     if (!images) return [];
     return images
-      .filter(img => img.repoTags?.some(tag => tag.startsWith('acm-')))
-      .map(img => img.repoTags?.find(t => t.startsWith('acm-')) || img.repoTags?.[0])
+      .filter(img => img.repoTags?.some(tag => tag.startsWith('caisson-')))
+      .map(img => img.repoTags?.find(t => t.startsWith('caisson-')) || img.repoTags?.[0])
       .filter(Boolean) as string[];
   }, [images]);
 
@@ -192,8 +192,8 @@ export function AppComposer({ onApplyCompose, onClose, currentContent, inline = 
     const hasWorkspaceMount = volumes?.some(v =>
       v.includes('/workspace') || v.includes('/home/dev') || v.includes('workspace:')
     );
-    const hasAcmImage = imageStr?.startsWith('acm-');
-    return hasSleepCommand || (hasDevName && hasWorkspaceMount) || hasAcmImage || false;
+    const hasCaissonImage = imageStr?.startsWith('caisson-');
+    return hasSleepCommand || (hasDevName && hasWorkspaceMount) || hasCaissonImage || false;
   };
 
   // Parse ports from config
