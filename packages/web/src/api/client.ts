@@ -382,13 +382,17 @@ export async function buildDockerfile(
   name: string,
   onLog: (log: string) => void,
   onDone: (tag: string) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  version?: string // Optional version tag (e.g., timestamp for auto-versioning)
 ): Promise<void> {
   const serverUrl = getServerUrl();
 
   return new Promise((resolve, reject) => {
     // Use fetch with streaming for SSE
-    fetch(`${serverUrl}/api/dockerfiles/${name}/build`, {
+    const url = version
+      ? `${serverUrl}/api/dockerfiles/${name}/build?version=${encodeURIComponent(version)}`
+      : `${serverUrl}/api/dockerfiles/${name}/build`;
+    fetch(url, {
       method: 'POST',
     }).then(async (response) => {
       if (!response.ok) {
@@ -2263,87 +2267,143 @@ export async function getSandboxSshCommand(id: string): Promise<string> {
 /**
  * Upload a file to a sandbox's working directory
  */
-export async function uploadFileToSandbox(
+export interface UploadHandle {
+  promise: Promise<{ success: boolean; path?: string; filesUploaded?: number; destination?: string }>;
+  abort: () => void;
+}
+
+export function uploadFileToSandbox(
   id: string,
   file: File,
-  destPath: string = '/home/dev/workspace'
-): Promise<{ success: boolean; path: string }> {
-  const apiBase = await getApiBase();
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('destPath', destPath);
+  destPath: string = '/home/dev/workspace',
+  onProgress?: (progress: UploadProgress) => void
+): UploadHandle {
+  let xhr: XMLHttpRequest | null = null;
 
-  const response = await fetch(`${apiBase}/sandboxes/${encodeURIComponent(id)}/upload`, {
-    method: 'POST',
-    body: formData,
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-    throw new Error(error.error || 'Upload failed');
-  }
-  return response.json();
+  const promise = (async () => {
+    const apiBase = await getApiBase();
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('destPath', destPath);
+
+    return new Promise<{ success: boolean; path: string }>((resolve, reject) => {
+      xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress({
+            loaded: event.loaded,
+            total: event.total,
+            percent: Math.round((event.loaded / event.total) * 100),
+          });
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr!.status >= 200 && xhr!.status < 300) {
+          try {
+            resolve(JSON.parse(xhr!.responseText));
+          } catch {
+            resolve({ success: true, path: destPath });
+          }
+        } else {
+          try {
+            const error = JSON.parse(xhr!.responseText);
+            reject(new Error(error.error || 'Upload failed'));
+          } catch {
+            reject(new Error(`Upload failed: HTTP ${xhr!.status}`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed: Network error'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload cancelled'));
+      });
+
+      xhr.open('POST', `${apiBase}/sandboxes/${encodeURIComponent(id)}/upload`);
+      xhr.send(formData);
+    });
+  })();
+
+  return {
+    promise,
+    abort: () => xhr?.abort(),
+  };
 }
 
 /**
  * Upload a directory to a sandbox's working directory (uses tar for efficiency)
  */
-export async function uploadDirectoryToSandbox(
+export function uploadDirectoryToSandbox(
   id: string,
   files: Array<{ file: File; relativePath: string }>,
   destPath: string = '/home/dev/workspace',
   onProgress?: (progress: UploadProgress) => void
-): Promise<{ success: boolean; filesUploaded: number; destination: string }> {
-  const apiBase = await getApiBase();
-  const formData = new FormData();
+): UploadHandle {
+  let xhr: XMLHttpRequest | null = null;
 
-  // Append each file with its relative path
-  for (const { file, relativePath } of files) {
-    formData.append('files', file);
-    formData.append('paths', relativePath);
-  }
-  formData.append('destPath', destPath);
+  const promise = (async () => {
+    const apiBase = await getApiBase();
+    const formData = new FormData();
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+    // Append each file with its relative path
+    for (const { file, relativePath } of files) {
+      formData.append('files', file);
+      formData.append('paths', relativePath);
+    }
+    formData.append('destPath', destPath);
 
-    xhr.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable && onProgress) {
-        onProgress({
-          loaded: event.loaded,
-          total: event.total,
-          percent: Math.round((event.loaded / event.total) * 100),
-        });
-      }
-    });
+    return new Promise<{ success: boolean; filesUploaded: number; destination: string }>((resolve, reject) => {
+      xhr = new XMLHttpRequest();
 
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText));
-        } catch {
-          resolve({ success: true, filesUploaded: files.length, destination: destPath });
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress({
+            loaded: event.loaded,
+            total: event.total,
+            percent: Math.round((event.loaded / event.total) * 100),
+          });
         }
-      } else {
-        try {
-          const error = JSON.parse(xhr.responseText);
-          reject(new Error(error.error || 'Upload failed'));
-        } catch {
-          reject(new Error(`Upload failed: HTTP ${xhr.status}`));
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr!.status >= 200 && xhr!.status < 300) {
+          try {
+            resolve(JSON.parse(xhr!.responseText));
+          } catch {
+            resolve({ success: true, filesUploaded: files.length, destination: destPath });
+          }
+        } else {
+          try {
+            const error = JSON.parse(xhr!.responseText);
+            reject(new Error(error.error || 'Upload failed'));
+          } catch {
+            reject(new Error(`Upload failed: HTTP ${xhr!.status}`));
+          }
         }
-      }
-    });
+      });
 
-    xhr.addEventListener('error', () => {
-      reject(new Error('Upload failed: Network error'));
-    });
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed: Network error'));
+      });
 
-    xhr.addEventListener('abort', () => {
-      reject(new Error('Upload cancelled'));
-    });
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload cancelled'));
+      });
 
-    xhr.open('POST', `${apiBase}/sandboxes/${encodeURIComponent(id)}/upload-directory`);
-    xhr.send(formData);
-  });
+      xhr.open('POST', `${apiBase}/sandboxes/${encodeURIComponent(id)}/upload-directory`);
+      xhr.send(formData);
+    });
+  })();
+
+  return {
+    promise,
+    abort: () => xhr?.abort(),
+  };
 }
 
 // ==================== Unified Volume API ====================

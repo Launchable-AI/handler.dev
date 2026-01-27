@@ -216,12 +216,15 @@ dockerfiles.patch('/:name', zValidator('json', RenameDockerfileSchema), async (c
 // Build image from Dockerfile (with streaming logs)
 dockerfiles.post('/:name/build', async (c) => {
   const name = c.req.param('name');
+  const version = c.req.query('version'); // Optional version tag (e.g., timestamp)
   const filePath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
 
   try {
     const content = await readFile(filePath, 'utf-8');
     // Docker image tags must be lowercase
-    const tag = `caisson-${name.toLowerCase()}:latest`;
+    // Use provided version or default to 'latest'
+    const tagVersion = version || 'latest';
+    const tag = `caisson-${name.toLowerCase()}:${tagVersion}`;
 
     // Inject SSH public key (replaces {{PUBLIC_KEY}} placeholder)
     const publicKey = await getPublicKey();

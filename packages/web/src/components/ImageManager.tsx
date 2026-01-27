@@ -116,6 +116,37 @@ export function ImageManager() {
     setIsLoadingSnapshots(false);
   };
 
+  // Poll for a snapshot until it reaches a final state
+  const pollForSnapshot = async (snapshotName: string, maxAttempts = 30, intervalMs = 2000) => {
+    const finalStates = ['active', 'inactive', 'error', 'build_failed'];
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const result = await api.listDaytonaSnapshots({ limit: 100 });
+        setDaytonaSnapshots(result.items);
+
+        // Look for our snapshot (name might have caisson- prefix added)
+        const snapshot = result.items.find(s =>
+          s.name === snapshotName ||
+          s.name === `caisson-${snapshotName}` ||
+          s.name.includes(snapshotName)
+        );
+
+        if (snapshot && finalStates.includes(snapshot.state)) {
+          return snapshot;
+        }
+      } catch (err) {
+        console.error('Failed to poll snapshots:', err);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+    }
+
+    // Final refresh even if we didn't find it in final state
+    await loadDaytonaSnapshots();
+    return null;
+  };
+
   // Image operations
   const handleDeleteImage = async (id: string, tag: string) => {
     const confirmed = await confirm({
@@ -157,10 +188,11 @@ export function ImageManager() {
           });
         }
       );
+      const snapshotNameToFind = pushSnapshotName.trim();
       setPushSnapshotName('');
-      // Switch to Daytona tab and refresh
+      // Switch to Daytona tab and poll until snapshot is ready
       setActiveTab('daytona');
-      loadDaytonaSnapshots();
+      await pollForSnapshot(snapshotNameToFind);
     } catch (error) {
       console.error('Failed to push to Daytona:', error);
       alert(`Failed to push to Daytona: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -357,6 +389,9 @@ export function ImageManager() {
                             )}
                           </div>
                           <div className="flex items-center gap-4 mt-2 text-xs text-[hsl(var(--text-muted))]">
+                            <span className="font-mono opacity-60" title={image.id}>
+                              {image.id.replace('sha256:', '').slice(0, 12)}
+                            </span>
                             <span className="flex items-center gap-1.5">
                               <HardDrive className="h-3.5 w-3.5" />
                               {formatSize(image.size)}

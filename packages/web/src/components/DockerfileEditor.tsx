@@ -83,6 +83,12 @@ export function DockerfileEditor() {
   const [isLogsExpanded, setIsLogsExpanded] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
+  // Build conflict modal state
+  const [buildConflict, setBuildConflict] = useState<{
+    dockerfileName: string;
+    existingImage: { id: string; tag: string; created: string };
+  } | null>(null);
+
   // AI Panel state
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -267,7 +273,7 @@ export function DockerfileEditor() {
   };
 
   // Build operations
-  const handleBuild = async (name?: string) => {
+  const handleBuild = async (name?: string, version?: string) => {
     const targetFile = name || selectedFile;
     if (!targetFile) return;
 
@@ -276,6 +282,32 @@ export function DockerfileEditor() {
       setSelectedFile(name);
     }
 
+    // Check if an image with this name already exists (unless we have a version override)
+    if (!version) {
+      const expectedTag = `caisson-${targetFile.toLowerCase()}:latest`;
+      const existingImage = images?.find(img =>
+        img.repoTags.some(tag => tag === expectedTag)
+      );
+
+      if (existingImage) {
+        const matchingTag = existingImage.repoTags.find(tag => tag === expectedTag) || existingImage.repoTags[0];
+        setBuildConflict({
+          dockerfileName: targetFile,
+          existingImage: {
+            id: existingImage.id,
+            tag: matchingTag,
+            created: existingImage.created,
+          },
+        });
+        return;
+      }
+    }
+
+    // Proceed with build
+    executeBuild(targetFile, version);
+  };
+
+  const executeBuild = async (targetFile: string, version?: string) => {
     setIsBuilding(true);
     setBuildingFile(targetFile);
     setBuildLogs([]);
@@ -297,12 +329,29 @@ export function DockerfileEditor() {
           setBuildResult({ type: 'error', message: error });
           setIsBuilding(false);
           setBuildingFile(null);
-        }
+        },
+        version
       );
     } catch {
       setIsBuilding(false);
       setBuildingFile(null);
     }
+  };
+
+  const handleBuildConflictOverwrite = () => {
+    if (!buildConflict) return;
+    const { dockerfileName } = buildConflict;
+    setBuildConflict(null);
+    executeBuild(dockerfileName); // Build with :latest, overwrites existing
+  };
+
+  const handleBuildConflictVersion = () => {
+    if (!buildConflict) return;
+    const { dockerfileName } = buildConflict;
+    setBuildConflict(null);
+    // Generate timestamp version
+    const version = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    executeBuild(dockerfileName, version);
   };
 
   // AI functions
@@ -906,6 +955,65 @@ export function DockerfileEditor() {
           </div>
         )}
       </div>
+
+      {/* Build Conflict Modal */}
+      {buildConflict && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fade-in">
+          <div className="w-full max-w-md bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] p-6 shadow-lg animate-scale-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-[hsl(var(--amber)/0.1)] rounded">
+                <Image className="h-5 w-5 text-[hsl(var(--amber))]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-[hsl(var(--text-primary))]">Image Already Exists</h3>
+                <p className="text-xs text-[hsl(var(--text-muted))]">An image with this name already exists</p>
+              </div>
+            </div>
+
+            <div className="mb-4 p-3 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-[hsl(var(--text-muted))]">Tag:</span>
+                <span className="font-mono text-[hsl(var(--text-primary))]">{buildConflict.existingImage.tag}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs mt-1">
+                <span className="text-[hsl(var(--text-muted))]">ID:</span>
+                <span className="font-mono text-[hsl(var(--text-muted))]">{buildConflict.existingImage.id.replace('sha256:', '').slice(0, 12)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={handleBuildConflictOverwrite}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-left border border-[hsl(var(--border))] hover:border-[hsl(var(--amber)/0.5)] hover:bg-[hsl(var(--amber)/0.05)] transition-colors"
+              >
+                <div>
+                  <div className="text-sm font-medium text-[hsl(var(--text-primary))]">Overwrite</div>
+                  <div className="text-[10px] text-[hsl(var(--text-muted))]">Replace the existing :latest image</div>
+                </div>
+                <RotateCcw className="h-4 w-4 text-[hsl(var(--amber))]" />
+              </button>
+
+              <button
+                onClick={handleBuildConflictVersion}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-left border border-[hsl(var(--border))] hover:border-[hsl(var(--cyan)/0.5)] hover:bg-[hsl(var(--cyan)/0.05)] transition-colors"
+              >
+                <div>
+                  <div className="text-sm font-medium text-[hsl(var(--text-primary))]">Auto-version</div>
+                  <div className="text-[10px] text-[hsl(var(--text-muted))]">Create a new versioned image (keeps existing)</div>
+                </div>
+                <Clock className="h-4 w-4 text-[hsl(var(--cyan))]" />
+              </button>
+
+              <button
+                onClick={() => setBuildConflict(null)}
+                className="w-full px-3 py-2 text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

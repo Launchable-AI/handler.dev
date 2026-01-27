@@ -70,6 +70,13 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const [browsingVolume, setBrowsingVolume] = useState<{ id: string; name: string } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadDetails, setUploadDetails] = useState<{
+    fileName: string;
+    fileCount: number;
+    loaded: number;
+    total: number;
+  } | null>(null);
+  const uploadAbortRef = useRef<(() => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -274,6 +281,19 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     setError(null);
     const fileList = Array.from(files);
 
+    // Calculate total size
+    const totalSize = fileList.reduce((sum, f) => sum + f.size, 0);
+    const displayName = isFolder && fileList.length > 1
+      ? fileList[0].webkitRelativePath.split('/')[0] || 'folder'
+      : fileList[0].name;
+
+    setUploadDetails({
+      fileName: displayName,
+      fileCount: fileList.length,
+      loaded: 0,
+      total: totalSize,
+    });
+
     try {
       if (isFolder && fileList.length > 1) {
         // For folder uploads, use the directory upload endpoint (tar-based, single transfer)
@@ -282,30 +302,60 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
           relativePath: file.webkitRelativePath || file.name,
         }));
 
-        await uploadDirectoryToSandbox(
+        const upload = uploadDirectoryToSandbox(
           sandbox.id,
           filesWithPaths,
           '/home/dev/workspace',
           (progress) => {
             setUploadProgress(progress.percent);
+            setUploadDetails(prev => prev ? { ...prev, loaded: progress.loaded } : null);
           }
         );
+        uploadAbortRef.current = upload.abort;
+        await upload.promise;
       } else {
         // Single file upload
         for (const file of fileList) {
-          await uploadFileToSandbox(sandbox.id, file, '/home/dev/workspace');
+          const upload = uploadFileToSandbox(
+            sandbox.id,
+            file,
+            '/home/dev/workspace',
+            (progress) => {
+              setUploadProgress(progress.percent);
+              setUploadDetails(prev => prev ? { ...prev, loaded: progress.loaded } : null);
+            }
+          );
+          uploadAbortRef.current = upload.abort;
+          await upload.promise;
         }
       }
     } catch (err) {
       console.error('Upload failed:', err);
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      if (message !== 'Upload cancelled') {
+        setError(message);
+      }
     } finally {
       setIsUploading(false);
       setUploadProgress(null);
+      setUploadDetails(null);
+      uploadAbortRef.current = null;
       // Clear the inputs
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (folderInputRef.current) folderInputRef.current.value = '';
     }
+  };
+
+  const handleCancelUpload = () => {
+    if (uploadAbortRef.current) {
+      uploadAbortRef.current();
+    }
+  };
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   const getVolumeId = (volumeName: string): string => {
@@ -545,6 +595,38 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                 <X className="h-3 w-3" />
               </button>
             )}
+          </div>
+        )}
+
+        {/* Upload Progress */}
+        {isUploading && uploadDetails && (
+          <div className="mx-3 mt-2.5 p-2 bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <Upload className="h-3.5 w-3.5 text-[hsl(var(--cyan))] flex-shrink-0 animate-pulse" />
+                <span className="text-[10px] text-[hsl(var(--text-primary))] truncate">
+                  {uploadDetails.fileName}
+                  {uploadDetails.fileCount > 1 && ` (+${uploadDetails.fileCount - 1} files)`}
+                </span>
+              </div>
+              <button
+                onClick={handleCancelUpload}
+                className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] transition-colors flex-shrink-0"
+                title="Cancel upload"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            <div className="h-1.5 bg-[hsl(var(--bg-base))] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[hsl(var(--cyan))] transition-all duration-300"
+                style={{ width: `${uploadProgress || 0}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between mt-1 text-[9px] text-[hsl(var(--text-muted))]">
+              <span>{formatBytes(uploadDetails.loaded)} / {formatBytes(uploadDetails.total)}</span>
+              <span>{uploadProgress}%</span>
+            </div>
           </div>
         )}
 
