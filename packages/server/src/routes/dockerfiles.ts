@@ -1,19 +1,71 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { readdir, readFile, writeFile, unlink, mkdir, copyFile } from 'fs/promises';
+import { readdir, readFile, writeFile, unlink, mkdir, copyFile, stat, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { SaveDockerfileSchema } from '../types/index.js';
+import { SaveDockerfileSchema, RenameDockerfileSchema } from '../types/index.js';
 import * as dockerService from '../services/docker.js';
 import { getPublicKey } from '../services/container-builder.js';
+
+interface DockerfileInfo {
+  name: string;
+  modifiedAt: string;
+  isSystem?: boolean;
+  description?: string;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const DOCKERFILES_DIR = join(PROJECT_ROOT, 'data', 'dockerfiles');
 const TEMPLATES_DIR = join(__dirname, '..', '..', 'templates');
 
+interface TemplateInfo {
+  name: string;
+  description: string;
+}
+
+// Template descriptions
+const TEMPLATE_DESCRIPTIONS: Record<string, string> = {
+  'default': 'Full dev environment with SSH, neovim, python, nodejs, tmux, and OpenCode',
+  'base': 'Dev environment without SSH - use with docker exec',
+  'ubuntu-ssh': 'Minimal Ubuntu with SSH server only',
+};
+
 const dockerfiles = new Hono();
+
+// List available templates
+dockerfiles.get('/templates', async (c) => {
+  try {
+    const files = await readdir(TEMPLATES_DIR);
+    const templateFiles = files.filter((f) => f.endsWith('.dockerfile'));
+
+    const templates: TemplateInfo[] = templateFiles.map((f) => {
+      const name = f.replace('.dockerfile', '');
+      return {
+        name,
+        description: TEMPLATE_DESCRIPTIONS[name] || 'Custom template',
+      };
+    });
+
+    return c.json(templates);
+  } catch {
+    return c.json([]);
+  }
+});
+
+// Get template content
+dockerfiles.get('/templates/:name', async (c) => {
+  const name = c.req.param('name');
+  const filePath = join(TEMPLATES_DIR, `${name}.dockerfile`);
+
+  try {
+    const content = await readFile(filePath, 'utf-8');
+    return c.json({ name, content, description: TEMPLATE_DESCRIPTIONS[name] || 'Custom template' });
+  } catch {
+    return c.json({ error: 'Template not found' }, 404);
+  }
+});
 
 // Ensure dockerfiles directory exists and has default template
 async function ensureDir() {
@@ -32,33 +84,74 @@ async function ensureDir() {
   }
 }
 
-// List all saved Dockerfiles
+// List all saved Dockerfiles with metadata (including system templates)
 dockerfiles.get('/', async (c) => {
   await ensureDir();
 
   try {
-    const files = await readdir(DOCKERFILES_DIR);
-    const dockerfileList = files
-      .filter((f) => f.endsWith('.dockerfile'))
-      .map((f) => f.replace('.dockerfile', ''));
+    // Get user dockerfiles
+    const userFiles = await readdir(DOCKERFILES_DIR);
+    const userDockerfiles = userFiles.filter((f) => f.endsWith('.dockerfile'));
 
-    return c.json(dockerfileList);
+    const userList: DockerfileInfo[] = await Promise.all(
+      userDockerfiles.map(async (f) => {
+        const filePath = join(DOCKERFILES_DIR, f);
+        const stats = await stat(filePath);
+        return {
+          name: f.replace('.dockerfile', ''),
+          modifiedAt: stats.mtime.toISOString(),
+          isSystem: false,
+        };
+      })
+    );
+
+    // Get system templates
+    const templateFiles = await readdir(TEMPLATES_DIR).catch(() => []);
+    const systemDockerfiles = templateFiles.filter((f) => f.endsWith('.dockerfile'));
+
+    const systemList: DockerfileInfo[] = await Promise.all(
+      systemDockerfiles.map(async (f) => {
+        const filePath = join(TEMPLATES_DIR, f);
+        const stats = await stat(filePath);
+        const name = f.replace('.dockerfile', '');
+        return {
+          name,
+          modifiedAt: stats.mtime.toISOString(),
+          isSystem: true,
+          description: TEMPLATE_DESCRIPTIONS[name],
+        };
+      })
+    );
+
+    // Combine: user files first (sorted by modified), then system templates
+    userList.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+    systemList.sort((a, b) => a.name.localeCompare(b.name));
+
+    return c.json([...userList, ...systemList]);
   } catch {
     return c.json([]);
   }
 });
 
-// Get specific Dockerfile
+// Get specific Dockerfile (checks user dir first, then system templates)
 dockerfiles.get('/:name', async (c) => {
   const name = c.req.param('name');
-  const filePath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const userPath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const systemPath = join(TEMPLATES_DIR, `${name}.dockerfile`);
 
-  try {
-    const content = await readFile(filePath, 'utf-8');
-    return c.json({ name, content });
-  } catch {
-    return c.json({ error: 'Dockerfile not found' }, 404);
+  // Try user directory first
+  if (existsSync(userPath)) {
+    const content = await readFile(userPath, 'utf-8');
+    return c.json({ name, content, isSystem: false });
   }
+
+  // Try system templates
+  if (existsSync(systemPath)) {
+    const content = await readFile(systemPath, 'utf-8');
+    return c.json({ name, content, isSystem: true, description: TEMPLATE_DESCRIPTIONS[name] });
+  }
+
+  return c.json({ error: 'Dockerfile not found' }, 404);
 });
 
 // Save Dockerfile
@@ -91,6 +184,32 @@ dockerfiles.delete('/:name', async (c) => {
   }
 });
 
+// Rename Dockerfile
+dockerfiles.patch('/:name', zValidator('json', RenameDockerfileSchema), async (c) => {
+  const name = c.req.param('name');
+  const { newName } = c.req.valid('json');
+  const oldPath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const newPath = join(DOCKERFILES_DIR, `${newName}.dockerfile`);
+
+  // Check if source exists
+  if (!existsSync(oldPath)) {
+    return c.json({ error: 'Dockerfile not found' }, 404);
+  }
+
+  // Check if target already exists
+  if (existsSync(newPath)) {
+    return c.json({ error: 'A Dockerfile with that name already exists' }, 409);
+  }
+
+  try {
+    await rename(oldPath, newPath);
+    return c.json({ success: true, name: newName });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: message }, 500);
+  }
+});
+
 // Build image from Dockerfile (with streaming logs)
 dockerfiles.post('/:name/build', async (c) => {
   const name = c.req.param('name');
@@ -98,7 +217,8 @@ dockerfiles.post('/:name/build', async (c) => {
 
   try {
     const content = await readFile(filePath, 'utf-8');
-    const tag = `acm-${name}:latest`;
+    // Docker image tags must be lowercase
+    const tag = `acm-${name.toLowerCase()}:latest`;
 
     // Inject SSH public key (replaces {{PUBLIC_KEY}} placeholder)
     const publicKey = await getPublicKey();
@@ -120,7 +240,7 @@ dockerfiles.post('/:name/build', async (c) => {
         try {
           await dockerService.buildImageWithLogs(dockerfileWithKey, tag, (log) => {
             sendEvent('log', log);
-          });
+          }, name);  // Pass dockerfile name for tracking
           sendEvent('done', tag);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Build failed';

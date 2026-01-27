@@ -38,6 +38,8 @@ export interface ImageInfo {
   repoTags: string[];
   size: number;
   created: string;
+  dockerfile?: string;      // The Dockerfile content used to build this image
+  dockerfileName?: string;  // The name of the source Dockerfile file
 }
 
 export interface CreateContainerRequest {
@@ -321,8 +323,29 @@ export async function uploadDirectoryToVolume(
   });
 }
 
+// Dockerfile Templates
+export interface TemplateInfo {
+  name: string;
+  description: string;
+}
+
+export async function listTemplates(): Promise<TemplateInfo[]> {
+  return fetchAPI('/dockerfiles/templates');
+}
+
+export async function getTemplate(name: string): Promise<{ name: string; content: string; description: string }> {
+  return fetchAPI(`/dockerfiles/templates/${name}`);
+}
+
 // Dockerfiles
-export async function listDockerfiles(): Promise<string[]> {
+export interface DockerfileInfo {
+  name: string;
+  modifiedAt: string;
+  isSystem?: boolean;
+  description?: string;
+}
+
+export async function listDockerfiles(): Promise<DockerfileInfo[]> {
   return fetchAPI('/dockerfiles');
 }
 
@@ -339,6 +362,13 @@ export async function saveDockerfile(name: string, content: string): Promise<voi
 
 export async function deleteDockerfile(name: string): Promise<void> {
   await fetchAPI(`/dockerfiles/${name}`, { method: 'DELETE' });
+}
+
+export async function renameDockerfile(name: string, newName: string): Promise<{ success: boolean; name: string }> {
+  return fetchAPI(`/dockerfiles/${name}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ newName }),
+  });
 }
 
 export async function buildDockerfile(
@@ -2461,4 +2491,131 @@ export async function detachUnifiedVolume(volumeId: string): Promise<UnifiedVolu
   return fetchAPI(`/unified-volumes/${encodeURIComponent(volumeId)}/detach`, {
     method: 'POST',
   });
+}
+
+// ==================== Daytona Snapshots API ====================
+
+/**
+ * Daytona snapshot state
+ */
+export type DaytonaSnapshotState =
+  | 'building'
+  | 'pending'
+  | 'pulling'
+  | 'active'
+  | 'inactive'
+  | 'error'
+  | 'build_failed'
+  | 'removing';
+
+/**
+ * Daytona snapshot info
+ */
+export interface DaytonaSnapshot {
+  id: string;
+  organizationId?: string;
+  general: boolean;
+  name: string;
+  imageName?: string;
+  state: DaytonaSnapshotState;
+  size: number | null;
+  entrypoint: string[] | null;
+  cpu: number;
+  gpu: number;
+  mem: number;
+  disk: number;
+  errorReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+  regionIds?: string[];
+  ref?: string;
+}
+
+/**
+ * Paginated snapshots response
+ */
+export interface DaytonaPaginatedSnapshots {
+  items: DaytonaSnapshot[];
+  total: number;
+}
+
+/**
+ * List Daytona snapshots
+ */
+export async function listDaytonaSnapshots(options?: {
+  page?: number;
+  limit?: number;
+  name?: string;
+}): Promise<DaytonaPaginatedSnapshots> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set('page', String(options.page));
+  if (options?.limit) params.set('limit', String(options.limit));
+  if (options?.name) params.set('name', options.name);
+  const query = params.toString();
+  return fetchAPI(`/daytona/snapshots${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get a Daytona snapshot by ID or name
+ */
+export async function getDaytonaSnapshot(idOrName: string): Promise<DaytonaSnapshot> {
+  return fetchAPI(`/daytona/snapshots/${encodeURIComponent(idOrName)}`);
+}
+
+/**
+ * Create a Daytona snapshot from a registry image
+ */
+export async function createDaytonaSnapshot(request: {
+  name: string;
+  imageName?: string;
+  entrypoint?: string[];
+  cpu?: number;
+  memory?: number;
+  disk?: number;
+  regionId?: string;
+}): Promise<DaytonaSnapshot> {
+  return fetchAPI('/daytona/snapshots', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Push a local Docker image to Daytona and create a snapshot
+ */
+export async function pushImageToDaytona(request: {
+  localImage: string;
+  snapshotName: string;
+  cpu?: number;
+  memory?: number;
+  disk?: number;
+  entrypoint?: string[];
+  regionId?: string;
+}): Promise<DaytonaSnapshot> {
+  return fetchAPI('/daytona/snapshots/push', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Delete a Daytona snapshot
+ */
+export async function deleteDaytonaSnapshot(id: string): Promise<void> {
+  await fetchAPI(`/daytona/snapshots/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Activate a Daytona snapshot
+ */
+export async function activateDaytonaSnapshot(id: string): Promise<DaytonaSnapshot> {
+  return fetchAPI(`/daytona/snapshots/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+}
+
+/**
+ * Deactivate a Daytona snapshot
+ */
+export async function deactivateDaytonaSnapshot(id: string): Promise<void> {
+  await fetchAPI(`/daytona/snapshots/${encodeURIComponent(id)}/deactivate`, { method: 'POST' });
 }

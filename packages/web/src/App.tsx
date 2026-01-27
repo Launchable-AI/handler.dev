@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Plus, Settings as SettingsIcon, FileCode, Layers, HardDrive, Image, Package, StickyNote, ChevronDown, ChevronRight, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera } from 'lucide-react';
-// VolumeManager replaced by UnifiedVolumeList
-import { DockerfileEditor } from './components/DockerfileEditor';
-import { ImageList } from './components/ImageList';
+import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image } from 'lucide-react';
 import { Settings } from './components/Settings';
-import { ComposeManager } from './components/ComposeManager';
 import { MCPRegistry } from './components/MCPRegistry';
 import { Notes } from './components/Notes';
 import { SandboxList, CreateSandboxForm } from './components/sandbox';
 import { UnifiedVolumeList } from './components/volume/UnifiedVolumeList';
 import { VMSnapshots } from './components/VMSnapshots';
 import { CommandCentre } from './components/CommandCentre';
+import { DockerfileEditor } from './components/DockerfileEditor';
+import { ImageManager } from './components/ImageManager';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
@@ -18,32 +16,17 @@ import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPa
 import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
 // All possible tabs - simplified to unified abstractions
-type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'images' | 'snapshots' | 'dockerfiles' | 'compose' | 'mcp' | 'notes' | 'settings';
-
-// Navigation group identifiers
-type NavGroupId = 'advanced';
+type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'settings';
 
 interface NavItem {
   id: Tab;
   label: string;
   icon: typeof Boxes;
-}
-
-interface NavGroup {
-  id: NavGroupId;
-  label: string;
-  icon: typeof Boxes;
-  items: NavItem[];
-}
-
-interface StandaloneNavItem extends NavItem {
   standalone: true;
 }
 
-type NavConfigItem = NavGroup | StandaloneNavItem;
-
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'volumes', 'images', 'snapshots', 'dockerfiles', 'compose', 'mcp', 'notes', 'settings'];
+const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'volumes', 'dockerfiles', 'images', 'snapshots', 'mcp', 'notes', 'settings'];
 
 // Content area that adjusts for terminal panel
 function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; onCreateClick: () => void }) {
@@ -64,10 +47,9 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
       {activeTab === 'command-centre' && <CommandCentre />}
       {activeTab === 'sandboxes' && <SandboxList onCreateClick={onCreateClick} />}
       {activeTab === 'volumes' && <UnifiedVolumeList />}
-      {activeTab === 'images' && <ImageList />}
-      {activeTab === 'snapshots' && <VMSnapshots />}
-      {activeTab === 'compose' && <ComposeManager />}
       {activeTab === 'dockerfiles' && <DockerfileEditor />}
+      {activeTab === 'images' && <ImageManager />}
+      {activeTab === 'snapshots' && <VMSnapshots />}
       {activeTab === 'mcp' && <MCPRegistry />}
       {activeTab === 'notes' && <Notes />}
       {activeTab === 'settings' && <Settings />}
@@ -84,7 +66,6 @@ function App() {
     }
     return 'sandboxes';
   });
-  const [expandedGroups, setExpandedGroups] = useState<Set<NavGroupId>>(new Set(['advanced']));
   const [showHostTooltip, setShowHostTooltip] = useState(false);
   const { data: health } = useHealth();
   const { data: config } = useConfig();
@@ -143,58 +124,26 @@ function App() {
     return `${mins}m`;
   };
 
-  const navConfig: NavConfigItem[] = [
+  const navConfig: NavItem[] = [
     { id: 'command-centre', label: 'Command Centre', icon: LayoutGrid, standalone: true },
     { id: 'sandboxes', label: 'Sandboxes', icon: Boxes, standalone: true },
     { id: 'volumes', label: 'Volumes', icon: HardDrive, standalone: true },
+    { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode, standalone: true },
     { id: 'images', label: 'Images', icon: Image, standalone: true },
     { id: 'snapshots', label: 'Snapshots', icon: Camera, standalone: true },
-    {
-      id: 'advanced',
-      label: 'Advanced',
-      icon: Layers,
-      items: [
-        { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
-        { id: 'compose', label: 'Compose', icon: Layers },
-      ],
-    },
     { id: 'mcp', label: 'MCP Servers', icon: Package, standalone: true },
     { id: 'notes', label: 'Notes', icon: StickyNote, standalone: true },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, standalone: true },
   ];
 
-  const toggleGroup = (groupId: NavGroupId) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
-  };
-
-  const handleTabClick = (tab: Tab, parentGroup?: NavGroupId) => {
+  const handleTabClick = (tab: Tab) => {
     setActiveTab(tab);
-    // Ensure parent group is expanded when clicking a sub-item
-    if (parentGroup && !expandedGroups.has(parentGroup)) {
-      setExpandedGroups(prev => new Set([...prev, parentGroup]));
-    }
   };
 
   // Get the label for the current tab
   const getTabLabel = (): string => {
-    for (const item of navConfig) {
-      if ('standalone' in item && item.id === activeTab) {
-        return item.label;
-      }
-      if ('items' in item) {
-        const subItem = item.items.find(sub => sub.id === activeTab);
-        if (subItem) return subItem.label;
-      }
-    }
-    return '';
+    const item = navConfig.find(i => i.id === activeTab);
+    return item?.label || '';
   };
 
   return (
@@ -223,75 +172,21 @@ function App() {
         {/* Navigation */}
         <nav className="flex-1 py-3 px-2 overflow-y-auto">
           {navConfig.map((item) => {
-            // Standalone item
-            if ('standalone' in item) {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleTabClick(item.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 mb-0.5 text-xs font-medium transition-all ${
-                    isActive
-                      ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] border-l-2 border-[hsl(var(--cyan))]'
-                      : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border-l-2 border-transparent'
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </button>
-              );
-            }
-
-            // Collapsible group
-            const GroupIcon = item.icon;
-            const isExpanded = expandedGroups.has(item.id);
-            const hasActiveChild = item.items.some(sub => sub.id === activeTab);
-
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
-              <div key={item.id} className="mb-1">
-                <button
-                  onClick={() => toggleGroup(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-all ${
-                    hasActiveChild
-                      ? 'text-[hsl(var(--cyan))]'
-                      : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
-                  } hover:bg-[hsl(var(--bg-elevated))]`}
-                >
-                  <span className="flex items-center gap-2.5">
-                    <GroupIcon className="h-4 w-4" />
-                    {item.label}
-                  </span>
-                  {isExpanded ? (
-                    <ChevronDown className="h-3.5 w-3.5 text-[hsl(var(--text-muted))]" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5 text-[hsl(var(--text-muted))]" />
-                  )}
-                </button>
-
-                {isExpanded && (
-                  <div className="ml-3 mt-0.5">
-                    {item.items.map(subItem => {
-                      const SubIcon = subItem.icon;
-                      const isActive = activeTab === subItem.id;
-                      return (
-                        <button
-                          key={subItem.id}
-                          onClick={() => handleTabClick(subItem.id, item.id)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-1.5 mb-0.5 text-xs font-medium transition-all ${
-                            isActive
-                              ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] border-l-2 border-[hsl(var(--cyan))]'
-                              : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border-l-2 border-transparent'
-                          }`}
-                        >
-                          <SubIcon className="h-3.5 w-3.5" />
-                          {subItem.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <button
+                key={item.id}
+                onClick={() => handleTabClick(item.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 mb-0.5 text-xs font-medium transition-all ${
+                  isActive
+                    ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] border-l-2 border-[hsl(var(--cyan))]'
+                    : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border-l-2 border-transparent'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </button>
             );
           })}
         </nav>

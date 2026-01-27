@@ -159,8 +159,8 @@ export function AppComposer({ onApplyCompose, onClose, currentContent, inline = 
     } else {
       return 'external';
     }
-    // Check if the normalized name exists in our dockerfiles list (which contains "name.dockerfile" entries)
-    const exists = dockerfiles?.some(df => df === `${normalizedName}.dockerfile`);
+    // Check if the normalized name exists in our dockerfiles list
+    const exists = dockerfiles?.some(df => df.name === normalizedName);
     return exists ? 'available' : 'missing';
   };
 
@@ -584,7 +584,7 @@ export function AppComposer({ onApplyCompose, onClose, currentContent, inline = 
       name: serviceName,
       type: 'build',
       buildContext: '../dockerfiles',  // Relative path from compose dir to dockerfiles dir
-      dockerfile: dockerfiles?.[0] || undefined,  // Default to first available dockerfile
+      dockerfile: dockerfiles?.[0]?.name || undefined,  // Default to first available dockerfile
       ports: [{ container: 3000, host: 3000 }],
       environment: {},
       volumes: [],
@@ -1150,16 +1150,16 @@ export function AppComposer({ onApplyCompose, onClose, currentContent, inline = 
                                 >
                                   Dockerfile (default)
                                 </button>
-                                {dockerfiles?.map(dfName => (
+                                {dockerfiles?.map(df => (
                                   <button
-                                    key={dfName}
-                                    onClick={() => handleUpdateDockerfile(service.id, dfName)}
+                                    key={df.name}
+                                    onClick={() => handleUpdateDockerfile(service.id, df.name)}
                                     className={`w-full px-2 py-1.5 text-left text-xs hover:bg-[hsl(var(--bg-overlay))] flex items-center gap-2 ${
-                                      service.dockerfile === dfName ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]' : 'text-[hsl(var(--text-secondary))]'
+                                      service.dockerfile === df.name ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]' : 'text-[hsl(var(--text-secondary))]'
                                     }`}
                                   >
                                     <FileCode className="h-3 w-3" />
-                                    {dfName}
+                                    {df.name}
                                   </button>
                                 ))}
                               </div>

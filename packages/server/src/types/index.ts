@@ -44,6 +44,8 @@ export interface ImageInfo {
   repoTags: string[];
   size: number;
   created: string;
+  dockerfile?: string;      // The Dockerfile content used to build this image
+  dockerfileName?: string;  // The name of the source Dockerfile file
 }
 
 export const CreateVolumeSchema = z.object({
@@ -58,6 +60,12 @@ export const SaveDockerfileSchema = z.object({
 });
 
 export type SaveDockerfileRequest = z.infer<typeof SaveDockerfileSchema>;
+
+export const RenameDockerfileSchema = z.object({
+  newName: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/, 'Name can only contain letters, numbers, underscores, and hyphens'),
+});
+
+export type RenameDockerfileRequest = z.infer<typeof RenameDockerfileSchema>;
 
 export const PullImageSchema = z.object({
   image: z.string().min(1),

@@ -124,12 +124,46 @@ export async function listImages(): Promise<ImageInfo[]> {
   const images = await docker.listImages({
     filters: { label: [IMAGE_LABEL] },
   });
-  return images.map((img) => ({
-    id: img.Id,
-    repoTags: img.RepoTags || [],
-    size: img.Size,
-    created: new Date(img.Created * 1000).toISOString(),
-  }));
+
+  // Fetch detailed info for each image to get labels
+  const imageInfos: ImageInfo[] = [];
+  for (const img of images) {
+    try {
+      const image = docker.getImage(img.Id);
+      const inspect = await image.inspect();
+      const labels = inspect.Config?.Labels || {};
+
+      // Decode Dockerfile content if present
+      let dockerfile: string | undefined;
+      if (labels['caisson.dockerfile']) {
+        try {
+          dockerfile = Buffer.from(labels['caisson.dockerfile'], 'base64').toString('utf-8');
+        } catch {
+          // If decoding fails, use raw value
+          dockerfile = labels['caisson.dockerfile'];
+        }
+      }
+
+      imageInfos.push({
+        id: img.Id,
+        repoTags: img.RepoTags || [],
+        size: img.Size,
+        created: new Date(img.Created * 1000).toISOString(),
+        dockerfile,
+        dockerfileName: labels['caisson.dockerfile-name'],
+      });
+    } catch {
+      // If inspection fails, return basic info
+      imageInfos.push({
+        id: img.Id,
+        repoTags: img.RepoTags || [],
+        size: img.Size,
+        created: new Date(img.Created * 1000).toISOString(),
+      });
+    }
+  }
+
+  return imageInfos;
 }
 
 export async function pullImage(imageName: string): Promise<void> {
@@ -209,12 +243,22 @@ export async function buildImage(dockerfile: string, tag: string): Promise<void>
 export async function buildImageWithLogs(
   dockerfile: string,
   tag: string,
-  onLog: (message: string) => void
+  onLog: (message: string) => void,
+  dockerfileName?: string
 ): Promise<void> {
   const tar = await createTarFromDockerfile(dockerfile);
 
+  // Build labels including Dockerfile content (base64 encoded)
+  const labels: Record<string, string> = {
+    [IMAGE_LABEL]: 'true',
+    'caisson.dockerfile': Buffer.from(dockerfile).toString('base64'),
+  };
+  if (dockerfileName) {
+    labels['caisson.dockerfile-name'] = dockerfileName;
+  }
+
   return new Promise((resolve, reject) => {
-    docker.buildImage(tar, { t: tag, labels: { [IMAGE_LABEL]: 'true' }, rm: true }, (err, stream) => {
+    docker.buildImage(tar, { t: tag, labels, rm: true }, (err, stream) => {
       if (err) {
         reject(err);
         return;
