@@ -1,8 +1,13 @@
-import { useMemo, useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect, useLayoutEffect, DragEvent } from 'react';
 import { SessionTile } from './SessionTile';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
 import { TerminalSquare } from 'lucide-react';
 import type { TerminalSession } from '../../types/command-centre';
+
+// Helper to get session ID from drag event
+function getSessionIdFromDrag(e: DragEvent): string | null {
+  return e.dataTransfer.getData('application/x-session-id') || null;
+}
 
 interface SessionGridProps {
   className?: string;
@@ -16,13 +21,17 @@ interface SlotRect {
 }
 
 export function SessionGrid({ className = '' }: SessionGridProps) {
-  const { state, reorderFocusedSessions } = useCommandCentre();
+  const { state, reorderFocusedSessions, focusSession, unfocusSession } = useCommandCentre();
   const { sessions, activeSessionId, splitLayout, focusedSessionIds, fontSize, maximizedSessionId } = state;
 
   // Sidebar width state (in pixels) - start at max size
   const [sidebarWidth, setSidebarWidth] = useState(500);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
+
+  // Drag and drop state for focus/unfocus zones
+  const [isDragOverSidebar, setIsDragOverSidebar] = useState(false);
+  const [isDragOverMain, setIsDragOverMain] = useState(false);
 
   // Track slot positions for absolute positioning
   const slotRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -121,6 +130,46 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
     };
   }, []);
 
+  // Drag handlers for sidebar (drop to unfocus)
+  const handleSidebarDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setIsDragOverSidebar(true);
+  }, []);
+
+  const handleSidebarDragLeave = useCallback(() => {
+    setIsDragOverSidebar(false);
+  }, []);
+
+  const handleSidebarDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOverSidebar(false);
+    const sessionId = getSessionIdFromDrag(e);
+    if (sessionId && focusedSessionIds.includes(sessionId)) {
+      unfocusSession(sessionId);
+    }
+  }, [focusedSessionIds, unfocusSession]);
+
+  // Drag handlers for main area (drop to focus)
+  const handleMainDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setIsDragOverMain(true);
+  }, []);
+
+  const handleMainDragLeave = useCallback(() => {
+    setIsDragOverMain(false);
+  }, []);
+
+  const handleMainDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOverMain(false);
+    const sessionId = getSessionIdFromDrag(e);
+    if (sessionId && !focusedSessionIds.includes(sessionId)) {
+      focusSession(sessionId);
+    }
+  }, [focusedSessionIds, focusSession]);
+
   // Empty state
   if (sessions.length === 0) {
     return (
@@ -174,8 +223,15 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
       ) : (
         // Normal mode: grid + sidebar layout
         <>
-          {/* Main area - render slots for focused sessions */}
-          <div className="flex-1 min-w-0 p-2 pr-0">
+          {/* Main area - render slots for focused sessions, drop zone to focus */}
+          <div
+            className={`flex-1 min-w-0 p-2 pr-0 transition-colors ${
+              isDragOverMain ? 'bg-[hsl(var(--cyan)/0.1)]' : ''
+            }`}
+            onDragOver={handleMainDragOver}
+            onDragLeave={handleMainDragLeave}
+            onDrop={handleMainDrop}
+          >
             {focusedSessions.length > 0 ? (
               <div className={`h-full grid ${gridClass} gap-1`}>
                 {focusedSessions.map((session) => (
@@ -187,8 +243,10 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
                 ))}
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-[hsl(var(--text-muted))] text-sm">
-                Click a session in the sidebar to focus it
+              <div className={`h-full flex items-center justify-center text-sm ${
+                isDragOverMain ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-muted))]'
+              }`}>
+                {isDragOverMain ? 'Drop to focus session' : 'Click a session in the sidebar to focus it'}
               </div>
             )}
           </div>
@@ -203,11 +261,16 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
             </div>
           )}
 
-          {/* Sidebar - render slots for unfocused sessions */}
-          {hasUnfocused && (
+          {/* Sidebar - render slots for unfocused sessions, drop zone to unfocus */}
+          {hasUnfocused ? (
             <div
-              className="flex-shrink-0 p-2 pl-0 flex flex-col gap-2 overflow-y-auto"
+              className={`flex-shrink-0 p-2 pl-0 flex flex-col gap-2 overflow-y-auto transition-colors ${
+                isDragOverSidebar ? 'bg-[hsl(var(--amber)/0.1)]' : ''
+              }`}
               style={{ width: sidebarWidth }}
+              onDragOver={handleSidebarDragOver}
+              onDragLeave={handleSidebarDragLeave}
+              onDrop={handleSidebarDrop}
             >
               {unfocusedSessions.map((session) => (
                 <div
@@ -217,6 +280,24 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
                   style={{ height: thumbnailHeight }}
                 />
               ))}
+            </div>
+          ) : (
+            // Show drop zone when dragging even if no unfocused sessions yet
+            <div
+              className={`flex-shrink-0 p-2 pl-0 flex items-center justify-center transition-all ${
+                isDragOverSidebar
+                  ? 'w-48 bg-[hsl(var(--amber)/0.1)] border-2 border-dashed border-[hsl(var(--amber)/0.5)]'
+                  : 'w-0 overflow-hidden'
+              }`}
+              onDragOver={handleSidebarDragOver}
+              onDragLeave={handleSidebarDragLeave}
+              onDrop={handleSidebarDrop}
+            >
+              {isDragOverSidebar && (
+                <span className="text-xs text-[hsl(var(--amber))] whitespace-nowrap">
+                  Drop to sidebar
+                </span>
+              )}
             </div>
           )}
         </>
@@ -251,7 +332,7 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
               className="h-full w-full"
               index={index}
               onReorder={isFocused && !isMaximized ? reorderFocusedSessions : undefined}
-              isDraggable={isFocused && !isMaximized}
+              isDraggable={!isMaximized} // All sessions draggable (for focus/unfocus), except maximized
             />
           </div>
         );

@@ -56,11 +56,13 @@ export function SessionTile({
 
   // Drag handlers
   const handleDragStart = useCallback((e: React.DragEvent) => {
-    if (!isDraggable || index === undefined) return;
-    e.dataTransfer.setData('text/plain', String(index));
+    if (!isDraggable) return;
+    // Include both session ID and index for flexibility
+    e.dataTransfer.setData('application/x-session-id', session.id);
+    e.dataTransfer.setData('text/plain', String(index ?? -1));
     e.dataTransfer.effectAllowed = 'move';
     setIsDragging(true);
-  }, [isDraggable, index]);
+  }, [isDraggable, index, session.id]);
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
