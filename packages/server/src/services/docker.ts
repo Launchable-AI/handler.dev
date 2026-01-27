@@ -102,11 +102,25 @@ export async function createContainer(options: {
 
 export async function startContainer(id: string): Promise<void> {
   const container = docker.getContainer(id);
+  const info = await container.inspect();
+
+  // Don't try to start if already running
+  if (info.State.Running) {
+    return;
+  }
+
   await container.start();
 }
 
 export async function stopContainer(id: string): Promise<void> {
   const container = docker.getContainer(id);
+  const info = await container.inspect();
+
+  // Don't try to stop if not running
+  if (!info.State.Running) {
+    return;
+  }
+
   await container.stop();
 }
 
@@ -184,6 +198,18 @@ export async function pullImage(imageName: string): Promise<void> {
 export async function removeImage(id: string): Promise<void> {
   const image = docker.getImage(id);
   await image.remove({ force: true });
+}
+
+export async function renameImage(currentTag: string, newTag: string): Promise<void> {
+  const image = docker.getImage(currentTag);
+  // Tag with new name
+  await image.tag({ repo: newTag.split(':')[0], tag: newTag.split(':')[1] || 'latest' });
+  // Remove old tag (but not the image itself if it has other tags)
+  try {
+    await docker.getImage(currentTag).remove({ force: false, noprune: true });
+  } catch {
+    // Old tag might already be removed or shared with other references
+  }
 }
 
 export async function imageHasLabel(imageName: string, label: string): Promise<boolean> {

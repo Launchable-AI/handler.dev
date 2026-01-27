@@ -221,6 +221,13 @@ export async function removeImage(id: string): Promise<void> {
   await fetchAPI(`/images/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+export async function renameImage(currentTag: string, newTag: string): Promise<void> {
+  await fetchAPI(`/images/${encodeURIComponent(currentTag)}/rename`, {
+    method: 'PATCH',
+    body: JSON.stringify({ newTag }),
+  });
+}
+
 // Volumes
 export async function listVolumes(): Promise<VolumeInfo[]> {
   return fetchAPI('/volumes');

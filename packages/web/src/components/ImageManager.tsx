@@ -28,6 +28,8 @@ import {
   Eye,
   EyeOff,
   Settings,
+  Pencil,
+  Terminal,
 } from 'lucide-react';
 import { useImages } from '../hooks/useContainers';
 import { useConfirm } from './ConfirmModal';
@@ -43,6 +45,9 @@ export function ImageManager() {
   const [showPushModal, setShowPushModal] = useState<string | null>(null);
   const [expandedDockerfile, setExpandedDockerfile] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [renamingImageTag, setRenamingImageTag] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [launchingImageTag, setLaunchingImageTag] = useState<string | null>(null);
 
   // Daytona snapshots state
   const [daytonaSnapshots, setDaytonaSnapshots] = useState<api.DaytonaSnapshot[]>([]);
@@ -168,6 +173,49 @@ export function ImageManager() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // Rename image
+  const handleRenameImage = async (currentTag: string) => {
+    if (!renameValue.trim() || renameValue === currentTag) {
+      setRenamingImageTag(null);
+      setRenameValue('');
+      return;
+    }
+
+    try {
+      await api.renameImage(currentTag, renameValue.trim());
+      refetchImages();
+      setRenamingImageTag(null);
+      setRenameValue('');
+    } catch (error) {
+      console.error('Failed to rename image:', error);
+      alert(`Failed to rename image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Launch sandbox from image
+  const handleLaunchFromImage = async (imageTag: string, backend: 'docker' | 'daytona') => {
+    setLaunchingImageTag(imageTag);
+
+    // Generate a sandbox name from the image tag
+    const baseName = imageTag.split(':')[0].replace(/[^a-zA-Z0-9-]/g, '-');
+    const sandboxName = `${baseName}-${Date.now().toString(36)}`;
+
+    try {
+      await api.createSandbox({
+        name: sandboxName,
+        backend,
+        image: imageTag,
+      });
+
+      // Navigate to sandboxes tab
+      window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'sandboxes' } }));
+    } catch (error) {
+      console.error('Failed to launch sandbox:', error);
+      alert(`Failed to launch sandbox: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    setLaunchingImageTag(null);
+  };
+
   // Formatting helpers
   const formatSize = (bytes: number) => {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -246,13 +294,31 @@ export function ImageManager() {
                   const isExpanded = expandedDockerfile === image.id;
                   const hasDockerfile = !!image.dockerfile;
 
+                  const isRenaming = renamingImageTag === tag;
+                  const isLaunching = launchingImageTag === tag;
+
                   return (
                     <div key={image.id} className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))]">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <Image className="h-4 w-4 text-[hsl(var(--cyan))] flex-shrink-0" />
-                            <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{tag}</span>
+                            {isRenaming ? (
+                              <input
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onBlur={() => handleRenameImage(tag)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleRenameImage(tag);
+                                  if (e.key === 'Escape') { setRenamingImageTag(null); setRenameValue(''); }
+                                }}
+                                className="flex-1 px-2 py-0.5 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--cyan))] text-[hsl(var(--text-primary))] focus:outline-none"
+                                autoFocus
+                              />
+                            ) : (
+                              <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{tag}</span>
+                            )}
                           </div>
                           <div className="flex items-center gap-4 mt-2 text-xs text-[hsl(var(--text-muted))]">
                             <span className="flex items-center gap-1.5">
@@ -279,6 +345,21 @@ export function ImageManager() {
                               {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                           )}
+                          <button
+                            onClick={() => handleLaunchFromImage(tag, 'docker')}
+                            disabled={isLaunching}
+                            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-elevated))]"
+                            title="Launch sandbox"
+                          >
+                            {isLaunching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+                          </button>
+                          <button
+                            onClick={() => { setRenamingImageTag(tag); setRenameValue(tag); }}
+                            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))] hover:bg-[hsl(var(--bg-elevated))]"
+                            title="Rename"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
                           <button
                             onClick={() => { setShowPushModal(tag); setPushSnapshotName(tag.split(':')[0]); }}
                             disabled={isPushing}
@@ -401,6 +482,8 @@ export function ImageManager() {
                 {filteredSnapshots.map((snapshot) => {
                   const isDeleting = deletingSnapshotId === snapshot.id;
                   const isManaged = isDaytonaManaged(snapshot);
+                  const isLaunchingSnapshot = launchingImageTag === snapshot.name;
+                  const canLaunch = snapshot.state === 'active';
 
                   return (
                     <div key={snapshot.id} className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))]">
@@ -431,21 +514,31 @@ export function ImageManager() {
                             </div>
                           )}
                         </div>
-                        {!isManaged && (
-                          <div className="flex items-center gap-1.5">
-                            {(snapshot.state === 'active' || snapshot.state === 'inactive') && (
-                              <button
-                                onClick={() => handleToggleSnapshotActive(snapshot)}
-                                className={`flex items-center gap-1 px-2 py-1 text-xs border ${
-                                  snapshot.state === 'active'
-                                    ? 'text-[hsl(var(--amber))] border-[hsl(var(--amber)/0.3)] hover:bg-[hsl(var(--amber)/0.1)]'
-                                    : 'text-[hsl(var(--green))] border-[hsl(var(--green)/0.3)] hover:bg-[hsl(var(--green)/0.1)]'
-                                }`}
-                                title={snapshot.state === 'active' ? 'Deactivate' : 'Activate'}
-                              >
-                                {snapshot.state === 'active' ? <><Pause className="h-3.5 w-3.5" />Deactivate</> : <><Play className="h-3.5 w-3.5" />Activate</>}
-                              </button>
-                            )}
+                        <div className="flex items-center gap-1.5">
+                          {canLaunch && (
+                            <button
+                              onClick={() => handleLaunchFromImage(snapshot.name, 'daytona')}
+                              disabled={isLaunchingSnapshot}
+                              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-elevated))]"
+                              title="Launch sandbox"
+                            >
+                              {isLaunchingSnapshot ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+                            </button>
+                          )}
+                          {!isManaged && (snapshot.state === 'active' || snapshot.state === 'inactive') && (
+                            <button
+                              onClick={() => handleToggleSnapshotActive(snapshot)}
+                              className={`flex items-center gap-1 px-2 py-1 text-xs border ${
+                                snapshot.state === 'active'
+                                  ? 'text-[hsl(var(--amber))] border-[hsl(var(--amber)/0.3)] hover:bg-[hsl(var(--amber)/0.1)]'
+                                  : 'text-[hsl(var(--green))] border-[hsl(var(--green)/0.3)] hover:bg-[hsl(var(--green)/0.1)]'
+                              }`}
+                              title={snapshot.state === 'active' ? 'Deactivate' : 'Activate'}
+                            >
+                              {snapshot.state === 'active' ? <><Pause className="h-3.5 w-3.5" />Deactivate</> : <><Play className="h-3.5 w-3.5" />Activate</>}
+                            </button>
+                          )}
+                          {!isManaged && (
                             <button
                               onClick={() => handleDeleteSnapshot(snapshot.id, snapshot.name)}
                               disabled={isDeleting}
@@ -454,8 +547,8 @@ export function ImageManager() {
                             >
                               {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
