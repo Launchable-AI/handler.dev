@@ -225,7 +225,7 @@ export class VmVolumeService extends EventEmitter {
   /**
    * Attach a volume to a VM
    */
-  attachVolume(volumeId: string, vmId: string): void {
+  attachVolume(volumeId: string, vmId: string, vmName?: string): void {
     const volume = this.volumes.get(volumeId);
     if (!volume) {
       throw new Error(`Volume ${volumeId} not found`);
@@ -236,11 +236,12 @@ export class VmVolumeService extends EventEmitter {
     }
 
     volume.attachedTo = vmId;
+    volume.attachedToVmName = vmName;
     volume.lastAttachedAt = new Date().toISOString();
     this.saveVolumeMetadata(volume);
 
-    this.emit('volume:attached', { volumeId, vmId });
-    console.log(`[VmVolumeService] Volume ${volumeId} attached to VM ${vmId}`);
+    this.emit('volume:attached', { volumeId, vmId, vmName });
+    console.log(`[VmVolumeService] Volume ${volumeId} attached to VM ${vmId} (${vmName || 'unnamed'})`);
   }
 
   /**
@@ -509,6 +510,7 @@ export class VmVolumeService extends EventEmitter {
       format: volume.format,
       mountPath: volume.mountPath,
       attachedTo: volume.attachedTo,
+      attachedToVmName: volume.attachedToVmName,
       createdAt: volume.createdAt,
       lastAttachedAt: volume.lastAttachedAt,
     };

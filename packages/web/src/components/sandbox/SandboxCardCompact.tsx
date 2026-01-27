@@ -2,7 +2,7 @@
  * SandboxCardCompact - Compact card view for sandbox grid
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Play,
   Square,
@@ -13,8 +13,11 @@ import {
   Cpu,
   MemoryStick,
   Network,
+  Camera,
+  Loader2,
 } from 'lucide-react';
-import type { Sandbox } from '../../api/client';
+import type { Sandbox, VmMeta } from '../../api/client';
+import * as api from '../../api/client';
 import { BackendBadge } from './BackendBadge';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox } from '../../hooks/useSandboxes';
@@ -23,19 +26,34 @@ import { useTerminalPanel } from '../TerminalPanel';
 
 interface SandboxCardCompactProps {
   sandbox: Sandbox;
+  highlight?: boolean;
 }
 
-export function SandboxCardCompact({ sandbox }: SandboxCardCompactProps) {
+export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Scroll into view and flash when highlighted
+  useEffect(() => {
+    if (highlight && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlight]);
   const startSandbox = useStartSandbox();
   const stopSandbox = useStopSandbox();
   const deleteSandbox = useDeleteSandbox();
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
   const [copied, setCopied] = useState(false);
+  const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
 
   const isRunning = sandbox.status === 'running';
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
   const isTransition = isTransitioning(sandbox.status);
+
+  // Check if this is a VM-based sandbox that supports snapshots
+  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const vmMeta = sandbox.backendMeta as VmMeta | undefined;
+  const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
 
   const canStart = isStopped && !isTransition;
   const canStop = isRunning && !isTransition;
@@ -88,6 +106,20 @@ export function SandboxCardCompact({ sandbox }: SandboxCardCompactProps) {
     }
   };
 
+  const handleCreateSnapshot = async () => {
+    // Extract the VM ID from the sandbox ID (e.g., 'fc-xxx' -> 'xxx')
+    const vmId = sandbox.id.replace(/^(fc-|vm-)/, '');
+
+    setIsCreatingSnapshot(true);
+    try {
+      await api.createVmSnapshot(vmId, `${sandbox.name}-${Date.now()}`);
+    } catch (error) {
+      console.error('Failed to create snapshot:', error);
+    } finally {
+      setIsCreatingSnapshot(false);
+    }
+  };
+
   // For Docker, prefer dockerExecCommand; for VMs, use sshCommand
   const isDocker = sandbox.backend === 'docker';
   const connectCommand = isDocker
@@ -107,7 +139,14 @@ export function SandboxCardCompact({ sandbox }: SandboxCardCompactProps) {
   };
 
   return (
-    <div className="p-3 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))] transition-colors">
+    <div
+      ref={cardRef}
+      className={`p-3 bg-[hsl(var(--bg-surface))] border transition-all duration-500 ${
+        highlight
+          ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)] animate-pulse'
+          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))]'
+      }`}
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -184,6 +223,16 @@ export function SandboxCardCompact({ sandbox }: SandboxCardCompactProps) {
             title="Stop"
           >
             <Square className="h-3 w-3" />
+          </button>
+        )}
+        {canSnapshot && (
+          <button
+            onClick={handleCreateSnapshot}
+            disabled={isCreatingSnapshot}
+            className="flex items-center justify-center py-1 px-2 text-[10px] text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)] border border-[hsl(var(--purple)/0.3)] transition-colors disabled:opacity-50"
+            title="Create Snapshot"
+          >
+            {isCreatingSnapshot ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
           </button>
         )}
         {canDelete && (

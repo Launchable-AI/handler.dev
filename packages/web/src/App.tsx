@@ -96,6 +96,19 @@ function App() {
     localStorage.setItem('caisson:activeTab', activeTab);
   }, [activeTab]);
 
+  // Listen for tab change requests from other components (e.g., volume list -> sandboxes)
+  useEffect(() => {
+    const handleTabChange = (e: CustomEvent<{ tab: Tab }>) => {
+      if (VALID_TABS.includes(e.detail.tab)) {
+        setActiveTab(e.detail.tab);
+      }
+    };
+    window.addEventListener('caisson-navigate-tab', handleTabChange as EventListener);
+    return () => {
+      window.removeEventListener('caisson-navigate-tab', handleTabChange as EventListener);
+    };
+  }, []);
+
   const dockerConnected = health?.docker === 'connected';
 
   // Get enabled backends with their status

@@ -2,7 +2,7 @@
  * SandboxRow - Table row view for sandbox list
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Play,
   Square,
@@ -12,6 +12,7 @@ import {
   MemoryStick,
   Camera,
   Loader2,
+  HardDrive,
 } from 'lucide-react';
 import type { Sandbox, VmMeta } from '../../api/client';
 import * as api from '../../api/client';
@@ -23,9 +24,18 @@ import { useTerminalPanel } from '../TerminalPanel';
 
 interface SandboxRowProps {
   sandbox: Sandbox;
+  highlight?: boolean;
 }
 
-export function SandboxRow({ sandbox }: SandboxRowProps) {
+export function SandboxRow({ sandbox, highlight }: SandboxRowProps) {
+  const rowRef = useRef<HTMLTableRowElement>(null);
+
+  // Scroll into view and flash when highlighted
+  useEffect(() => {
+    if (highlight && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlight]);
   const startSandbox = useStartSandbox();
   const stopSandbox = useStopSandbox();
   const deleteSandbox = useDeleteSandbox();
@@ -109,7 +119,14 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
   };
 
   return (
-    <tr className="border-b border-[hsl(var(--border))] hover:bg-[hsl(var(--bg-elevated))] transition-colors">
+    <tr
+      ref={rowRef}
+      className={`border-b transition-all duration-500 ${
+        highlight
+          ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] ring-2 ring-inset ring-[hsl(var(--cyan)/0.3)]'
+          : 'border-[hsl(var(--border))] hover:bg-[hsl(var(--bg-elevated))]'
+      }`}
+    >
       {/* Status */}
       <td className="px-3 py-2">
         <StatusIndicator status={sandbox.status} size="sm" />
@@ -160,6 +177,28 @@ export function SandboxRow({ sandbox }: SandboxRowProps) {
         <span className="text-[10px] text-[hsl(var(--text-muted))]">
           {new Date(sandbox.createdAt).toLocaleDateString()}
         </span>
+      </td>
+
+      {/* Volumes */}
+      <td className="px-3 py-2">
+        {(() => {
+          const volumes = sandbox.backendMeta?.type === 'docker'
+            ? sandbox.backendMeta.volumes
+            : sandbox.backendMeta?.type === 'vm'
+            ? sandbox.backendMeta.volumes
+            : [];
+          if (!volumes || volumes.length === 0) {
+            return <span className="text-[10px] text-[hsl(var(--text-muted))]">-</span>;
+          }
+          return (
+            <div className="flex items-center gap-1">
+              <HardDrive className="h-3 w-3 text-[hsl(var(--text-muted))]" />
+              <span className="text-[10px] text-[hsl(var(--text-secondary))]" title={volumes.map((v: { name: string }) => v.name).join(', ')}>
+                {volumes.length} vol{volumes.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          );
+        })()}
       </td>
 
       {/* Actions */}

@@ -237,6 +237,66 @@ export function useDeleteSandbox() {
 }
 
 /**
+ * Rename a sandbox (Firecracker VMs only)
+ */
+export function useRenameSandbox() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ['sandbox-state'],
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.renameSandbox(id, name),
+    onMutate: async ({ id, name }) => {
+      await queryClient.cancelQueries({ queryKey: ['sandboxes'] });
+
+      // Snapshot all sandbox queries for rollback
+      const previousQueries = queryClient.getQueriesData<api.SandboxListResponse>({
+        queryKey: ['sandboxes'],
+      });
+
+      // Optimistically update the name in ALL sandbox list queries
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            sandboxes: old.sandboxes.map((s) =>
+              s.id === id ? { ...s, name } : s
+            ),
+          };
+        }
+      );
+
+      return { previousQueries, id };
+    },
+    onSuccess: (updatedSandbox, { id }) => {
+      // Update the sandbox with actual server response in all queries
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            sandboxes: old.sandboxes.map((s) =>
+              s.id === id ? updatedSandbox : s
+            ),
+          };
+        }
+      );
+    },
+    onError: (_err, _vars, context) => {
+      // Rollback all queries to their previous state
+      if (context?.previousQueries) {
+        for (const [queryKey, data] of context.previousQueries) {
+          queryClient.setQueryData(queryKey, data);
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['sandboxes'] });
+    },
+  });
+}
+
+/**
  * Utility hook to get sandbox counts by status
  */
 export function useSandboxCounts(filter?: SandboxListFilter) {

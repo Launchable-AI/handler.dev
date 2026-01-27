@@ -2116,6 +2116,17 @@ export async function deleteSandbox(id: string): Promise<void> {
 }
 
 /**
+ * Rename a sandbox (Firecracker VMs only)
+ */
+export async function renameSandbox(id: string, newName: string): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: newName }),
+  });
+}
+
+/**
  * Get sandbox logs
  */
 export async function getSandboxLogs(id: string, tail: number = 200): Promise<string> {

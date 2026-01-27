@@ -65,7 +65,38 @@ const STATUS_PRIORITY: Record<string, number> = {
   archived: 8,
 };
 
+const HIGHLIGHT_KEY = 'caisson-highlight-sandbox';
+
 export function SandboxList({ onCreateClick }: SandboxListProps) {
+  // Sandbox to highlight (set from other tabs like Volumes)
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // Check for highlight request on mount and when tab becomes visible
+  useEffect(() => {
+    const checkHighlight = () => {
+      const id = localStorage.getItem(HIGHLIGHT_KEY);
+      if (id) {
+        setHighlightId(id);
+        localStorage.removeItem(HIGHLIGHT_KEY);
+        // Clear highlight after animation (2 seconds)
+        setTimeout(() => setHighlightId(null), 2000);
+      }
+    };
+    checkHighlight();
+    // Also check when window becomes visible (tab switch)
+    window.addEventListener('focus', checkHighlight);
+    // Listen for navigation events (from other components)
+    const handleNavigate = () => {
+      // Small delay to ensure localStorage is set
+      setTimeout(checkHighlight, 50);
+    };
+    window.addEventListener('caisson-navigate-tab', handleNavigate);
+    return () => {
+      window.removeEventListener('focus', checkHighlight);
+      window.removeEventListener('caisson-navigate-tab', handleNavigate);
+    };
+  }, []);
+
   // View mode persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const stored = localStorage.getItem(VIEW_MODE_KEY);
@@ -410,7 +441,7 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
             {viewMode === 'compact' && (
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {sandboxes.map((sandbox) => (
-                  <SandboxCardCompact key={sandbox.id} sandbox={sandbox} />
+                  <SandboxCardCompact key={sandbox.id} sandbox={sandbox} highlight={highlightId === sandbox.id} />
                 ))}
               </div>
             )}
@@ -418,7 +449,7 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
             {viewMode === 'detailed' && (
               <div className="grid gap-3 lg:grid-cols-2">
                 {sandboxes.map((sandbox) => (
-                  <SandboxCard key={sandbox.id} sandbox={sandbox} />
+                  <SandboxCard key={sandbox.id} sandbox={sandbox} highlight={highlightId === sandbox.id} />
                 ))}
               </div>
             )}
@@ -437,6 +468,9 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
                       <SortableHeader column="image">Image</SortableHeader>
                       <SortableHeader column="ip">IP</SortableHeader>
                       <SortableHeader column="created">Created</SortableHeader>
+                      <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider">
+                        Volumes
+                      </th>
                       <th className="px-3 py-2 text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider w-24">
                         Actions
                       </th>
@@ -444,7 +478,7 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
                   </thead>
                   <tbody>
                     {sortedSandboxes.map((sandbox) => (
-                      <SandboxRow key={sandbox.id} sandbox={sandbox} />
+                      <SandboxRow key={sandbox.id} sandbox={sandbox} highlight={highlightId === sandbox.id} />
                     ))}
                   </tbody>
                 </table>

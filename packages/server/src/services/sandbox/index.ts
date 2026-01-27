@@ -241,6 +241,35 @@ export class SandboxService {
   }
 
   /**
+   * Rename a sandbox (supported for Docker and Firecracker)
+   */
+  async rename(id: string, newName: string): Promise<Sandbox> {
+    const backend = this.getBackendFromId(id);
+
+    if (backend === 'firecracker') {
+      if (!this.firecrackerService) {
+        throw new Error('Firecracker service is not available');
+      }
+      // Firecracker VMs are stored with the full ID including 'fc-' prefix
+      this.firecrackerService.renameVm(id, newName);
+    } else if (backend === 'docker') {
+      // Docker containers can be renamed
+      const dockerService = await import('../docker.js');
+      const containerId = id.replace(/^docker-/, '');
+      await dockerService.renameContainer(containerId, newName);
+    } else {
+      throw new Error(`Renaming is not supported for ${backend} sandboxes`);
+    }
+
+    // Return updated sandbox
+    const result = await this.get(id);
+    if (!result) {
+      throw new Error(`Sandbox ${id} not found after rename`);
+    }
+    return result;
+  }
+
+  /**
    * Determine the backend type from a sandbox ID
    */
   private getBackendFromId(id: string): SandboxBackend {

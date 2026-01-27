@@ -15,6 +15,7 @@ import { getFirecrackerService } from '../firecracker.js';
 
 /**
  * Converts a VM volume to the unified Volume type
+ * If the volume is attached to a VM but has no stored name, attempts to look it up
  */
 function vmVolumeToVolume(
   vol: {
@@ -29,7 +30,8 @@ function vmVolumeToVolume(
     createdAt: string;
     lastAttachedAt?: string;
   },
-  volumeService: VmVolumeService
+  volumeService: VmVolumeService,
+  vmNameLookup?: (rawVmId: string) => string | undefined
 ): Volume {
   const meta: VmVolumeMeta = {
     type: 'vm',
@@ -37,6 +39,12 @@ function vmVolumeToVolume(
     devicePath: volumeService.getVolumePath(vol.id) || '',
     lastAttachedAt: vol.lastAttachedAt,
   };
+
+  // Try to get VM name: first from stored metadata, then via lookup
+  let sandboxName = vol.attachedToVmName;
+  if (vol.attachedTo && !sandboxName && vmNameLookup) {
+    sandboxName = vmNameLookup(vol.attachedTo);
+  }
 
   return {
     id: `vol-vm-${vol.id}`,
@@ -49,7 +57,7 @@ function vmVolumeToVolume(
     attachedTo: vol.attachedTo
       ? [{
           sandboxId: vol.attachedTo,
-          sandboxName: vol.attachedToVmName || vol.attachedTo,
+          sandboxName: sandboxName || vol.attachedTo,
           mountPath: vol.mountPath || '/mnt/data',
         }]
       : [],
@@ -78,10 +86,28 @@ export class VmVolumeAdapter {
     return this.volumeService;
   }
 
+  /**
+   * Create a VM name lookup function using the Firecracker service
+   * This allows us to resolve VM names for volumes that were attached
+   * before we started storing the name
+   */
+  private createVmNameLookup(): (rawVmId: string) => string | undefined {
+    return (rawVmId: string) => {
+      try {
+        const firecrackerService = getFirecrackerService();
+        const fcVm = firecrackerService.getVm(`fc-${rawVmId}`);
+        return fcVm?.name;
+      } catch {
+        return undefined;
+      }
+    };
+  }
+
   async list(): Promise<Volume[]> {
     const service = await this.ensureInitialized();
     const volumes = service.listVolumes();
-    return volumes.map((vol) => vmVolumeToVolume(vol, service));
+    const vmNameLookup = this.createVmNameLookup();
+    return volumes.map((vol) => vmVolumeToVolume(vol, service, vmNameLookup));
   }
 
   async get(id: string): Promise<Volume | null> {
@@ -89,7 +115,8 @@ export class VmVolumeAdapter {
     // Extract the VM volume ID from the unified ID
     const vmVolId = id.replace(/^vol-vm-/, '');
     const vol = service.getVolume(vmVolId);
-    return vol ? vmVolumeToVolume(vol, service) : null;
+    const vmNameLookup = this.createVmNameLookup();
+    return vol ? vmVolumeToVolume(vol, service, vmNameLookup) : null;
   }
 
   async create(request: CreateVolumeRequest): Promise<Volume> {
@@ -152,9 +179,15 @@ export class VmVolumeAdapter {
     const volumePath = service.getVolumePath(vmVolId);
     if (!volumePath) throw new Error(`Volume ${id} path not found`);
 
+    let vmName: string | undefined;
+
     // Check if this is a Firecracker VM (starts with fc-)
     if (sandboxId.startsWith('fc-')) {
       const firecrackerService = getFirecrackerService();
+
+      // Get VM name for metadata
+      const vm = firecrackerService.getVm(sandboxId);
+      vmName = vm?.name;
 
       // Attach the volume in Firecracker (this will restart the VM if running)
       await firecrackerService.attachVolume(sandboxId, {
@@ -168,7 +201,7 @@ export class VmVolumeAdapter {
     // Update volume metadata (track which VM it's attached to)
     // Extract raw VM ID for metadata (fc-xxx -> xxx to match internal storage)
     const rawVmId = sandboxId.replace(/^(fc-|vm-)/, '');
-    service.attachVolume(vmVolId, rawVmId);
+    service.attachVolume(vmVolId, rawVmId, vmName);
 
     const updatedVol = service.getVolume(vmVolId);
     if (!updatedVol) throw new Error(`Volume ${id} not found after attach`);

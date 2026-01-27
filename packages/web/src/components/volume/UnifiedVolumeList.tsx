@@ -178,7 +178,32 @@ function VolumeCard({
       {/* Attachments */}
       {volume.attachedTo.length > 0 && (
         <div className="text-[10px] text-[hsl(var(--cyan))]">
-          Attached to: {volume.attachedTo.map((a) => a.sandboxName).join(', ')}
+          Attached to:{' '}
+          {volume.attachedTo.map((a, idx) => {
+            // For VM volumes, the sandboxId is raw (without fc- prefix)
+            // We need to reconstruct the full sandbox ID for navigation
+            const fullSandboxId = volume.backend === 'vm' ? `fc-${a.sandboxId}` : a.sandboxId;
+            const displayName = a.sandboxName || a.sandboxId;
+            return (
+              <span key={a.sandboxId}>
+                {idx > 0 && ', '}
+                <button
+                  onClick={() => {
+                    // Store the sandbox ID to highlight
+                    localStorage.setItem('caisson-highlight-sandbox', fullSandboxId);
+                    // Navigate to sandboxes tab using custom event
+                    window.dispatchEvent(new CustomEvent('caisson-navigate-tab', {
+                      detail: { tab: 'sandboxes' },
+                    }));
+                  }}
+                  className="hover:underline hover:text-[hsl(var(--cyan-bright,var(--cyan)))] cursor-pointer"
+                  title={`ID: ${fullSandboxId}\nClick to view sandbox`}
+                >
+                  {displayName}
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
 

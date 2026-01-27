@@ -271,6 +271,7 @@ export interface VmVolume {
   format: 'ext4' | 'xfs';
   mountPath?: string; // Default mount path in VMs
   attachedTo?: string; // VM ID if currently attached
+  attachedToVmName?: string; // User-defined VM name for display
   createdAt: string;
   lastAttachedAt?: string;
 }

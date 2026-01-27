@@ -115,6 +115,11 @@ export async function removeContainer(id: string): Promise<void> {
   await container.remove({ force: true });
 }
 
+export async function renameContainer(id: string, newName: string): Promise<void> {
+  const container = docker.getContainer(id);
+  await container.rename({ name: newName });
+}
+
 export async function listImages(): Promise<ImageInfo[]> {
   const images = await docker.listImages({
     filters: { label: [IMAGE_LABEL] },

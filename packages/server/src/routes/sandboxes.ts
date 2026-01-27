@@ -271,6 +271,29 @@ sandboxes.post('/:id/stop', async (c) => {
 });
 
 /**
+ * PATCH /api/sandboxes/:id
+ * Update a sandbox (rename)
+ */
+const UpdateSandboxSchema = z.object({
+  name: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/,
+    'Name must start with alphanumeric and contain only alphanumeric, underscore, period, or hyphen'),
+});
+
+sandboxes.patch('/:id', zValidator('json', UpdateSandboxSchema), async (c) => {
+  const id = c.req.param('id');
+  const body = c.req.valid('json');
+  const service = await ensureSandboxServiceInitialized();
+
+  try {
+    const sandbox = await service.rename(id, body.name);
+    return c.json(sandbox);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to rename sandbox';
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
  * DELETE /api/sandboxes/:id
  * Delete a sandbox
  */

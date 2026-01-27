@@ -298,10 +298,10 @@ export function VMSnapshots() {
       </div>
 
       {/* Info text */}
-      <div className="text-xs text-[hsl(var(--text-muted))] mb-4 p-2 bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]">
-        <strong>New VM:</strong> Create a new, independent VM from this snapshot (one-time use).{' '}
-        <strong>Save as Image:</strong> Add to Base Images list so you can create multiple VMs from it later.{' '}
-        <em>To rollback a VM to a snapshot, use the Rollback button in the VM's Instances view.</em>
+      <div className="text-xs text-[hsl(var(--text-muted))] mb-4 p-2 bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] space-y-1">
+        <p><strong>New VM:</strong> Create a new, independent VM from this snapshot (one-time use).</p>
+        <p><strong>Save as Image:</strong> Add to Base Images list so you can create multiple VMs from it later.</p>
+        <p className="text-[hsl(var(--text-muted))]"><em>To rollback a VM to a snapshot, use the Rollback button in the VM's Instances view.</em></p>
       </div>
 
       {/* Snapshots Grid */}

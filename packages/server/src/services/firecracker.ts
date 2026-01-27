@@ -1610,6 +1610,40 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
+   * Rename a VM
+   */
+  renameVm(id: string, newName: string): VmInfo {
+    const vm = this.vms.get(id);
+    if (!vm) {
+      throw new Error(`VM ${id} not found`);
+    }
+
+    // Validate name
+    if (!newName || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(newName)) {
+      throw new Error('VM name must start with alphanumeric and contain only alphanumeric, underscore, period, or hyphen');
+    }
+
+    // Check for name uniqueness
+    for (const existingVm of this.vms.values()) {
+      if (existingVm.id !== id && existingVm.name === newName) {
+        throw new Error(`A VM with name '${newName}' already exists`);
+      }
+    }
+
+    vm.name = newName;
+
+    // Save state synchronously (fire and forget the async version)
+    this.saveVmState(vm).catch(err => {
+      console.error(`[FirecrackerService] Failed to save VM state after rename:`, err);
+    });
+
+    this.emit('vm:renamed', { id, newName });
+    console.log(`[FirecrackerService] VM ${id} renamed to ${newName}`);
+
+    return this.vmToInfo(vm);
+  }
+
+  /**
    * Get SSH connection info for a VM
    */
   getSshInfo(id: string): { host: string; port: number; user: string; command: string } | null {

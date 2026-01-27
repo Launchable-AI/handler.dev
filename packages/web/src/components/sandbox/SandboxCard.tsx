@@ -3,7 +3,7 @@
  * Matches the ContainerCard design with Docker/SSH tabs
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Play,
   Square,
@@ -22,11 +22,13 @@ import {
   AlertCircle,
   X,
   ScrollText,
+  Camera,
+  Pencil,
 } from 'lucide-react';
 import type { Sandbox, DockerMeta, VmMeta } from '../../api/client';
-import { downloadSandboxSshKey } from '../../api/client';
+import { downloadSandboxSshKey, createVmSnapshot } from '../../api/client';
 import { BackendBadge } from './BackendBadge';
-import { useStartSandbox, useStopSandbox, useDeleteSandbox } from '../../hooks/useSandboxes';
+import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
 import { useConfirm } from '../ConfirmModal';
 import { useTerminalPanel } from '../TerminalPanel';
 import { SandboxLogViewer } from './SandboxLogViewer';
@@ -34,19 +36,32 @@ import { SandboxLogViewer } from './SandboxLogViewer';
 interface SandboxCardProps {
   sandbox: Sandbox;
   onUploadToVolume?: (volumeName: string) => void;
+  highlight?: boolean;
 }
 
 type ConnectionMode = 'docker' | 'ssh';
 
-export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
+export function SandboxCard({ sandbox, onUploadToVolume, highlight }: SandboxCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Scroll into view and flash when highlighted
+  useEffect(() => {
+    if (highlight && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlight]);
   const startSandbox = useStartSandbox();
   const stopSandbox = useStopSandbox();
   const deleteSandbox = useDeleteSandbox();
+  const renameSandbox = useRenameSandbox();
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
 
   const [copied, setCopied] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(sandbox.name);
   // Default to docker exec for Docker containers, SSH for VMs
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>(
     sandbox.backend === 'docker' ? 'docker' : 'ssh'
@@ -63,6 +78,13 @@ export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
   const isDocker = sandbox.backend === 'docker';
   const dockerMeta = sandbox.backendMeta as DockerMeta | undefined;
   const vmMeta = sandbox.backendMeta as VmMeta | undefined;
+
+  // Check if this is a VM-based sandbox that supports snapshots
+  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
+
+  // Renaming is supported for Firecracker VMs and Docker containers
+  const canRename = sandbox.backend === 'firecracker' || sandbox.backend === 'docker';
 
   // Get volumes based on backend type
   const volumes = isDocker
@@ -180,6 +202,46 @@ export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
     }
   };
 
+  const handleCreateSnapshot = async () => {
+    // Extract the VM ID from the sandbox ID (e.g., 'fc-xxx' -> 'xxx')
+    const vmId = sandbox.id.replace(/^(fc-|vm-)/, '');
+
+    setIsCreatingSnapshot(true);
+    try {
+      await createVmSnapshot(vmId, `${sandbox.name}-${Date.now()}`);
+    } catch (err) {
+      console.error('Failed to create snapshot:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create snapshot');
+    } finally {
+      setIsCreatingSnapshot(false);
+    }
+  };
+
+  const handleRename = async () => {
+    if (!editName.trim() || editName === sandbox.name) {
+      setIsEditing(false);
+      setEditName(sandbox.name);
+      return;
+    }
+    try {
+      await renameSandbox.mutateAsync({ id: sandbox.id, name: editName.trim() });
+      setIsEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rename');
+      setEditName(sandbox.name);
+      setIsEditing(false);
+    }
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRename();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+      setEditName(sandbox.name);
+    }
+  };
+
   // Generate port URL based on backend type
   const getPortUrl = (port: { container: number; host: number }) => {
     if (isDocker) {
@@ -192,7 +254,14 @@ export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
 
   return (
     <>
-      <div className="border border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))] overflow-hidden">
+      <div
+        ref={cardRef}
+        className={`border bg-[hsl(var(--bg-surface))] overflow-hidden transition-all duration-500 ${
+          highlight
+            ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)] animate-pulse'
+            : 'border-[hsl(var(--border))]'
+        }`}
+      >
         {/* Header */}
         <div className="px-3 py-2.5 border-b border-[hsl(var(--border))]">
           <div className="flex items-start justify-between gap-3">
@@ -203,9 +272,34 @@ export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
                     ? 'text-[hsl(var(--text-muted))]'
                     : `text-[hsl(var(--${stateColorVar}))]`
                 } ${(isBuilding || sandbox.status === 'starting' || sandbox.status === 'stopping') ? 'animate-pulse' : ''}`} />
-                <h3 className="text-xs font-medium text-[hsl(var(--text-primary))] truncate">
-                  {sandbox.name}
-                </h3>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onBlur={handleRename}
+                    onKeyDown={handleRenameKeyDown}
+                    autoFocus
+                    className="text-xs font-medium text-[hsl(var(--text-primary))] bg-[hsl(var(--bg-base))] border border-[hsl(var(--cyan)/0.5)] px-1 py-0.5 outline-none focus:border-[hsl(var(--cyan))]"
+                  />
+                ) : (
+                  <h3
+                    className={`text-xs font-medium text-[hsl(var(--text-primary))] truncate ${canRename ? 'cursor-pointer hover:text-[hsl(var(--cyan))]' : ''}`}
+                    onClick={() => canRename && setIsEditing(true)}
+                    title={canRename ? 'Click to rename' : undefined}
+                  >
+                    {sandbox.name}
+                  </h3>
+                )}
+                {canRename && !isEditing && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] transition-colors"
+                    title="Rename"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                )}
                 <span className={`text-[10px] uppercase tracking-wider ${
                   stateColorVar === 'text-muted'
                     ? 'text-[hsl(var(--text-muted))]'
@@ -261,6 +355,20 @@ export function SandboxCard({ sandbox, onUploadToVolume }: SandboxCardProps) {
                     >
                       <ScrollText className="h-3.5 w-3.5" />
                     </button>
+                    {canSnapshot && (
+                      <button
+                        onClick={handleCreateSnapshot}
+                        disabled={isCreatingSnapshot}
+                        className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50 transition-colors"
+                        title="Create Snapshot"
+                      >
+                        {isCreatingSnapshot ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Camera className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
                   </>
                 )}
                 {isRunning ? (
