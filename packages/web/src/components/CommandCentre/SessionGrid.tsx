@@ -1,5 +1,4 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useMemo, useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { SessionTile } from './SessionTile';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
 import { TerminalSquare } from 'lucide-react';
@@ -7,6 +6,13 @@ import type { TerminalSession } from '../../types/command-centre';
 
 interface SessionGridProps {
   className?: string;
+}
+
+interface SlotRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
 }
 
 export function SessionGrid({ className = '' }: SessionGridProps) {
@@ -18,59 +24,52 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
-  // Portal targets for each session - keeps terminals mounted when moving between layouts
-  const [portalTargets, setPortalTargets] = useState<Record<string, HTMLDivElement | null>>({});
-  const pendingUpdates = useRef<Record<string, HTMLDivElement | null>>({});
-  const updateScheduled = useRef(false);
+  // Track slot positions for absolute positioning
+  const slotRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [slotRects, setSlotRects] = useState<Record<string, SlotRect>>({});
 
-  // Ref callback that batches updates to avoid infinite loops
-  // CRITICAL: Only process non-null values to prevent race conditions when moving sessions
-  // When a session moves, old slot fires null, new slot fires element - if null fires last,
-  // the portal target becomes null and the terminal unmounts. By ignoring null callbacks,
-  // we let the new slot's element take over smoothly.
+  // Create ref callback for slots
   const createSlotRef = useCallback((id: string) => (el: HTMLDivElement | null) => {
-    // Ignore unmount callbacks - only register new mount targets
-    if (el === null) return;
-
-    pendingUpdates.current[id] = el;
-    if (!updateScheduled.current) {
-      updateScheduled.current = true;
-      requestAnimationFrame(() => {
-        updateScheduled.current = false;
-        const updates = { ...pendingUpdates.current };
-        pendingUpdates.current = {};
-        setPortalTargets(prev => {
-          // Only update if something actually changed
-          let hasChanges = false;
-          for (const [key, value] of Object.entries(updates)) {
-            if (prev[key] !== value) {
-              hasChanges = true;
-              break;
-            }
-          }
-          if (!hasChanges) return prev;
-          return { ...prev, ...updates };
-        });
-      });
-    }
+    slotRefs.current[id] = el;
   }, []);
 
-  // Clean up portal targets when sessions are removed (not moved)
-  useEffect(() => {
-    const validIds = new Set(sessions.map(s => s.id));
-    setPortalTargets(prev => {
-      const cleaned: Record<string, HTMLDivElement | null> = {};
-      let changed = false;
-      for (const [id, target] of Object.entries(prev)) {
-        if (validIds.has(id)) {
-          cleaned[id] = target;
-        } else {
-          changed = true; // This id was removed
+  // Update slot positions using ResizeObserver
+  useLayoutEffect(() => {
+    const updateRects = () => {
+      if (!containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+
+      const newRects: Record<string, SlotRect> = {};
+      for (const [id, el] of Object.entries(slotRefs.current)) {
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          newRects[id] = {
+            top: rect.top - containerRect.top,
+            left: rect.left - containerRect.left,
+            width: rect.width,
+            height: rect.height,
+          };
         }
       }
-      return changed ? cleaned : prev;
-    });
-  }, [sessions]);
+      setSlotRects(newRects);
+    };
+
+    // Initial update
+    updateRects();
+
+    // Observe container for resize
+    const resizeObserver = new ResizeObserver(updateRects);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    // Also observe each slot
+    for (const el of Object.values(slotRefs.current)) {
+      if (el) resizeObserver.observe(el);
+    }
+
+    return () => resizeObserver.disconnect();
+  }, [sessions, focusedSessionIds, maximizedSessionId, sidebarWidth, splitLayout]);
 
   // Separate sessions into focused and unfocused
   const focusedSessions = useMemo(() =>
@@ -162,9 +161,8 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
     else gridClass = 'grid-cols-4';
   }
 
-  // Single return with conditional layout - keeps portals in same tree position
   return (
-    <div ref={containerRef} className={`flex-1 flex overflow-hidden ${className}`}>
+    <div ref={containerRef} className={`flex-1 flex overflow-hidden relative ${className}`}>
       {maximizedSession ? (
         // Maximized mode: single session takes full view
         <div className="flex-1 p-2 overflow-hidden">
@@ -224,28 +222,38 @@ export function SessionGrid({ className = '' }: SessionGridProps) {
         </>
       )}
 
-      {/* Render all session tiles via portals - ALWAYS at same position in React tree */}
+      {/* Render all session tiles with absolute positioning - NEVER unmount */}
       {sessions.map((session) => {
-        const target = portalTargets[session.id];
-        if (!target) return null;
-
+        const rect = slotRects[session.id];
         const isFocused = focusedSessionIds.includes(session.id);
         const isMaximized = maximizedSessionId === session.id;
         const index = isFocused ? focusedSessionIds.indexOf(session.id) : undefined;
 
-        return createPortal(
-          <SessionTile
+        return (
+          <div
             key={session.id}
-            session={session}
-            isActive={isMaximized || session.id === activeSessionId}
-            isThumbnail={!isFocused && !isMaximized}
-            fontSize={fontSize}
-            className="h-full"
-            index={index}
-            onReorder={isFocused && !isMaximized ? reorderFocusedSessions : undefined}
-            isDraggable={isFocused && !isMaximized}
-          />,
-          target
+            className="absolute transition-all duration-200 ease-out"
+            style={{
+              top: rect?.top ?? 0,
+              left: rect?.left ?? 0,
+              width: rect?.width ?? 0,
+              height: rect?.height ?? 0,
+              // Hide if no rect yet (initial render)
+              opacity: rect ? 1 : 0,
+              pointerEvents: rect ? 'auto' : 'none',
+            }}
+          >
+            <SessionTile
+              session={session}
+              isActive={isMaximized || session.id === activeSessionId}
+              isThumbnail={!isFocused && !isMaximized}
+              fontSize={fontSize}
+              className="h-full w-full"
+              index={index}
+              onReorder={isFocused && !isMaximized ? reorderFocusedSessions : undefined}
+              isDraggable={isFocused && !isMaximized}
+            />
+          </div>
         );
       })}
     </div>
