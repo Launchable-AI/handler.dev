@@ -560,7 +560,12 @@ sandboxes.post('/:id/upload', async (c) => {
 
     const formData = await c.req.formData();
     const file = formData.get('file') as File | null;
-    const destPath = formData.get('destPath') as string || '/home/dev/workspace';
+
+    // Use appropriate default path based on backend
+    const defaultDestPath = sandbox.backend === 'docker' ? '/home/dev/workspace'
+      : sandbox.backend === 'daytona' ? '/home/daytona'
+      : '/home/agent';  // firecracker/cloud-hypervisor
+    const destPath = formData.get('destPath') as string || defaultDestPath;
 
     if (!file) {
       return c.json({ error: 'No file provided' }, 400);
@@ -645,8 +650,8 @@ sandboxes.post('/:id/upload', async (c) => {
         const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
         try {
           execSync(
-            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null agent@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
-            { stdio: 'pipe' }
+            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 agent@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
+            { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
           // Ignore if already exists
@@ -654,8 +659,8 @@ sandboxes.post('/:id/upload', async (c) => {
 
         // Upload via SCP
         execSync(
-          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${tempPath}" agent@${sandbox.guestIp}:"${destPath}/${filename}"`,
-          { stdio: 'pipe' }
+          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tempPath}" agent@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          { stdio: 'pipe', timeout: 300000 }
         );
       } finally {
         // Cleanup temp files
@@ -698,8 +703,8 @@ sandboxes.post('/:id/upload', async (c) => {
         const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
         try {
           execSync(
-            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dev@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
-            { stdio: 'pipe' }
+            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 dev@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
+            { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
           // Ignore if already exists
@@ -707,8 +712,8 @@ sandboxes.post('/:id/upload', async (c) => {
 
         // Upload via SCP
         execSync(
-          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${tempFilePath}" dev@${sandbox.guestIp}:"${destPath}/${filename}"`,
-          { stdio: 'pipe' }
+          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tempFilePath}" dev@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          { stdio: 'pipe', timeout: 300000 }
         );
       } finally {
         // Cleanup temp files
@@ -749,7 +754,12 @@ sandboxes.post('/:id/upload-directory', async (c) => {
     const formData = await c.req.formData();
     const files = formData.getAll('files');
     const paths = formData.getAll('paths');
-    const destPath = (formData.get('destPath') as string) || '/home/dev/workspace';
+
+    // Use appropriate default path based on backend
+    const defaultDestPath = sandbox.backend === 'docker' ? '/home/dev/workspace'
+      : sandbox.backend === 'daytona' ? '/home/daytona'
+      : '/home/agent';  // firecracker/cloud-hypervisor
+    const destPath = (formData.get('destPath') as string) || defaultDestPath;
 
     if (!files || files.length === 0) {
       return c.json({ error: 'No files provided' }, 400);
@@ -839,8 +849,8 @@ sandboxes.post('/:id/upload-directory', async (c) => {
         // Ensure destination directory exists
         try {
           execSync(
-            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null agent@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
-            { stdio: 'pipe' }
+            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 agent@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
           // Ignore if already exists
@@ -848,12 +858,12 @@ sandboxes.post('/:id/upload-directory', async (c) => {
 
         // Copy tar to VM and extract
         execSync(
-          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${tarPath}" agent@${sandbox.guestIp}:/tmp/upload.tar.gz`,
-          { stdio: 'pipe' }
+          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tarPath}" agent@${sandbox.guestIp}:/tmp/upload.tar.gz`,
+          { stdio: 'pipe', timeout: 300000 }
         );
         execSync(
-          `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null agent@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
-          { stdio: 'pipe' }
+          `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 agent@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
+          { stdio: 'pipe', timeout: 120000 }
         );
 
         console.log(`[SandboxRoutes] Directory uploaded to VM ${sandbox.guestIp}`);
@@ -874,8 +884,8 @@ sandboxes.post('/:id/upload-directory', async (c) => {
         // Ensure destination directory exists
         try {
           execSync(
-            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dev@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
-            { stdio: 'pipe' }
+            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 dev@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
           // Ignore if already exists
@@ -883,12 +893,12 @@ sandboxes.post('/:id/upload-directory', async (c) => {
 
         // Copy tar to workspace and extract
         execSync(
-          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${tarPath}" dev@${sandbox.guestIp}:/tmp/upload.tar.gz`,
-          { stdio: 'pipe' }
+          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tarPath}" dev@${sandbox.guestIp}:/tmp/upload.tar.gz`,
+          { stdio: 'pipe', timeout: 300000 }
         );
         execSync(
-          `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dev@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
-          { stdio: 'pipe' }
+          `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 dev@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
+          { stdio: 'pipe', timeout: 120000 }
         );
 
         console.log(`[SandboxRoutes] Directory uploaded to Daytona workspace ${sandbox.guestIp}`);

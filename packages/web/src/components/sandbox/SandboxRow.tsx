@@ -29,6 +29,20 @@ import { useTerminalPanel } from '../TerminalPanel';
 
 type ColumnId = 'status' | 'name' | 'backend' | 'resources' | 'connect' | 'image' | 'ip' | 'created' | 'volumes' | 'actions';
 
+/** Get the default workspace path based on sandbox backend */
+function getDefaultWorkspacePath(backend: Sandbox['backend']): string {
+  switch (backend) {
+    case 'docker':
+      return '/home/dev/workspace';
+    case 'daytona':
+      return '/home/daytona';
+    case 'firecracker':
+    case 'cloud-hypervisor':
+    default:
+      return '/home/agent';
+  }
+}
+
 interface SandboxRowProps {
   sandbox: Sandbox;
   highlight?: boolean;
@@ -168,7 +182,7 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
         await api.uploadDirectoryToSandbox(
           sandbox.id,
           filesWithPaths,
-          '/home/dev/workspace',
+          getDefaultWorkspacePath(sandbox.backend),
           (progress) => {
             setUploadProgress(progress.percent);
           }
@@ -176,7 +190,7 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
       } else {
         // Single file upload
         for (const file of fileList) {
-          await api.uploadFileToSandbox(sandbox.id, file, '/home/dev/workspace');
+          await api.uploadFileToSandbox(sandbox.id, file, getDefaultWorkspacePath(sandbox.backend));
         }
       }
     } catch (error) {

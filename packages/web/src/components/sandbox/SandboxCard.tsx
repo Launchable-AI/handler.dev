@@ -41,6 +41,20 @@ interface SandboxCardProps {
 
 type ConnectionMode = 'docker' | 'ssh';
 
+/** Get the default workspace path based on sandbox backend */
+function getDefaultWorkspacePath(backend: Sandbox['backend']): string {
+  switch (backend) {
+    case 'docker':
+      return '/home/dev/workspace';
+    case 'daytona':
+      return '/home/daytona';
+    case 'firecracker':
+    case 'cloud-hypervisor':
+    default:
+      return '/home/agent';
+  }
+}
+
 export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -305,7 +319,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
         const upload = uploadDirectoryToSandbox(
           sandbox.id,
           filesWithPaths,
-          '/home/dev/workspace',
+          getDefaultWorkspacePath(sandbox.backend),
           (progress) => {
             setUploadProgress(progress.percent);
             setUploadDetails(prev => prev ? { ...prev, loaded: progress.loaded } : null);
@@ -319,7 +333,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
           const upload = uploadFileToSandbox(
             sandbox.id,
             file,
-            '/home/dev/workspace',
+            getDefaultWorkspacePath(sandbox.backend),
             (progress) => {
               setUploadProgress(progress.percent);
               setUploadDetails(prev => prev ? { ...prev, loaded: progress.loaded } : null);
