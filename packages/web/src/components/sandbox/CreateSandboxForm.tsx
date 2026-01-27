@@ -540,18 +540,18 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
                   Size
                 </label>
                 <select
-                  value={memoryMb <= 2048 ? 'small' : memoryMb <= 8192 ? 'medium' : 'large'}
+                  value={memoryMb <= 1024 ? 'small' : memoryMb <= 4096 ? 'medium' : 'large'}
                   onChange={(e) => {
                     const size = e.target.value;
-                    if (size === 'small') { setVcpus(2); setMemoryMb(2048); setDiskGb(20); }
-                    if (size === 'medium') { setVcpus(4); setMemoryMb(8192); setDiskGb(50); }
-                    if (size === 'large') { setVcpus(8); setMemoryMb(16384); setDiskGb(100); }
+                    if (size === 'small') { setVcpus(1); setMemoryMb(1024); setDiskGb(3); }
+                    if (size === 'medium') { setVcpus(2); setMemoryMb(4096); setDiskGb(8); }
+                    if (size === 'large') { setVcpus(4); setMemoryMb(8192); setDiskGb(10); }
                   }}
                   className="w-full px-3 py-2 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none"
                 >
-                  <option value="small">Small (2 vCPU, 2GB RAM, 20GB disk)</option>
-                  <option value="medium">Medium (4 vCPU, 8GB RAM, 50GB disk)</option>
-                  <option value="large">Large (8 vCPU, 16GB RAM, 100GB disk)</option>
+                  <option value="small">Small (1 vCPU, 1GB RAM, 3GB disk)</option>
+                  <option value="medium">Medium (2 vCPU, 4GB RAM, 8GB disk)</option>
+                  <option value="large">Large (4 vCPU, 8GB RAM, 10GB disk)</option>
                 </select>
               </div>
             )}

@@ -541,7 +541,7 @@ export class DaytonaService {
    */
   async listVolumes(): Promise<DaytonaVolume[]> {
     try {
-      const volumes = await this.request<DaytonaVolume[]>('/volume');
+      const volumes = await this.request<DaytonaVolume[]>('/volumes');
       return volumes || [];
     } catch (err) {
       console.error('[DaytonaService] Failed to list volumes:', err);
@@ -554,7 +554,7 @@ export class DaytonaService {
    */
   async getVolume(id: string): Promise<DaytonaVolume | null> {
     try {
-      return await this.request<DaytonaVolume>(`/volume/${id}`);
+      return await this.request<DaytonaVolume>(`/volumes/${encodeURIComponent(id)}`);
     } catch {
       return null;
     }
@@ -565,21 +565,14 @@ export class DaytonaService {
    */
   async getVolumeByName(name: string, create: boolean = false): Promise<DaytonaVolume | null> {
     try {
-      // First try to find the volume by name in the list
-      const volumes = await this.listVolumes();
-      const existing = volumes.find(v => v.name === name);
-      if (existing) {
-        return existing;
-      }
-
+      // Use the by-name endpoint
+      const volume = await this.request<DaytonaVolume>(`/volumes/by-name/${encodeURIComponent(name)}`);
+      return volume;
+    } catch {
       // If not found and create is true, create it
       if (create) {
         return await this.createVolume(name);
       }
-
-      return null;
-    } catch (err) {
-      console.error('[DaytonaService] Failed to get volume by name:', err);
       return null;
     }
   }
@@ -588,7 +581,7 @@ export class DaytonaService {
    * Create a new volume
    */
   async createVolume(name: string): Promise<DaytonaVolume> {
-    const volume = await this.request<DaytonaVolume>('/volume', {
+    const volume = await this.request<DaytonaVolume>('/volumes', {
       method: 'POST',
       body: JSON.stringify({ name }),
     });
@@ -600,7 +593,7 @@ export class DaytonaService {
    * Delete a volume
    */
   async deleteVolume(id: string): Promise<void> {
-    await this.request(`/volume/${id}`, {
+    await this.request(`/volumes/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
     console.log('[DaytonaService] Deleted volume:', id);
