@@ -26,7 +26,7 @@ interface NavItem {
 }
 
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'volumes', 'dockerfiles', 'images', 'snapshots', 'mcp', 'notes', 'settings'];
+const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'settings'];
 
 // Content area that adjusts for terminal panel
 function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; onCreateClick: () => void }) {
@@ -127,10 +127,10 @@ function App() {
   const navConfig: NavItem[] = [
     { id: 'command-centre', label: 'Command Centre', icon: LayoutGrid, standalone: true },
     { id: 'sandboxes', label: 'Sandboxes', icon: Boxes, standalone: true },
+    { id: 'snapshots', label: 'Snapshots', icon: Camera, standalone: true },
     { id: 'volumes', label: 'Volumes', icon: HardDrive, standalone: true },
     { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode, standalone: true },
     { id: 'images', label: 'Images', icon: Image, standalone: true },
-    { id: 'snapshots', label: 'Snapshots', icon: Camera, standalone: true },
     { id: 'mcp', label: 'MCP Servers', icon: Package, standalone: true },
     { id: 'notes', label: 'Notes', icon: StickyNote, standalone: true },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, standalone: true },
