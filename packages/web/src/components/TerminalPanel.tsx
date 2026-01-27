@@ -29,8 +29,9 @@ interface TerminalTab {
   // For containers
   containerId?: string;
   isDevNode?: boolean;
-  connectionState: 'connecting' | 'connected' | 'disconnected' | 'error';
+  connectionState: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
   errorMessage?: string;
+  retryCount?: number;
 }
 
 interface TerminalPanelContextType {
@@ -298,7 +299,7 @@ function TerminalPanelUI({
               >
                 <TerminalSquare className={`h-3.5 w-3.5 ${
                   tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
-                  tab.connectionState === 'connecting' ? 'text-[hsl(var(--amber))]' :
+                  tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting' ? 'text-[hsl(var(--amber))]' :
                   'text-[hsl(var(--red))]'
                 }`} />
                 <span className="max-w-[120px] truncate">{tab.name}</span>
@@ -377,12 +378,20 @@ interface TerminalInstanceProps {
   onStateChange: (state: Partial<TerminalTab>) => void;
 }
 
+// Retry configuration
+const MAX_RETRY_COUNT = 5;
+const INITIAL_RETRY_DELAY = 1000; // 1 second
+const MAX_RETRY_DELAY = 30000; // 30 seconds
+
 function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const isDisposedRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wasConnectedRef = useRef(false); // Track if we ever successfully connected
 
   const getWsUrl = useCallback(() => {
     const apiPort = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
@@ -400,6 +409,8 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
     if (!terminalRef.current) return;
 
     isDisposedRef.current = false;
+    retryCountRef.current = 0;
+    wasConnectedRef.current = false;
 
     // Create terminal instance with theme matching the UI
     const term = new XTerm({
@@ -448,14 +459,14 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
     term.open(terminalRef.current);
     xtermRef.current = term;
 
-    // Initial fit - multiple attempts to handle CSS layout timing
-    // The first fit may happen before flex layout is complete
+    // Fit helper that uses current wsRef
     const fitAndResize = () => {
       if (isDisposedRef.current) return;
       try {
         fitAddon.fit();
         // Send resize to server so shell redraws with correct dimensions
-        if (ws.readyState === WebSocket.OPEN) {
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'resize',
             cols: term.cols,
@@ -467,9 +478,132 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       }
     };
 
-    // Connect WebSocket first
-    const ws = new WebSocket(getWsUrl());
-    wsRef.current = ws;
+    // Calculate retry delay with exponential backoff
+    const getRetryDelay = (retryCount: number): number => {
+      const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
+      return Math.min(delay, MAX_RETRY_DELAY);
+    };
+
+    // Function to create and connect WebSocket
+    const connectWebSocket = () => {
+      if (isDisposedRef.current) return;
+
+      // Close existing connection if any
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {
+          // Ignore close errors
+        }
+      }
+
+      const ws = new WebSocket(getWsUrl());
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (isDisposedRef.current) return;
+        // Reset retry count on successful connection
+        retryCountRef.current = 0;
+
+        // Do an initial fit before sending start message
+        try {
+          fitAddon.fit();
+        } catch (e) {
+          // Ignore fit errors on startup
+        }
+
+        // Send appropriate start message based on terminal type
+        if (tab.type === 'container') {
+          // Container terminal - uses docker exec
+          ws.send(JSON.stringify({
+            type: 'start',
+            containerId: tab.containerId,
+            shell: '/bin/bash',
+            cols: term.cols,
+            rows: term.rows,
+            isDevNode: tab.isDevNode,
+          }));
+        } else {
+          // VM terminal - uses SSH
+          ws.send(JSON.stringify({
+            type: 'start-vm',
+            vmId: tab.vmId,
+            vmIp: tab.vmIp,
+            shell: '/bin/bash',
+            cols: term.cols,
+            rows: term.rows,
+          }));
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (isDisposedRef.current) return;
+        try {
+          const msg = JSON.parse(event.data);
+          switch (msg.type) {
+            case 'connected':
+              wasConnectedRef.current = true;
+              onStateChangeRef.current({ connectionState: 'connected', retryCount: 0 });
+              term.focus();
+              // Fit again after connection and send resize to ensure shell has correct size
+              setTimeout(fitAndResize, 50);
+              setTimeout(fitAndResize, 200);
+              break;
+            case 'output':
+              term.write(msg.data);
+              break;
+            case 'exit':
+              onStateChangeRef.current({ connectionState: 'disconnected' });
+              term.write('\r\n\x1b[33m[Session ended]\x1b[0m\r\n');
+              break;
+            case 'error':
+              onStateChangeRef.current({ connectionState: 'error', errorMessage: msg.message });
+              term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
+              break;
+          }
+        } catch {
+          // Handle non-JSON messages
+        }
+      };
+
+      ws.onclose = () => {
+        if (isDisposedRef.current) return;
+
+        // Only retry if we had a successful connection before (server restart scenario)
+        if (wasConnectedRef.current && retryCountRef.current < MAX_RETRY_COUNT) {
+          retryCountRef.current++;
+          const delay = getRetryDelay(retryCountRef.current - 1);
+          onStateChangeRef.current({
+            connectionState: 'reconnecting',
+            retryCount: retryCountRef.current,
+          });
+          term.write(`\r\n\x1b[33m[Connection lost. Reconnecting in ${delay / 1000}s... (attempt ${retryCountRef.current}/${MAX_RETRY_COUNT})]\x1b[0m\r\n`);
+
+          retryTimeoutRef.current = setTimeout(() => {
+            if (!isDisposedRef.current) {
+              connectWebSocket();
+            }
+          }, delay);
+        } else if (wasConnectedRef.current) {
+          onStateChangeRef.current({ connectionState: 'disconnected' });
+          term.write('\r\n\x1b[31m[Connection lost. Max retries exceeded.]\x1b[0m\r\n');
+        } else {
+          onStateChangeRef.current({ connectionState: 'disconnected' });
+        }
+      };
+
+      ws.onerror = () => {
+        if (isDisposedRef.current) return;
+        // Error will be followed by close, so we handle retry in onclose
+        // Only show error state if we haven't connected yet
+        if (!wasConnectedRef.current && retryCountRef.current === 0) {
+          onStateChangeRef.current({ connectionState: 'error', errorMessage: 'Connection failed' });
+        }
+      };
+    };
+
+    // Initial connection
+    connectWebSocket();
 
     // Schedule multiple fit attempts - these will also send resize messages
     const fitTimeout1 = setTimeout(fitAndResize, 100);
@@ -481,81 +615,10 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       requestAnimationFrame(fitAndResize);
     });
 
-    ws.onopen = () => {
-      if (isDisposedRef.current) return;
-      // Do an initial fit before sending start message
-      try {
-        fitAddon.fit();
-      } catch (e) {
-        // Ignore fit errors on startup
-      }
-
-      // Send appropriate start message based on terminal type
-      if (tab.type === 'container') {
-        // Container terminal - uses docker exec
-        ws.send(JSON.stringify({
-          type: 'start',
-          containerId: tab.containerId,
-          shell: '/bin/bash',
-          cols: term.cols,
-          rows: term.rows,
-          isDevNode: tab.isDevNode,
-        }));
-      } else {
-        // VM terminal - uses SSH
-        ws.send(JSON.stringify({
-          type: 'start-vm',
-          vmId: tab.vmId,
-          vmIp: tab.vmIp,
-          shell: '/bin/bash',
-          cols: term.cols,
-          rows: term.rows,
-        }));
-      }
-    };
-
-    ws.onmessage = (event) => {
-      if (isDisposedRef.current) return;
-      try {
-        const msg = JSON.parse(event.data);
-        switch (msg.type) {
-          case 'connected':
-            onStateChangeRef.current({ connectionState: 'connected' });
-            term.focus();
-            // Fit again after connection and send resize to ensure shell has correct size
-            setTimeout(fitAndResize, 50);
-            setTimeout(fitAndResize, 200);
-            break;
-          case 'output':
-            term.write(msg.data);
-            break;
-          case 'exit':
-            onStateChangeRef.current({ connectionState: 'disconnected' });
-            term.write('\r\n\x1b[33m[Session ended]\x1b[0m\r\n');
-            break;
-          case 'error':
-            onStateChangeRef.current({ connectionState: 'error', errorMessage: msg.message });
-            term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
-            break;
-        }
-      } catch {
-        // Handle non-JSON messages
-      }
-    };
-
-    ws.onclose = () => {
-      if (isDisposedRef.current) return;
-      onStateChangeRef.current({ connectionState: 'disconnected' });
-    };
-
-    ws.onerror = () => {
-      if (isDisposedRef.current) return;
-      onStateChangeRef.current({ connectionState: 'error', errorMessage: 'Connection failed' });
-    };
-
     // Handle terminal input
     const dataDisposable = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }));
       }
     });
@@ -569,7 +632,8 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
         if (isDisposedRef.current) return;
         try {
           fitAddon.fit();
-          if (ws.readyState === WebSocket.OPEN) {
+          const ws = wsRef.current;
+          if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
               type: 'resize',
               cols: term.cols,
@@ -594,9 +658,11 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       clearTimeout(fitTimeout3);
       cancelAnimationFrame(rafId);
       if (resizeTimeout) clearTimeout(resizeTimeout);
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
       resizeObserver.disconnect();
       dataDisposable.dispose();
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      const ws = wsRef.current;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close();
       }
       term.dispose();
@@ -612,11 +678,14 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[hsl(var(--bg-surface))] border-b border-[hsl(var(--border))] text-[10px]">
         <span className={`flex items-center gap-1.5 ${
           tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
-          tab.connectionState === 'connecting' ? 'text-[hsl(var(--amber))]' :
+          tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting' ? 'text-[hsl(var(--amber))]' :
           'text-[hsl(var(--red))]'
         }`}>
-          {tab.connectionState === 'connecting' && <Loader2 className="h-3 w-3 animate-spin" />}
-          <span className="uppercase tracking-wider">{tab.connectionState}</span>
+          {(tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting') && <Loader2 className="h-3 w-3 animate-spin" />}
+          <span className="uppercase tracking-wider">
+            {tab.connectionState}
+            {tab.connectionState === 'reconnecting' && tab.retryCount && ` (${tab.retryCount}/${MAX_RETRY_COUNT})`}
+          </span>
         </span>
         <span className="text-[hsl(var(--text-muted))]">|</span>
         <span className="text-[hsl(var(--text-secondary))]">
