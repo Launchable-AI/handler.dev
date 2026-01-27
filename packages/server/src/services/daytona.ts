@@ -88,6 +88,17 @@ export interface DaytonaVolumeMount {
   subpath?: string;
 }
 
+// SSH Access types
+export interface DaytonaSshAccess {
+  id: string;
+  sandboxId: string;
+  token: string;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  sshCommand: string;
+}
+
 // Snapshot types
 export type DaytonaSnapshotState =
   | 'building'
@@ -597,6 +608,39 @@ export class DaytonaService {
       method: 'DELETE',
     });
     console.log('[DaytonaService] Deleted volume:', id);
+  }
+
+  // ==================== SSH Access ====================
+
+  /**
+   * Create SSH access for a sandbox (returns SSH command)
+   */
+  async createSshAccess(sandboxIdOrName: string, expiresInMinutes: number = 60): Promise<DaytonaSshAccess> {
+    const params = new URLSearchParams();
+    params.set('expiresInMinutes', String(expiresInMinutes));
+
+    return await this.request<DaytonaSshAccess>(
+      `/sandbox/${encodeURIComponent(sandboxIdOrName)}/ssh-access?${params.toString()}`,
+      { method: 'POST' }
+    );
+  }
+
+  /**
+   * Revoke SSH access for a sandbox
+   */
+  async revokeSshAccess(sandboxIdOrName: string, token?: string): Promise<void> {
+    const params = token ? `?token=${encodeURIComponent(token)}` : '';
+    await this.request(`/sandbox/${encodeURIComponent(sandboxIdOrName)}/ssh-access${params}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Get SSH command for a sandbox (creates new access if needed)
+   */
+  async getSshCommand(sandboxIdOrName: string): Promise<string> {
+    const access = await this.createSshAccess(sandboxIdOrName);
+    return access.sshCommand;
   }
 
   // ==================== Snapshot Management ====================

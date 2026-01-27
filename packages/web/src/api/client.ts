@@ -2253,6 +2253,14 @@ export async function downloadSandboxSshKey(id: string): Promise<Blob> {
 }
 
 /**
+ * Get SSH command for a sandbox (creates SSH access for Daytona sandboxes)
+ */
+export async function getSandboxSshCommand(id: string): Promise<string> {
+  const result = await fetchAPI<{ sshCommand: string }>(`/sandboxes/${encodeURIComponent(id)}/ssh-command`);
+  return result.sshCommand;
+}
+
+/**
  * Upload a file to a sandbox's working directory
  */
 export async function uploadFileToSandbox(

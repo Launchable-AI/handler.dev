@@ -26,7 +26,7 @@ import {
   FolderUp,
 } from 'lucide-react';
 import type { Sandbox, DockerMeta, VmMeta } from '../../api/client';
-import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox, uploadDirectoryToSandbox } from '../../api/client';
+import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox, uploadDirectoryToSandbox, getSandboxSshCommand } from '../../api/client';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
@@ -73,7 +73,12 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
+  // Daytona SSH command state (fetched on demand)
+  const [daytonaSshCommand, setDaytonaSshCommand] = useState<string | null>(null);
+  const [isFetchingSshCommand, setIsFetchingSshCommand] = useState(false);
+
   const isRunning = sandbox.status === 'running';
+  const isDaytona = sandbox.backend === 'daytona';
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
   const isBuilding = sandbox.status === 'building' || sandbox.status === 'creating';
   const isFailed = sandbox.status === 'error';
@@ -98,13 +103,28 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
 
   // Commands
   const dockerCommand = sandbox.dockerExecCommand;
-  const sshCommand = sandbox.sshCommand;
+  // For Daytona, use fetched SSH command; for others, use sandbox.sshCommand
+  const sshCommand = isDaytona ? daytonaSshCommand : sandbox.sshCommand;
   // Determine displayed command based on what's available
   const currentCommand = isDocker
     ? (dockerCommand && sshCommand
         ? (connectionMode === 'docker' ? dockerCommand : sshCommand)
         : dockerCommand || sshCommand)
     : sshCommand;
+
+  // Fetch SSH command for Daytona sandboxes
+  const handleFetchSshCommand = async () => {
+    if (!isDaytona || !isRunning) return;
+    setIsFetchingSshCommand(true);
+    setError(null);
+    try {
+      const cmd = await getSandboxSshCommand(sandbox.id);
+      setDaytonaSshCommand(cmd);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to get SSH command');
+    }
+    setIsFetchingSshCommand(false);
+  };
 
   // Status styling
   const stateConfig: Record<string, { color: string; label: string }> = {
@@ -531,7 +551,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
         {/* Body */}
         <div className="px-3 py-2.5 space-y-3">
           {/* Connection Command */}
-          {isRunning && (dockerCommand || sshCommand) && (
+          {isRunning && (dockerCommand || sshCommand || isDaytona) && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">
@@ -570,40 +590,66 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                 {!isDocker && sshCommand && (
                   <span className="text-[10px] text-[hsl(var(--cyan))]">SSH</span>
                 )}
+                {isDaytona && !sshCommand && (
+                  <span className="text-[10px] text-[hsl(var(--purple))]">Daytona</span>
+                )}
               </div>
-              <div className="bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] p-2">
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-[10px] text-[hsl(var(--text-secondary))] truncate">
-                    {/* Show appropriate command based on backend and mode */}
-                    {isDocker
-                      ? (dockerCommand && sshCommand ? currentCommand : dockerCommand || sshCommand)
-                      : sshCommand
-                    }
-                  </code>
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <button
-                      onClick={handleCopyCommand}
-                      className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] transition-colors"
-                      title="Copy command"
-                    >
-                      {copied ? (
-                        <Check className="h-3 w-3 text-[hsl(var(--green))]" />
-                      ) : (
-                        <Copy className="h-3 w-3" />
-                      )}
-                    </button>
-                    {(connectionMode === 'ssh' || !isDocker) && sandbox.sshKeyId && (
-                      <button
-                        onClick={handleDownloadKey}
-                        className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] transition-colors"
-                        title="Download SSH key"
-                      >
-                        <Download className="h-3 w-3" />
-                      </button>
+              {/* For Daytona without SSH command, show fetch button */}
+              {isDaytona && !sshCommand ? (
+                <div className="bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] p-2">
+                  <button
+                    onClick={handleFetchSshCommand}
+                    disabled={isFetchingSshCommand}
+                    className="flex items-center gap-2 text-[10px] text-[hsl(var(--purple))] hover:text-[hsl(var(--purple-dim))] disabled:opacity-50"
+                  >
+                    {isFetchingSshCommand ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Getting SSH access...</span>
+                      </>
+                    ) : (
+                      <>
+                        <TerminalIcon className="h-3 w-3" />
+                        <span>Get SSH Command</span>
+                      </>
                     )}
+                  </button>
+                </div>
+              ) : (dockerCommand || sshCommand) && (
+                <div className="bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] p-2">
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-[10px] text-[hsl(var(--text-secondary))] truncate">
+                      {/* Show appropriate command based on backend and mode */}
+                      {isDocker
+                        ? (dockerCommand && sshCommand ? currentCommand : dockerCommand || sshCommand)
+                        : sshCommand
+                      }
+                    </code>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={handleCopyCommand}
+                        className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] transition-colors"
+                        title="Copy command"
+                      >
+                        {copied ? (
+                          <Check className="h-3 w-3 text-[hsl(var(--green))]" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
+                      {(connectionMode === 'ssh' || !isDocker) && sandbox.sshKeyId && (
+                        <button
+                          onClick={handleDownloadKey}
+                          className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] transition-colors"
+                          title="Download SSH key"
+                        >
+                          <Download className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 

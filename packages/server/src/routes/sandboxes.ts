@@ -501,6 +501,46 @@ sandboxes.get('/:id/ssh-key', async (c) => {
 });
 
 /**
+ * GET /api/sandboxes/:id/ssh-command
+ * Get SSH command for connecting to the sandbox
+ */
+sandboxes.get('/:id/ssh-command', async (c) => {
+  const id = c.req.param('id');
+  const service = await ensureSandboxServiceInitialized();
+
+  try {
+    const sandbox = await service.get(id);
+    if (!sandbox) {
+      return c.json({ error: 'Sandbox not found' }, 404);
+    }
+
+    if (sandbox.status !== 'running') {
+      return c.json({ error: 'Sandbox must be running to get SSH command' }, 400);
+    }
+
+    if (sandbox.backend === 'daytona') {
+      // Get SSH command from Daytona service
+      const { getDaytonaService } = await import('../services/daytona.js');
+      const daytona = getDaytonaService();
+
+      // Extract the workspace ID from sandbox ID (remove daytona- prefix)
+      const workspaceId = id.startsWith('daytona-') ? id.slice(8) : id;
+      const sshCommand = await daytona.getSshCommand(workspaceId);
+
+      return c.json({ sshCommand });
+    } else if (sandbox.sshCommand) {
+      // Return existing SSH command from sandbox
+      return c.json({ sshCommand: sandbox.sshCommand });
+    } else {
+      return c.json({ error: 'SSH command not available for this sandbox' }, 404);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to get SSH command';
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
  * POST /api/sandboxes/:id/upload
  * Upload a file to the sandbox's working directory
  */
