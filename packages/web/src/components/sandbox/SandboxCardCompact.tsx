@@ -20,7 +20,7 @@ import type { Sandbox, VmMeta } from '../../api/client';
 import * as api from '../../api/client';
 import { BackendBadge } from './BackendBadge';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
-import { useStartSandbox, useStopSandbox, useDeleteSandbox } from '../../hooks/useSandboxes';
+import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
 import { useConfirm } from '../ConfirmModal';
 import { useTerminalPanel } from '../TerminalPanel';
 
@@ -41,10 +41,22 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
   const startSandbox = useStartSandbox();
   const stopSandbox = useStopSandbox();
   const deleteSandbox = useDeleteSandbox();
+  const renameSandbox = useRenameSandbox();
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
   const [copied, setCopied] = useState(false);
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(sandbox.name);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [isEditing]);
 
   const isRunning = sandbox.status === 'running';
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
@@ -59,6 +71,7 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
   const canStop = isRunning && !isTransition;
   const canDelete = !isTransition;
   const canOpenTerminal = isRunning;
+  const canRename = !isTransition;
 
   const handleStart = async () => {
     try {
@@ -136,6 +149,31 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
     }
   };
 
+  const handleRename = async () => {
+    if (!editName.trim() || editName.trim() === sandbox.name) {
+      setIsEditing(false);
+      setEditName(sandbox.name);
+      return;
+    }
+    try {
+      await renameSandbox.mutateAsync({ id: sandbox.id, name: editName.trim() });
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Failed to rename:', err);
+      setEditName(sandbox.name);
+      setIsEditing(false);
+    }
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRename();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+      setEditName(sandbox.name);
+    }
+  };
+
   return (
     <div
       ref={cardRef}
@@ -149,9 +187,25 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 min-w-0">
           <StatusIndicator status={sandbox.status} size="sm" />
-          <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">
-            {sandbox.name}
-          </span>
+          {isEditing ? (
+            <input
+              ref={editInputRef}
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={handleRename}
+              onKeyDown={handleEditKeyDown}
+              className="text-sm font-medium text-[hsl(var(--text-primary))] bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--cyan))] px-1 py-0.5 outline-none flex-1 min-w-0"
+            />
+          ) : (
+            <span
+              className={`text-sm font-medium text-[hsl(var(--text-primary))] truncate ${canRename ? 'cursor-pointer hover:text-[hsl(var(--cyan))]' : ''}`}
+              onClick={() => canRename && setIsEditing(true)}
+              title={canRename ? 'Click to rename' : undefined}
+            >
+              {sandbox.name}
+            </span>
+          )}
         </div>
         <BackendBadge backend={sandbox.backend} size="sm" />
       </div>

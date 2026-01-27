@@ -23,7 +23,7 @@ import * as api from '../../api/client';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
-import { useStartSandbox, useStopSandbox, useDeleteSandbox } from '../../hooks/useSandboxes';
+import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
 import { useConfirm } from '../ConfirmModal';
 import { useTerminalPanel } from '../TerminalPanel';
 
@@ -52,10 +52,25 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
   const startSandbox = useStartSandbox();
   const stopSandbox = useStopSandbox();
   const deleteSandbox = useDeleteSandbox();
+  const renameSandbox = useRenameSandbox();
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
 
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(sandbox.name);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [isEditing]);
+
+  // Can rename when not in a transition state
+  const canRename = !isTransitioning(sandbox.status);
   const [isUploading, setIsUploading] = useState(false);
   const [browsingVolume, setBrowsingVolume] = useState<{ id: string; name: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -186,6 +201,31 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
     }
   };
 
+  const handleRename = async () => {
+    if (!editName.trim() || editName.trim() === sandbox.name) {
+      setIsEditing(false);
+      setEditName(sandbox.name);
+      return;
+    }
+    try {
+      await renameSandbox.mutateAsync({ id: sandbox.id, name: editName.trim() });
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Failed to rename:', err);
+      setEditName(sandbox.name);
+      setIsEditing(false);
+    }
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRename();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+      setEditName(sandbox.name);
+    }
+  };
+
   return (
     <>
     <tr
@@ -206,7 +246,25 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
       {/* Name */}
       {isColumnVisible('name') && (
         <td className="px-3 py-2">
-          <span className="text-sm text-[hsl(var(--text-primary))]">{sandbox.name}</span>
+          {isEditing ? (
+            <input
+              ref={editInputRef}
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={handleRename}
+              onKeyDown={handleEditKeyDown}
+              className="text-sm text-[hsl(var(--text-primary))] bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--cyan))] px-1 py-0.5 outline-none w-full max-w-[150px]"
+            />
+          ) : (
+            <span
+              className={`text-sm text-[hsl(var(--text-primary))] ${canRename ? 'cursor-pointer hover:text-[hsl(var(--cyan))]' : ''}`}
+              onClick={() => canRename && setIsEditing(true)}
+              title={canRename ? 'Click to rename' : undefined}
+            >
+              {sandbox.name}
+            </span>
+          )}
         </td>
       )}
 

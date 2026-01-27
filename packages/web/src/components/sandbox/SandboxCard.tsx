@@ -23,7 +23,6 @@ import {
   X,
   ScrollText,
   Camera,
-  Pencil,
   FolderUp,
 } from 'lucide-react';
 import type { Sandbox, DockerMeta, VmMeta } from '../../api/client';
@@ -336,15 +335,6 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                   >
                     {sandbox.name}
                   </h3>
-                )}
-                {canRename && !isEditing && (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] transition-colors"
-                    title="Rename"
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
                 )}
                 <span className={`text-[10px] uppercase tracking-wider ${
                   stateColorVar === 'text-muted'
