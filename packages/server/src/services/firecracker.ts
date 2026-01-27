@@ -1631,17 +1631,62 @@ export class FirecrackerService extends EventEmitter {
       }
     }
 
+    const oldName = vm.name;
     vm.name = newName;
+
+    // Update MMDS metadata if present
+    if (vm.mmdsMetadata?.instance) {
+      vm.mmdsMetadata.instance.name = newName;
+      vm.mmdsMetadata.instance.hostname = newName;
+    }
 
     // Save state synchronously (fire and forget the async version)
     this.saveVmState(vm).catch(err => {
       console.error(`[FirecrackerService] Failed to save VM state after rename:`, err);
     });
 
+    // If VM is running, update hostname inside the guest
+    if (vm.status === 'running') {
+      this.updateGuestHostname(id, oldName, newName).catch(err => {
+        console.warn(`[FirecrackerService] Failed to update guest hostname:`, err);
+      });
+    }
+
     this.emit('vm:renamed', { id, newName });
     console.log(`[FirecrackerService] VM ${id} renamed to ${newName}`);
 
     return this.vmToInfo(vm);
+  }
+
+  /**
+   * Update hostname inside a running VM
+   */
+  private async updateGuestHostname(vmId: string, oldName: string, newName: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm || vm.status !== 'running') return;
+
+    const sshKeyPath = this.getSshKeyPath();
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+
+    if (!host) return;
+
+    try {
+      // Update /etc/hosts: remove old hostname entry and add new one
+      const hostsCmd = `sudo sed -i 's/127.0.0.1.*${oldName}/127.0.0.1 ${newName}/g' /etc/hosts; grep -q "127.0.0.1.*${newName}" /etc/hosts || echo "127.0.0.1 ${newName}" | sudo tee -a /etc/hosts >/dev/null`;
+
+      // Also set the hostname using hostnamectl if available
+      const hostnameCmd = `command -v hostnamectl >/dev/null && sudo hostnamectl set-hostname ${newName} || sudo hostname ${newName}`;
+
+      const fullCmd = `${hostsCmd} && ${hostnameCmd}`;
+      const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o IdentitiesOnly=yes agent@${host} -p ${port} '${fullCmd}'`;
+
+      execSync(sshCmd, { stdio: 'pipe', timeout: 15000 });
+      console.log(`[FirecrackerService] Updated guest hostname from ${oldName} to ${newName}`);
+    } catch (error) {
+      console.warn(`[FirecrackerService] Failed to update guest hostname:`, error);
+      // Non-fatal - the rename still worked at the VM level
+    }
   }
 
   /**
