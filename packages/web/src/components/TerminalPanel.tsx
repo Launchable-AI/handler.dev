@@ -76,12 +76,15 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
   const [position, setPositionState] = useState<PanelPosition>(getDefaultPosition);
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [size, setSize] = useState(350);
+  // Default size: 700 for right panel, 350 for bottom
+  const [size, setSize] = useState(() => getDefaultPosition() === 'right' ? 700 : 350);
 
-  // Persist position changes to localStorage
+  // Persist position changes to localStorage and adjust size for new position
   const setPosition = useCallback((newPosition: PanelPosition) => {
     setPositionState(newPosition);
     localStorage.setItem(TERMINAL_POSITION_KEY, newPosition);
+    // Adjust size to appropriate default for new position
+    setSize(newPosition === 'right' ? 700 : 350);
   }, []);
 
   const openTerminal = useCallback((vmId: string, vmName: string, vmIp: string) => {
