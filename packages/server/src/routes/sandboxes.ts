@@ -470,11 +470,9 @@ sandboxes.get('/:id/ssh-key', async (c) => {
         return c.json({ error: 'VM service not available' }, 500);
       }
 
-      // VMs share a key stored in the data directory
+      // Get key path from the service
       const fs = await import('fs');
-      const path = await import('path');
-      const dataDir = process.env.DATA_DIR || './data';
-      const keyPath = path.join(dataDir, 'ssh', 'id_ed25519');
+      const keyPath = vmService.getSshKeyPath();
 
       if (!fs.existsSync(keyPath)) {
         return c.json({ error: 'SSH key not found' }, 404);
@@ -587,9 +585,8 @@ sandboxes.post('/:id/upload', async (c) => {
       const os = await import('os');
       const { execSync } = await import('child_process');
 
-      // Get SSH key path
-      const dataDir = process.env.DATA_DIR || './data';
-      const keyPath = path.join(dataDir, 'ssh', 'id_ed25519');
+      // Get SSH key path from the service
+      const keyPath = vmService.getSshKeyPath();
 
       if (!fs.existsSync(keyPath)) {
         return c.json({ error: 'SSH key not found' }, 500);
