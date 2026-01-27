@@ -107,12 +107,10 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
   };
 
   const handleCreateSnapshot = async () => {
-    // Extract the VM ID from the sandbox ID (e.g., 'fc-xxx' -> 'xxx')
-    const vmId = sandbox.id.replace(/^(fc-|vm-)/, '');
-
+    // Use sandbox.id directly - backend route needs prefix to determine service
     setIsCreatingSnapshot(true);
     try {
-      await api.createVmSnapshot(vmId, `${sandbox.name}-${Date.now()}`);
+      await api.createVmSnapshot(sandbox.id, `${sandbox.name}-${Date.now()}`);
     } catch (error) {
       console.error('Failed to create snapshot:', error);
     } finally {
