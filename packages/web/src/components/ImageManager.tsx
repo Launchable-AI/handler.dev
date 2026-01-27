@@ -48,6 +48,7 @@ export function ImageManager() {
   const [renamingImageTag, setRenamingImageTag] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [launchingImageTag, setLaunchingImageTag] = useState<string | null>(null);
+  const [pushProgress, setPushProgress] = useState<string[]>([]);
 
   // Daytona snapshots state
   const [daytonaSnapshots, setDaytonaSnapshots] = useState<api.DaytonaSnapshot[]>([]);
@@ -61,6 +62,25 @@ export function ImageManager() {
   // Check if a snapshot is Daytona-managed (not user-created)
   const isDaytonaManaged = (snapshot: api.DaytonaSnapshot) => {
     return snapshot.imageName?.startsWith('daytonaio/') || snapshot.general;
+  };
+
+  // Format display name: remove "caisson-" prefix and timestamp/latest tags
+  const formatDisplayName = (name: string): string => {
+    let display = name;
+    // Remove caisson- prefix
+    if (display.startsWith('caisson-')) {
+      display = display.slice(8);
+    }
+    // Remove :latest tag
+    if (display.endsWith(':latest')) {
+      display = display.slice(0, -7);
+    }
+    // Remove timestamp tags like :2026-01-27T18-50-28
+    const timestampMatch = display.match(/:(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})$/);
+    if (timestampMatch) {
+      display = display.slice(0, -timestampMatch[0].length);
+    }
+    return display;
   };
 
   const { data: images, refetch: refetchImages } = useImages();
@@ -117,12 +137,22 @@ export function ImageManager() {
 
     setPushingImageId(imageTag);
     setShowPushModal(null);
+    setPushProgress([]);
 
     try {
-      await api.pushImageToDaytona({
-        localImage: imageTag,
-        snapshotName: pushSnapshotName.trim(),
-      });
+      await api.pushImageToDaytona(
+        {
+          localImage: imageTag,
+          snapshotName: pushSnapshotName.trim(),
+        },
+        (message, _type) => {
+          setPushProgress(prev => {
+            // Keep last 10 messages for display
+            const newProgress = [...prev, message].slice(-10);
+            return newProgress;
+          });
+        }
+      );
       setPushSnapshotName('');
       // Switch to Daytona tab and refresh
       setActiveTab('daytona');
@@ -132,6 +162,7 @@ export function ImageManager() {
       alert(`Failed to push to Daytona: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
     setPushingImageId(null);
+    setPushProgress([]);
   };
 
   // Daytona snapshot operations
@@ -175,7 +206,8 @@ export function ImageManager() {
 
   // Rename image
   const handleRenameImage = async (currentTag: string) => {
-    if (!renameValue.trim() || renameValue === currentTag) {
+    const cleanCurrentTag = formatDisplayName(currentTag);
+    if (!renameValue.trim() || renameValue.trim() === cleanCurrentTag) {
       setRenamingImageTag(null);
       setRenameValue('');
       return;
@@ -317,7 +349,7 @@ export function ImageManager() {
                                 autoFocus
                               />
                             ) : (
-                              <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{tag}</span>
+                              <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate" title={tag}>{formatDisplayName(tag)}</span>
                             )}
                           </div>
                           <div className="flex items-center gap-4 mt-2 text-xs text-[hsl(var(--text-muted))]">
@@ -354,14 +386,14 @@ export function ImageManager() {
                             {isLaunching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
                           </button>
                           <button
-                            onClick={() => { setRenamingImageTag(tag); setRenameValue(tag); }}
+                            onClick={() => { setRenamingImageTag(tag); setRenameValue(formatDisplayName(tag)); }}
                             className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))] hover:bg-[hsl(var(--bg-elevated))]"
                             title="Rename"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
                           <button
-                            onClick={() => { setShowPushModal(tag); setPushSnapshotName(tag.split(':')[0]); }}
+                            onClick={() => { setShowPushModal(tag); setPushSnapshotName(formatDisplayName(tag)); }}
                             disabled={isPushing}
                             className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-elevated))]"
                             title="Push to Daytona"
@@ -405,6 +437,21 @@ export function ImageManager() {
                             >
                               <X className="h-4 w-4" />
                             </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Push Progress */}
+                      {isPushing && pushProgress.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-[hsl(var(--border))]">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-[hsl(var(--purple))]" />
+                            <span className="text-xs text-[hsl(var(--purple))]">Pushing to Daytona...</span>
+                          </div>
+                          <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] max-h-32 overflow-y-auto font-mono text-[10px] text-[hsl(var(--text-muted))]">
+                            {pushProgress.map((msg, i) => (
+                              <div key={i} className="py-0.5">{msg}</div>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -495,7 +542,7 @@ export function ImageManager() {
                             ) : (
                               <Circle className={`h-2.5 w-2.5 ${getSnapshotStateColor(snapshot.state)} fill-current`} />
                             )}
-                            <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{snapshot.name}</span>
+                            <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate" title={snapshot.name}>{formatDisplayName(snapshot.name)}</span>
                             {isManaged && (
                               <span className="px-1 py-0.5 text-[8px] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))] border border-[hsl(var(--purple)/0.2)]">
                                 managed
@@ -510,7 +557,7 @@ export function ImageManager() {
                           </div>
                           {snapshot.imageName && (
                             <div className="mt-1.5 text-xs text-[hsl(var(--text-muted))] truncate" title={snapshot.imageName}>
-                              Image: {snapshot.imageName.split('/').pop()}
+                              Image: {formatDisplayName(snapshot.imageName.split('/').pop() || '')}
                             </div>
                           )}
                         </div>

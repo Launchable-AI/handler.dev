@@ -2276,6 +2276,68 @@ export async function uploadFileToSandbox(
   return response.json();
 }
 
+/**
+ * Upload a directory to a sandbox's working directory (uses tar for efficiency)
+ */
+export async function uploadDirectoryToSandbox(
+  id: string,
+  files: Array<{ file: File; relativePath: string }>,
+  destPath: string = '/home/dev/workspace',
+  onProgress?: (progress: UploadProgress) => void
+): Promise<{ success: boolean; filesUploaded: number; destination: string }> {
+  const apiBase = await getApiBase();
+  const formData = new FormData();
+
+  // Append each file with its relative path
+  for (const { file, relativePath } of files) {
+    formData.append('files', file);
+    formData.append('paths', relativePath);
+  }
+  formData.append('destPath', destPath);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress({
+          loaded: event.loaded,
+          total: event.total,
+          percent: Math.round((event.loaded / event.total) * 100),
+        });
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          resolve({ success: true, filesUploaded: files.length, destination: destPath });
+        }
+      } else {
+        try {
+          const error = JSON.parse(xhr.responseText);
+          reject(new Error(error.error || 'Upload failed'));
+        } catch {
+          reject(new Error(`Upload failed: HTTP ${xhr.status}`));
+        }
+      }
+    });
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Upload failed: Network error'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('Upload cancelled'));
+    });
+
+    xhr.open('POST', `${apiBase}/sandboxes/${encodeURIComponent(id)}/upload-directory`);
+    xhr.send(formData);
+  });
+}
+
 // ==================== Unified Volume API ====================
 
 /**
@@ -2591,19 +2653,104 @@ export async function createDaytonaSnapshot(request: {
 /**
  * Push a local Docker image to Daytona and create a snapshot
  */
-export async function pushImageToDaytona(request: {
-  localImage: string;
-  snapshotName: string;
-  cpu?: number;
-  memory?: number;
-  disk?: number;
-  entrypoint?: string[];
-  regionId?: string;
-}): Promise<DaytonaSnapshot> {
-  return fetchAPI('/daytona/snapshots/push', {
+export async function pushImageToDaytona(
+  request: {
+    localImage: string;
+    snapshotName: string;
+    cpu?: number;
+    memory?: number;
+    disk?: number;
+    entrypoint?: string[];
+    regionId?: string;
+  },
+  onProgress?: (message: string, type: 'info' | 'progress' | 'error' | 'done') => void
+): Promise<DaytonaSnapshot> {
+  const apiBase = await getApiBase();
+
+  const response = await fetch(`${apiBase}/daytona/snapshots/push`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   });
+
+  // Check content type - if JSON, it's an error response
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const error = await response.json();
+    throw new Error(error.error || 'Push failed');
+  }
+
+  // Otherwise it's an SSE stream
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let snapshot: DaytonaSnapshot | null = null;
+  let lastError: string | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse SSE events (events are separated by double newlines)
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || ''; // Keep incomplete event in buffer
+
+    for (const event of events) {
+      if (!event.trim()) continue;
+
+      const lines = event.split('\n');
+      let eventType = '';
+      let eventData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          eventData = line.slice(6);
+        }
+      }
+
+      if (!eventType || !eventData) continue;
+
+      // Parse the data (it's JSON-stringified)
+      let parsedData: string;
+      try {
+        parsedData = JSON.parse(eventData);
+      } catch {
+        parsedData = eventData;
+      }
+
+      if (eventType === 'snapshot') {
+        // Snapshot data is double-encoded (JSON string of JSON)
+        try {
+          snapshot = typeof parsedData === 'string' ? JSON.parse(parsedData) : parsedData;
+        } catch {
+          console.error('Failed to parse snapshot:', parsedData);
+        }
+      } else if (eventType === 'error') {
+        lastError = parsedData;
+        if (onProgress) {
+          onProgress(parsedData, 'error');
+        }
+      } else if (onProgress && (eventType === 'info' || eventType === 'progress' || eventType === 'done')) {
+        onProgress(parsedData, eventType as 'info' | 'progress' | 'done');
+      }
+    }
+  }
+
+  if (lastError && !snapshot) {
+    throw new Error(lastError);
+  }
+
+  if (!snapshot) {
+    throw new Error('No snapshot returned from push');
+  }
+
+  return snapshot;
 }
 
 /**

@@ -91,55 +91,99 @@ daytona.post('/snapshots', async (c) => {
 
 /**
  * POST /api/daytona/snapshots/push
- * Push a local Docker image to Daytona and create a snapshot
+ * Push a local Docker image to Daytona and create a snapshot (SSE streaming)
  *
  * Body: { localImage, snapshotName, cpu?, memory?, disk?, entrypoint?, regionId? }
+ * Returns: SSE stream with progress events, final event contains the snapshot
  */
 daytona.post('/snapshots/push', async (c) => {
+  const service = getDaytonaService();
+  let body: Record<string, unknown>;
+
   try {
-    const service = getDaytonaService();
-    const body = await c.req.json();
-
-    if (!body.localImage) {
-      return c.json({ error: 'localImage is required' }, 400);
-    }
-    if (!body.snapshotName) {
-      return c.json({ error: 'snapshotName is required' }, 400);
-    }
-
-    // Check if Docker is available
-    const { execSync } = await import('child_process');
-    try {
-      execSync('docker version', { stdio: 'pipe' });
-    } catch {
-      return c.json({ error: 'Docker is not available on the server' }, 500);
-    }
-
-    // Check if local image exists
-    try {
-      execSync(`docker image inspect ${body.localImage}`, { stdio: 'pipe' });
-    } catch {
-      return c.json({ error: `Local image not found: ${body.localImage}` }, 404);
-    }
-
-    const snapshot = await service.pushLocalImage(
-      body.localImage,
-      body.snapshotName,
-      {
-        cpu: body.cpu,
-        memory: body.memory,
-        disk: body.disk,
-        entrypoint: body.entrypoint,
-        regionId: body.regionId,
-      }
-    );
-
-    return c.json(snapshot, 201);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to push image';
-    console.error('[Daytona API] Push image error:', message);
-    return c.json({ error: message }, 500);
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
   }
+
+  console.log('[Daytona Push] Received request:', JSON.stringify({ localImage: body.localImage, snapshotName: body.snapshotName }));
+
+  if (!body.localImage) {
+    return c.json({ error: 'localImage is required' }, 400);
+  }
+  if (!body.snapshotName) {
+    return c.json({ error: 'snapshotName is required' }, 400);
+  }
+
+  // Check if Docker is available
+  const { execSync } = await import('child_process');
+  try {
+    execSync('docker version', { stdio: 'pipe' });
+  } catch {
+    return c.json({ error: 'Docker is not available on the server' }, 500);
+  }
+
+  // Check if local image exists
+  try {
+    execSync(`docker image inspect ${body.localImage}`, { stdio: 'pipe' });
+  } catch {
+    return c.json({ error: `Local image not found: ${body.localImage}` }, 404);
+  }
+
+  // Set up SSE headers
+  c.header('Content-Type', 'text/event-stream');
+  c.header('Cache-Control', 'no-cache');
+  c.header('Connection', 'keep-alive');
+
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+
+  const sendEvent = async (event: string, data: string) => {
+    try {
+      await writer.write(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+    } catch {
+      // Stream closed
+    }
+  };
+
+  // Start the push in background
+  (async () => {
+    try {
+      const snapshot = await service.pushLocalImageWithProgress(
+        body.localImage as string,
+        body.snapshotName as string,
+        async (message, type) => {
+          await sendEvent(type, message);
+        },
+        {
+          cpu: body.cpu as number | undefined,
+          memory: body.memory as number | undefined,
+          disk: body.disk as number | undefined,
+          entrypoint: body.entrypoint as string[] | undefined,
+          regionId: body.regionId as string | undefined,
+        }
+      );
+
+      // Send the final snapshot
+      await sendEvent('snapshot', JSON.stringify(snapshot));
+      await sendEvent('done', 'Push completed successfully');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to push image';
+      console.error('[Daytona API] Push image error:', message);
+      await sendEvent('error', message);
+    } finally {
+      await writer.close();
+    }
+  })();
+
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
 });
 
 /**

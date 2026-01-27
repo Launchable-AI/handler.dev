@@ -124,10 +124,13 @@ dockerfiles.get('/', async (c) => {
     );
 
     // Combine: user files first (sorted by modified), then system templates
+    // Filter out system templates that have the same name as user files to avoid duplicates
     userList.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
-    systemList.sort((a, b) => a.name.localeCompare(b.name));
+    const userNames = new Set(userList.map(f => f.name));
+    const filteredSystemList = systemList.filter(f => !userNames.has(f.name));
+    filteredSystemList.sort((a, b) => a.name.localeCompare(b.name));
 
-    return c.json([...userList, ...systemList]);
+    return c.json([...userList, ...filteredSystemList]);
   } catch {
     return c.json([]);
   }

@@ -3,10 +3,11 @@
  */
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Loader2, Plus, Check, HardDrive, Box, Server, Cloud } from 'lucide-react';
+import { X, Loader2, Plus, Check, HardDrive, Box, Server, Cloud, Eye, EyeOff, RefreshCw, Settings } from 'lucide-react';
 import { useCreateSandbox, useSandboxBackends, useSandboxes } from '../../hooks/useSandboxes';
 import { useVolumes, useImages, useConfig, useCreateVolume } from '../../hooks/useContainers';
-import type { SandboxBackend } from '../../api/client';
+import type { SandboxBackend, DaytonaSnapshot } from '../../api/client';
+import * as api from '../../api/client';
 
 interface CreateSandboxFormProps {
   onClose: () => void;
@@ -15,6 +16,30 @@ interface CreateSandboxFormProps {
 // Generate a random suffix for volume names
 function generateRandomSuffix(): string {
   return Math.random().toString(36).substring(2, 8);
+}
+
+// Format display name: remove "caisson-" prefix and timestamp/latest tags
+function formatDisplayName(name: string): string {
+  let display = name;
+  // Remove caisson- prefix
+  if (display.startsWith('caisson-')) {
+    display = display.slice(8);
+  }
+  // Remove :latest tag
+  if (display.endsWith(':latest')) {
+    display = display.slice(0, -7);
+  }
+  // Remove timestamp tags like :2026-01-27T18-50-28
+  const timestampMatch = display.match(/:(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})$/);
+  if (timestampMatch) {
+    display = display.slice(0, -timestampMatch[0].length);
+  }
+  return display;
+}
+
+// Check if a snapshot is Daytona-managed (not user-created)
+function isDaytonaManaged(snapshot: DaytonaSnapshot): boolean {
+  return snapshot.imageName?.startsWith('daytonaio/') || snapshot.general;
 }
 
 // Backend display info
@@ -67,6 +92,14 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
   const [newVolumeName, setNewVolumeName] = useState('');
   const newVolumeInputRef = useRef<HTMLInputElement>(null);
 
+  // Daytona snapshots state
+  const [daytonaSnapshots, setDaytonaSnapshots] = useState<DaytonaSnapshot[]>([]);
+  const [isLoadingSnapshots, setIsLoadingSnapshots] = useState(false);
+  const [showDaytonaManaged, setShowDaytonaManaged] = useState<boolean>(() => {
+    const saved = localStorage.getItem('caisson:show-daytona-managed');
+    return saved === 'true'; // Default to false (hide managed)
+  });
+
   // Calculate ports already in use
   const usedHostPorts = useMemo(() => {
     const usedPorts = new Set<number>();
@@ -101,6 +134,45 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
       ]);
     }
   }, [backend]);
+
+  // Load Daytona snapshots when Daytona backend is selected
+  useEffect(() => {
+    if (backend === 'daytona' && daytonaSnapshots.length === 0) {
+      loadDaytonaSnapshots();
+    }
+  }, [backend]);
+
+  // Persist show Daytona-managed preference
+  useEffect(() => {
+    localStorage.setItem('caisson:show-daytona-managed', String(showDaytonaManaged));
+  }, [showDaytonaManaged]);
+
+  const loadDaytonaSnapshots = async () => {
+    setIsLoadingSnapshots(true);
+    try {
+      const result = await api.listDaytonaSnapshots({ limit: 100 });
+      setDaytonaSnapshots(result.items);
+      // Auto-select first active user snapshot if none selected
+      const activeSnapshots = result.items.filter(
+        s => s.state === 'active' && !isDaytonaManaged(s)
+      );
+      if (activeSnapshots.length > 0 && !image) {
+        setImage(activeSnapshots[0].name);
+      } else if (result.items.filter(s => s.state === 'active').length > 0 && !image) {
+        // Fall back to any active snapshot
+        const anyActive = result.items.find(s => s.state === 'active');
+        if (anyActive) setImage(anyActive.name);
+      }
+    } catch (err) {
+      console.error('Failed to load Daytona snapshots:', err);
+    }
+    setIsLoadingSnapshots(false);
+  };
+
+  // Filter snapshots based on managed toggle (only show active ones for creation)
+  const filteredSnapshots = daytonaSnapshots.filter(
+    s => s.state === 'active' && (showDaytonaManaged || !isDaytonaManaged(s))
+  );
 
   // Available backends (filter by what's installed/enabled)
   const availableBackends = useMemo(() => {
@@ -372,6 +444,95 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
               </div>
             )}
 
+            {/* Daytona snapshot selection */}
+            {backend === 'daytona' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider">
+                    Snapshot
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowDaytonaManaged(!showDaytonaManaged)}
+                      className={`flex items-center gap-1 text-[10px] ${
+                        showDaytonaManaged
+                          ? 'text-[hsl(var(--purple))]'
+                          : 'text-[hsl(var(--text-muted))]'
+                      }`}
+                      title={showDaytonaManaged ? 'Hide managed snapshots' : 'Show managed snapshots'}
+                    >
+                      {showDaytonaManaged ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                      Managed
+                    </button>
+                    <button
+                      type="button"
+                      onClick={loadDaytonaSnapshots}
+                      disabled={isLoadingSnapshots}
+                      className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+                      title="Refresh snapshots"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${isLoadingSnapshots ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+                {isLoadingSnapshots && daytonaSnapshots.length === 0 ? (
+                  <div className="flex items-center justify-center py-4 border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+                    <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--text-muted))]" />
+                  </div>
+                ) : filteredSnapshots.length === 0 ? (
+                  <div className="text-center py-4 border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+                    <p className="text-xs text-[hsl(var(--text-muted))]">
+                      {daytonaSnapshots.filter(s => s.state === 'active').length > 0 && !showDaytonaManaged
+                        ? 'No user snapshots available. Enable "Managed" to see system snapshots.'
+                        : 'No active snapshots available. Push an image to Daytona first.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))] p-3 max-h-48 overflow-y-auto">
+                    {filteredSnapshots.map((snapshot) => {
+                      const isSelected = image === snapshot.name;
+                      const isManaged = isDaytonaManaged(snapshot);
+                      return (
+                        <label
+                          key={snapshot.id}
+                          className={`flex items-start gap-3 p-2 cursor-pointer border transition-colors ${
+                            isSelected
+                              ? 'border-[hsl(var(--cyan)/0.5)] bg-[hsl(var(--cyan)/0.05)]'
+                              : 'border-transparent hover:bg-[hsl(var(--bg-elevated))]'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="daytona-snapshot"
+                            checked={isSelected}
+                            onChange={() => setImage(snapshot.name)}
+                            className="h-4 w-4 mt-0.5 border-[hsl(var(--border))] bg-[hsl(var(--input-bg))] text-[hsl(var(--cyan))] focus:ring-[hsl(var(--cyan))]"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-[hsl(var(--text-primary))] truncate" title={snapshot.name}>
+                                {formatDisplayName(snapshot.name)}
+                              </span>
+                              {isManaged && (
+                                <span className="flex items-center gap-1 px-1 py-0.5 text-[8px] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))] border border-[hsl(var(--purple)/0.2)]">
+                                  <Settings className="h-2.5 w-2.5" />
+                                  managed
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+                              {snapshot.cpu} vCPU, {snapshot.mem} GB RAM, {snapshot.disk} GB disk
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Daytona size class */}
             {backend === 'daytona' && (
               <div>
@@ -578,7 +739,7 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
               </button>
               <button
                 type="submit"
-                disabled={createMutation.isPending || !name}
+                disabled={createMutation.isPending || !name || (backend === 'daytona' && !image)}
                 className="flex items-center gap-2 px-4 py-2 text-xs font-medium bg-[hsl(var(--cyan))] text-white hover:bg-[hsl(var(--cyan-dim))] disabled:opacity-50 transition-colors"
               >
                 {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

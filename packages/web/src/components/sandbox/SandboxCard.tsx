@@ -26,7 +26,7 @@ import {
   FolderUp,
 } from 'lucide-react';
 import type { Sandbox, DockerMeta, VmMeta } from '../../api/client';
-import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox } from '../../api/client';
+import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox, uploadDirectoryToSandbox } from '../../api/client';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
@@ -69,6 +69,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [browsingVolume, setBrowsingVolume] = useState<{ id: string; name: string } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -249,26 +250,38 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
+    setUploadProgress(0);
+    setError(null);
     const fileList = Array.from(files);
 
     try {
-      for (const file of fileList) {
-        // For folder uploads, preserve the relative path structure
-        let destPath = '/home/dev/workspace';
-        if (isFolder && file.webkitRelativePath) {
-          const parts = file.webkitRelativePath.split('/');
-          parts.pop(); // Remove filename
-          if (parts.length > 0) {
-            destPath = `/home/dev/workspace/${parts.join('/')}`;
+      if (isFolder && fileList.length > 1) {
+        // For folder uploads, use the directory upload endpoint (tar-based, single transfer)
+        const filesWithPaths = fileList.map(file => ({
+          file,
+          relativePath: file.webkitRelativePath || file.name,
+        }));
+
+        await uploadDirectoryToSandbox(
+          sandbox.id,
+          filesWithPaths,
+          '/home/dev/workspace',
+          (progress) => {
+            setUploadProgress(progress.percent);
           }
+        );
+      } else {
+        // Single file upload
+        for (const file of fileList) {
+          await uploadFileToSandbox(sandbox.id, file, '/home/dev/workspace');
         }
-        await uploadFileToSandbox(sandbox.id, file, destPath);
       }
     } catch (err) {
       console.error('Upload failed:', err);
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
       // Clear the inputs
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (folderInputRef.current) folderInputRef.current.value = '';
@@ -409,11 +422,18 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                     <div className="relative group/upload">
                       <button
                         className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50 transition-colors"
-                        title="Upload files to workspace"
+                        title={isUploading && uploadProgress !== null ? `Uploading: ${uploadProgress}%` : 'Upload files to workspace'}
                         disabled={isUploading}
                       >
                         {isUploading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <div className="relative">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            {uploadProgress !== null && (
+                              <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[8px] text-[hsl(var(--cyan))]">
+                                {uploadProgress}%
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <Upload className="h-3.5 w-3.5" />
                         )}

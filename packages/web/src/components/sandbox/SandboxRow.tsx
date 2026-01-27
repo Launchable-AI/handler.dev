@@ -72,6 +72,7 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
   // Can rename when not in a transition state
   const canRename = !isTransitioning(sandbox.status);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [browsingVolume, setBrowsingVolume] = useState<{ id: string; name: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -153,24 +154,36 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
+    setUploadProgress(0);
     const fileList = Array.from(files);
 
     try {
-      for (const file of fileList) {
-        let destPath = '/home/dev/workspace';
-        if (isFolder && file.webkitRelativePath) {
-          const parts = file.webkitRelativePath.split('/');
-          parts.pop();
-          if (parts.length > 0) {
-            destPath = `/home/dev/workspace/${parts.join('/')}`;
+      if (isFolder && fileList.length > 1) {
+        // For folder uploads, use the directory upload endpoint (tar-based, single transfer)
+        const filesWithPaths = fileList.map(file => ({
+          file,
+          relativePath: file.webkitRelativePath || file.name,
+        }));
+
+        await api.uploadDirectoryToSandbox(
+          sandbox.id,
+          filesWithPaths,
+          '/home/dev/workspace',
+          (progress) => {
+            setUploadProgress(progress.percent);
           }
+        );
+      } else {
+        // Single file upload
+        for (const file of fileList) {
+          await api.uploadFileToSandbox(sandbox.id, file, '/home/dev/workspace');
         }
-        await api.uploadFileToSandbox(sandbox.id, file, destPath);
       }
     } catch (error) {
       console.error('Upload failed:', error);
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (folderInputRef.current) folderInputRef.current.value = '';
     }
@@ -399,11 +412,18 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
               <div className="relative group/upload">
                 <button
                   className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] transition-colors disabled:opacity-50"
-                  title="Upload files to workspace"
+                  title={isUploading && uploadProgress !== null ? `Uploading: ${uploadProgress}%` : 'Upload files to workspace'}
                   disabled={isUploading}
                 >
                   {isUploading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <div className="relative">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {uploadProgress !== null && (
+                        <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[8px] text-[hsl(var(--cyan))]">
+                          {uploadProgress}%
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <Upload className="h-3.5 w-3.5" />
                   )}
