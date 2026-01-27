@@ -1937,7 +1937,7 @@ export interface VmMeta {
   hasSnapshots: boolean;
   tapDevice?: string;
   bootTimeMs?: number;
-  volumes?: Array<{ name: string; mountPath: string; sizeGb: number }>;
+  volumes?: Array<{ id?: string; name: string; mountPath: string; sizeGb: number }>;
 }
 
 /**

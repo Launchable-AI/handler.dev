@@ -13,9 +13,12 @@ import {
   Camera,
   Loader2,
   HardDrive,
+  Upload,
+  FolderUp,
 } from 'lucide-react';
 import type { Sandbox, VmMeta } from '../../api/client';
 import * as api from '../../api/client';
+import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox } from '../../hooks/useSandboxes';
@@ -43,6 +46,10 @@ export function SandboxRow({ sandbox, highlight }: SandboxRowProps) {
   const terminalPanel = useTerminalPanel();
 
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [browsingVolume, setBrowsingVolume] = useState<{ id: string; name: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const isRunning = sandbox.status === 'running';
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
@@ -118,7 +125,47 @@ export function SandboxRow({ sandbox, highlight }: SandboxRowProps) {
     }
   };
 
+  const handleUploadToSandbox = async (event: React.ChangeEvent<HTMLInputElement>, isFolder = false) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    const fileList = Array.from(files);
+
+    try {
+      for (const file of fileList) {
+        let destPath = '/home/dev/workspace';
+        if (isFolder && file.webkitRelativePath) {
+          const parts = file.webkitRelativePath.split('/');
+          parts.pop();
+          if (parts.length > 0) {
+            destPath = `/home/dev/workspace/${parts.join('/')}`;
+          }
+        }
+        await api.uploadFileToSandbox(sandbox.id, file, destPath);
+      }
+    } catch (error) {
+      console.error('Upload failed:', error);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (folderInputRef.current) folderInputRef.current.value = '';
+    }
+  };
+
+  const isDocker = sandbox.backend === 'docker';
+
+  const getVolumeId = (volumeName: string): string => {
+    if (isDocker) {
+      return `vol-docker-${volumeName}`;
+    } else {
+      const vol = vmMeta?.volumes?.find(v => v.name === volumeName);
+      return vol?.id ? `vol-vm-${vol.id}` : `vol-vm-${volumeName}`;
+    }
+  };
+
   return (
+    <>
     <tr
       ref={rowRef}
       className={`border-b transition-all duration-500 ${
@@ -191,11 +238,23 @@ export function SandboxRow({ sandbox, highlight }: SandboxRowProps) {
             return <span className="text-[10px] text-[hsl(var(--text-muted))]">-</span>;
           }
           return (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 group">
               <HardDrive className="h-3 w-3 text-[hsl(var(--text-muted))]" />
               <span className="text-[10px] text-[hsl(var(--text-secondary))]" title={volumes.map((v: { name: string }) => v.name).join(', ')}>
                 {volumes.length} vol{volumes.length !== 1 ? 's' : ''}
               </span>
+              {isRunning && volumes.length > 0 && (
+                <button
+                  onClick={() => {
+                    const vol = volumes[0] as { name: string; id?: string };
+                    setBrowsingVolume({ id: getVolumeId(vol.name), name: vol.name });
+                  }}
+                  className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Browse & upload files"
+                >
+                  <Upload className="h-3 w-3" />
+                </button>
+              )}
             </div>
           );
         })()}
@@ -212,6 +271,46 @@ export function SandboxRow({ sandbox, highlight }: SandboxRowProps) {
             >
               <Terminal className="h-3.5 w-3.5" />
             </button>
+          )}
+          {isRunning && (
+            <div className="relative group/upload">
+              <button
+                className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] transition-colors disabled:opacity-50"
+                title="Upload files to workspace"
+                disabled={isUploading}
+              >
+                {isUploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+              </button>
+              <div className="absolute right-0 top-full mt-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg z-10 opacity-0 invisible group-hover/upload:opacity-100 group-hover/upload:visible transition-all">
+                <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] cursor-pointer whitespace-nowrap">
+                  <Upload className="h-3 w-3" />
+                  Files
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    onChange={(e) => handleUploadToSandbox(e, false)}
+                    className="hidden"
+                  />
+                </label>
+                <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] cursor-pointer whitespace-nowrap">
+                  <FolderUp className="h-3 w-3" />
+                  Folder
+                  <input
+                    ref={folderInputRef}
+                    type="file"
+                    // @ts-expect-error webkitdirectory is not in the standard types
+                    webkitdirectory="true"
+                    onChange={(e) => handleUploadToSandbox(e, true)}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
           )}
           {canStart && (
             <button
@@ -260,5 +359,17 @@ export function SandboxRow({ sandbox, highlight }: SandboxRowProps) {
         </div>
       </td>
     </tr>
+
+    {/* Volume File Browser Modal */}
+    {browsingVolume && (
+      <VolumeFileBrowser
+        volumeId={browsingVolume.id}
+        volumeName={browsingVolume.name}
+        isAttached={true}
+        isVmRunning={isRunning}
+        onClose={() => setBrowsingVolume(null)}
+      />
+    )}
+    </>
   );
 }

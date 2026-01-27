@@ -1078,7 +1078,7 @@ export class FirecrackerService extends EventEmitter {
    */
   async attachVolume(
     vmId: string,
-    volumeConfig: { name: string; hostPath: string; mountPath: string; readOnly?: boolean }
+    volumeConfig: { id?: string; name: string; hostPath: string; mountPath: string; readOnly?: boolean }
   ): Promise<VmInfo> {
     const vm = this.vms.get(vmId);
     if (!vm) {
@@ -1095,6 +1095,7 @@ export class FirecrackerService extends EventEmitter {
 
     // Add volume to VM state
     vm.volumes.push({
+      id: volumeConfig.id,
       name: volumeConfig.name,
       hostPath: volumeConfig.hostPath,
       mountPath: volumeConfig.mountPath,

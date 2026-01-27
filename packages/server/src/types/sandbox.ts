@@ -116,7 +116,7 @@ export interface VmMeta {
   /** Boot time in milliseconds */
   bootTimeMs?: number;
   /** Attached volumes */
-  volumes?: Array<{ name: string; mountPath: string; sizeGb: number }>;
+  volumes?: Array<{ id?: string; name: string; mountPath: string; sizeGb: number }>;
 }
 
 /**

@@ -67,6 +67,7 @@ function vmToSandbox(vm: VmInfo, hypervisorType: HypervisorType): Sandbox {
     tapDevice: undefined, // Not exposed in VmInfo
     bootTimeMs: undefined,
     volumes: vm.volumes?.map((v) => ({
+      id: v.id,
       name: v.name,
       mountPath: v.mountPath,
       sizeGb: 10, // Default, not exposed in VmInfo

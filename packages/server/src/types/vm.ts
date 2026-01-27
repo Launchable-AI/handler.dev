@@ -17,6 +17,7 @@ export interface PortMapping {
 }
 
 export interface VolumeMount {
+  id?: string;
   name: string;
   hostPath: string;
   mountPath: string;

@@ -502,4 +502,187 @@ sandboxes.get('/:id/ssh-key', async (c) => {
   }
 });
 
+/**
+ * POST /api/sandboxes/:id/upload
+ * Upload a file to the sandbox's working directory
+ */
+sandboxes.post('/:id/upload', async (c) => {
+  const id = c.req.param('id');
+  const service = await ensureSandboxServiceInitialized();
+
+  try {
+    const sandbox = await service.get(id);
+    if (!sandbox) {
+      return c.json({ error: 'Sandbox not found' }, 404);
+    }
+
+    if (sandbox.status !== 'running') {
+      return c.json({ error: 'Sandbox must be running to upload files' }, 400);
+    }
+
+    const formData = await c.req.formData();
+    const file = formData.get('file') as File | null;
+    const destPath = formData.get('destPath') as string || '/home/dev/workspace';
+
+    if (!file) {
+      return c.json({ error: 'No file provided' }, 400);
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const filename = file.name;
+
+    if (sandbox.backend === 'docker') {
+      // Docker: use docker cp via tar
+      const containerId = id.startsWith('docker-') ? id.slice(7) : id;
+      const { execSync } = await import('child_process');
+      const fs = await import('fs');
+      const path = await import('path');
+      const os = await import('os');
+
+      // Write file to temp location
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
+      const tempPath = path.join(tempDir, filename);
+      fs.writeFileSync(tempPath, buffer);
+
+      try {
+        // Ensure destination directory exists
+        try {
+          execSync(`docker exec ${containerId} mkdir -p "${destPath}"`, { stdio: 'pipe' });
+        } catch {
+          // Ignore if already exists
+        }
+
+        // Copy file to container
+        execSync(`docker cp "${tempPath}" ${containerId}:"${destPath}/${filename}"`, { stdio: 'pipe' });
+
+        // Set ownership to dev user
+        try {
+          execSync(`docker exec ${containerId} chown dev:dev "${destPath}/${filename}"`, { stdio: 'pipe' });
+        } catch {
+          // Ignore if chown fails
+        }
+      } finally {
+        // Cleanup temp files
+        fs.unlinkSync(tempPath);
+        fs.rmdirSync(tempDir);
+      }
+
+      return c.json({ success: true, path: `${destPath}/${filename}` });
+    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+      // VM: use SCP
+      const vmService = sandbox.backend === 'cloud-hypervisor'
+        ? service.getHypervisorService()
+        : service.getFirecrackerService();
+
+      if (!vmService) {
+        return c.json({ error: 'VM service not available' }, 500);
+      }
+
+      if (!sandbox.guestIp) {
+        return c.json({ error: 'VM does not have an IP address' }, 400);
+      }
+
+      const fs = await import('fs');
+      const path = await import('path');
+      const os = await import('os');
+      const { execSync } = await import('child_process');
+
+      // Get SSH key path
+      const dataDir = process.env.DATA_DIR || './data';
+      const keyPath = path.join(dataDir, 'ssh', 'id_ed25519');
+
+      if (!fs.existsSync(keyPath)) {
+        return c.json({ error: 'SSH key not found' }, 500);
+      }
+
+      // Write file to temp location
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
+      const tempPath = path.join(tempDir, filename);
+      fs.writeFileSync(tempPath, buffer);
+
+      try {
+        // Ensure destination directory exists via SSH
+        try {
+          execSync(
+            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null agent@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            { stdio: 'pipe' }
+          );
+        } catch {
+          // Ignore if already exists
+        }
+
+        // Upload via SCP
+        execSync(
+          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${tempPath}" agent@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          { stdio: 'pipe' }
+        );
+      } finally {
+        // Cleanup temp files
+        fs.unlinkSync(tempPath);
+        fs.rmdirSync(tempDir);
+      }
+
+      return c.json({ success: true, path: `${destPath}/${filename}` });
+    } else if (sandbox.backend === 'daytona') {
+      // Daytona: upload via SSH if we have connection info
+      if (!sandbox.guestIp) {
+        return c.json({ error: 'Daytona workspace does not have SSH access configured' }, 400);
+      }
+
+      // Similar to VM upload
+      const fs = await import('fs');
+      const path = await import('path');
+      const os = await import('os');
+      const { execSync } = await import('child_process');
+
+      const daytonaMeta = sandbox.backendMeta as { type: 'daytona'; sshKey?: string; sshPort?: number } | undefined;
+
+      if (!daytonaMeta?.sshKey) {
+        return c.json({ error: 'SSH key not available for this Daytona workspace' }, 400);
+      }
+
+      // Write SSH key and file to temp locations
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
+      const tempKeyPath = path.join(tempDir, 'key');
+      const tempFilePath = path.join(tempDir, filename);
+
+      fs.writeFileSync(tempKeyPath, daytonaMeta.sshKey, { mode: 0o600 });
+      fs.writeFileSync(tempFilePath, buffer);
+
+      try {
+        const port = daytonaMeta.sshPort || 22;
+
+        // Ensure destination directory exists
+        try {
+          execSync(
+            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dev@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            { stdio: 'pipe' }
+          );
+        } catch {
+          // Ignore if already exists
+        }
+
+        // Upload via SCP
+        execSync(
+          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${tempFilePath}" dev@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          { stdio: 'pipe' }
+        );
+      } finally {
+        // Cleanup temp files
+        fs.unlinkSync(tempKeyPath);
+        fs.unlinkSync(tempFilePath);
+        fs.rmdirSync(tempDir);
+      }
+
+      return c.json({ success: true, path: `${destPath}/${filename}` });
+    }
+
+    return c.json({ error: 'Upload not supported for this backend' }, 400);
+  } catch (error) {
+    console.error('[SandboxRoutes] Upload error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to upload file';
+    return c.json({ error: message }, 500);
+  }
+});
+
 export default sandboxes;

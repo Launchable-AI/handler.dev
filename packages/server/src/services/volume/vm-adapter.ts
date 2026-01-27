@@ -475,6 +475,7 @@ export class VmVolumeAdapter {
 
       // Attach the volume in Firecracker (this will restart the VM if running)
       await firecrackerService.attachVolume(sandboxId, {
+        id: vmVolId,
         name: vol.name,
         hostPath: volumePath,
         mountPath: vol.mountPath || '/mnt/data',
