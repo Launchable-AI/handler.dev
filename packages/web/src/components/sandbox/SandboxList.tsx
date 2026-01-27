@@ -36,6 +36,8 @@ type ViewMode = 'compact' | 'detailed' | 'list';
 
 const VIEW_MODE_KEY = 'caisson-sandbox-view-mode';
 const BACKEND_FILTER_KEY = 'caisson-sandbox-backend-filter';
+const RUNNING_FILTER_KEY = 'caisson-sandbox-running-filter';
+const SEARCH_KEY = 'caisson-sandbox-search';
 
 const BACKEND_OPTIONS: Array<{ value: SandboxBackend; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { value: 'docker', label: 'Docker', icon: Container },
@@ -86,11 +88,16 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
     return [];
   });
 
-  // Status filter
-  const [showOnlyRunning, setShowOnlyRunning] = useState(false);
+  // Status filter with persistence
+  const [showOnlyRunning, setShowOnlyRunning] = useState(() => {
+    const stored = localStorage.getItem(RUNNING_FILTER_KEY);
+    return stored === 'true';
+  });
 
-  // Search query
-  const [searchQuery, setSearchQuery] = useState('');
+  // Search query with persistence
+  const [searchQuery, setSearchQuery] = useState(() => {
+    return localStorage.getItem(SEARCH_KEY) || '';
+  });
 
   // Sort state with persistence
   const [sortColumn, setSortColumn] = useState<SortColumn>(() => {
@@ -130,6 +137,14 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
   useEffect(() => {
     localStorage.setItem(SORT_KEY, JSON.stringify({ column: sortColumn, direction: sortDirection }));
   }, [sortColumn, sortDirection]);
+
+  useEffect(() => {
+    localStorage.setItem(RUNNING_FILTER_KEY, showOnlyRunning.toString());
+  }, [showOnlyRunning]);
+
+  useEffect(() => {
+    localStorage.setItem(SEARCH_KEY, searchQuery);
+  }, [searchQuery]);
 
   // Build filter for API
   const filter = useMemo(() => ({

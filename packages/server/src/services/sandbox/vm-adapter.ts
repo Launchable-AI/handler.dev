@@ -238,9 +238,8 @@ export class FirecrackerAdapter implements SandboxAdapter {
   }
 
   async get(id: string): Promise<Sandbox | null> {
-    // Strip the 'fc-' prefix to get the VM ID
-    const vmId = id.startsWith('fc-') ? id.slice(3) : id;
-    const vm = this.firecracker.getVm(vmId);
+    // Firecracker IDs already include the 'fc-' prefix internally
+    const vm = this.firecracker.getVm(id);
     return vm ? vmToSandbox(vm, 'firecracker') : null;
   }
 
@@ -263,19 +262,19 @@ export class FirecrackerAdapter implements SandboxAdapter {
   }
 
   async start(id: string): Promise<Sandbox> {
-    const vmId = id.startsWith('fc-') ? id.slice(3) : id;
-    const vm = await this.firecracker.startVm(vmId);
+    // Firecracker IDs already include the 'fc-' prefix internally
+    const vm = await this.firecracker.startVm(id);
     return vmToSandbox(vm, 'firecracker');
   }
 
   async stop(id: string): Promise<Sandbox> {
-    const vmId = id.startsWith('fc-') ? id.slice(3) : id;
-    const vm = await this.firecracker.stopVm(vmId);
+    // Firecracker IDs already include the 'fc-' prefix internally
+    const vm = await this.firecracker.stopVm(id);
     return vmToSandbox(vm, 'firecracker');
   }
 
   async delete(id: string): Promise<void> {
-    const vmId = id.startsWith('fc-') ? id.slice(3) : id;
-    await this.firecracker.deleteVm(vmId);
+    // Firecracker IDs already include the 'fc-' prefix internally
+    await this.firecracker.deleteVm(id);
   }
 }
