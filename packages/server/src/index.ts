@@ -157,11 +157,13 @@ import {
 } from './services/terminal.js';
 import {
   createVmTerminalSession,
+  createDaytonaTerminalSession,
   writeToVmSession,
   resizeVmSession,
   closeVmSessionByWebSocket,
   closeAllVmSessions,
 } from './services/vm-terminal.js';
+import { getDaytonaService } from './services/daytona.js';
 import containers from './routes/containers.js';
 import images from './routes/images.js';
 import volumes from './routes/volumes.js';
@@ -292,6 +294,40 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
               isVmSession = true;
             } else {
               ws.send(JSON.stringify({ type: 'error', message: 'vmId and vmIp are required' }));
+            }
+            break;
+
+          case 'start-daytona':
+            // Start a new Daytona terminal session
+            if (msg.sandboxId) {
+              try {
+                const daytona = getDaytonaService();
+                // Strip 'daytona-' prefix if present
+                const workspaceId = msg.sandboxId.startsWith('daytona-')
+                  ? msg.sandboxId.slice(8)
+                  : msg.sandboxId;
+
+                // Get SSH access from Daytona API
+                console.log(`[WS Terminal] Getting SSH access for Daytona sandbox: ${workspaceId}`);
+                const sshAccess = await daytona.createSshAccess(workspaceId);
+
+                sessionId = createDaytonaTerminalSession(
+                  ws,
+                  workspaceId,
+                  sshAccess.sshCommand,
+                  msg.cols || 80,
+                  msg.rows || 24
+                );
+                isVmSession = true; // Use VM session handlers for write/resize/close
+              } catch (err) {
+                console.error('[WS Terminal] Failed to create Daytona terminal:', err);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  message: err instanceof Error ? err.message : 'Failed to get SSH access'
+                }));
+              }
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'sandboxId is required' }));
             }
             break;
 

@@ -185,6 +185,10 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
     s => s.state === 'active' && (showDaytonaManaged || !isDaytonaManaged(s))
   );
 
+  // Check if the currently selected snapshot is Daytona-managed (has pre-defined resources)
+  const selectedSnapshot = daytonaSnapshots.find(s => s.name === image);
+  const isSelectedSnapshotManaged = selectedSnapshot ? isDaytonaManaged(selectedSnapshot) : false;
+
   // Available backends (filter by what's installed/enabled)
   const availableBackends = useMemo(() => {
     if (!backends) return [];
@@ -550,8 +554,8 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
               </div>
             )}
 
-            {/* Daytona size class */}
-            {backend === 'daytona' && (
+            {/* Daytona size class - show unless a Daytona-managed snapshot is selected (those have pre-defined resources) */}
+            {backend === 'daytona' && (!image || !isSelectedSnapshotManaged) && (
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
                   Size

@@ -17,7 +17,7 @@ import '@xterm/xterm/css/xterm.css';
 
 // Types
 export type PanelPosition = 'right' | 'bottom';
-export type TerminalType = 'vm' | 'container';
+export type TerminalType = 'vm' | 'container' | 'daytona';
 
 interface TerminalTab {
   id: string;
@@ -29,6 +29,8 @@ interface TerminalTab {
   // For containers
   containerId?: string;
   isDevNode?: boolean;
+  // For Daytona
+  sandboxId?: string;
   connectionState: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
   errorMessage?: string;
   retryCount?: number;
@@ -42,6 +44,7 @@ interface TerminalPanelContextType {
   size: number;
   openTerminal: (vmId: string, vmName: string, vmIp: string) => void;
   openContainerTerminal: (containerId: string, containerName: string, isDevNode?: boolean) => void;
+  openDaytonaTerminal: (sandboxId: string, sandboxName: string) => void;
   closeTerminal: (tabId: string) => void;
   closePanel: () => void;
   setPosition: (position: PanelPosition) => void;
@@ -134,6 +137,28 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
     setIsOpen(true);
   }, [tabs]);
 
+  const openDaytonaTerminal = useCallback((sandboxId: string, sandboxName: string) => {
+    // Check if terminal for this Daytona sandbox already exists
+    const existingTab = tabs.find(t => t.type === 'daytona' && t.sandboxId === sandboxId);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      setIsOpen(true);
+      return;
+    }
+
+    const newTab: TerminalTab = {
+      id: `term-daytona-${sandboxId}-${Date.now()}`,
+      name: sandboxName,
+      type: 'daytona',
+      sandboxId,
+      connectionState: 'connecting',
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+    setIsOpen(true);
+  }, [tabs]);
+
   const closeTerminal = useCallback((tabId: string) => {
     setTabs(prev => {
       const newTabs = prev.filter(t => t.id !== tabId);
@@ -164,6 +189,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
       size,
       openTerminal,
       openContainerTerminal,
+      openDaytonaTerminal,
       closeTerminal,
       closePanel,
       setPosition,
@@ -523,6 +549,14 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
             rows: term.rows,
             isDevNode: tab.isDevNode,
           }));
+        } else if (tab.type === 'daytona') {
+          // Daytona terminal - uses Daytona SSH access API
+          ws.send(JSON.stringify({
+            type: 'start-daytona',
+            sandboxId: tab.sandboxId,
+            cols: term.cols,
+            rows: term.rows,
+          }));
         } else {
           // VM terminal - uses SSH
           ws.send(JSON.stringify({
@@ -670,7 +704,7 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       fitAddonRef.current = null;
       wsRef.current = null;
     };
-  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.isDevNode, getWsUrl]);
+  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.isDevNode, tab.sandboxId, getWsUrl]);
 
   return (
     <div className="h-full flex flex-col">
@@ -689,7 +723,7 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
         </span>
         <span className="text-[hsl(var(--text-muted))]">|</span>
         <span className="text-[hsl(var(--text-secondary))]">
-          {tab.type === 'container' ? `dev@${tab.name}` : `agent@${tab.vmIp}`}
+          {tab.type === 'container' ? `dev@${tab.name}` : tab.type === 'daytona' ? `daytona@${tab.name}` : `agent@${tab.vmIp}`}
         </span>
       </div>
 

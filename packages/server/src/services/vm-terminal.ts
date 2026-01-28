@@ -159,6 +159,79 @@ export function getActiveVmSessionCount(): number {
   return sessions.size;
 }
 
+/**
+ * Create a Daytona terminal session using their SSH access API
+ * Daytona provides a full SSH command with embedded credentials
+ */
+export function createDaytonaTerminalSession(
+  ws: WebSocket,
+  sandboxId: string,
+  sshCommand: string,
+  cols: number = 80,
+  rows: number = 24
+): string {
+  const sessionId = `daytona-${sandboxId}-${Date.now()}`;
+
+  console.log(`[Daytona Terminal] Creating session: ${sessionId}`);
+  console.log(`[Daytona Terminal] Original SSH command: ${sshCommand}`);
+
+  // Inject -tt flag to force pseudo-terminal allocation even without a TTY on stdin
+  // Daytona SSH commands look like: ssh -o 'ProxyCommand=...' user@host
+  // We insert -tt right after 'ssh' to force TTY allocation
+  let modifiedCommand = sshCommand;
+  if (sshCommand.startsWith('ssh ') && !sshCommand.includes(' -tt ')) {
+    modifiedCommand = sshCommand.replace(/^ssh /, 'ssh -tt ');
+  }
+
+  console.log(`[Daytona Terminal] Modified SSH command: ${modifiedCommand}`);
+
+  // Run through shell to handle complex quoting in ProxyCommand
+  const sshProcess = spawn('sh', ['-c', modifiedCommand], {
+    env: {
+      ...process.env,
+      TERM: 'xterm-256color',
+    }
+  });
+
+  // Handle process output -> WebSocket
+  sshProcess.stdout?.on('data', (data: Buffer) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+    }
+  });
+
+  sshProcess.stderr?.on('data', (data: Buffer) => {
+    console.log(`[Daytona Terminal] SSH stderr: ${data.toString()}`);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+    }
+  });
+
+  // Handle process exit
+  sshProcess.on('exit', (code) => {
+    console.log(`[Daytona Terminal] Session ${sessionId} exited with code ${code}`);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'exit', code }));
+    }
+    sessions.delete(sessionId);
+  });
+
+  sshProcess.on('error', (err) => {
+    console.error(`[Daytona Terminal] Session ${sessionId} error:`, err);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'error', message: err.message }));
+    }
+    sessions.delete(sessionId);
+  });
+
+  sessions.set(sessionId, { process: sshProcess, ws, vmId: sandboxId });
+
+  // Send connected message
+  ws.send(JSON.stringify({ type: 'connected', sessionId }));
+
+  return sessionId;
+}
+
 export function closeAllVmSessions(): void {
   console.log(`[VM Terminal] Closing ${sessions.size} active session(s)...`);
   for (const [id, session] of sessions.entries()) {

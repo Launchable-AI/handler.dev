@@ -158,7 +158,11 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
         ? sandbox.backendMeta.containerId
         : sandbox.id.replace('docker-', '');
       terminalPanel.openContainerTerminal(containerId, sandbox.name);
+    } else if (sandbox.backend === 'daytona') {
+      // Daytona uses its own SSH access API
+      terminalPanel.openDaytonaTerminal(sandbox.id, sandbox.name);
     } else {
+      // Local VMs use SSH with local key
       if (sandbox.guestIp) {
         terminalPanel.openTerminal(sandbox.id, sandbox.name, sandbox.guestIp);
       }

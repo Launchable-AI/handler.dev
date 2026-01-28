@@ -256,7 +256,11 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     if (sandbox.terminalType === 'docker-exec') {
       const containerId = dockerMeta?.containerId || sandbox.id.replace('docker-', '');
       terminalPanel.openContainerTerminal(containerId, sandbox.name, true);
+    } else if (sandbox.backend === 'daytona') {
+      // Daytona uses its own SSH access API
+      terminalPanel.openDaytonaTerminal(sandbox.id, sandbox.name);
     } else if (sandbox.guestIp) {
+      // Local VMs use SSH with local key
       terminalPanel.openTerminal(sandbox.id, sandbox.name, sandbox.guestIp);
     }
   };
