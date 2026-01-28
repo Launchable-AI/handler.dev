@@ -217,7 +217,14 @@ dockerfiles.patch('/:name', zValidator('json', RenameDockerfileSchema), async (c
 dockerfiles.post('/:name/build', async (c) => {
   const name = c.req.param('name');
   const version = c.req.query('version'); // Optional version tag (e.g., timestamp)
-  const filePath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const userPath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const systemPath = join(TEMPLATES_DIR, `${name}.dockerfile`);
+
+  // Check user directory first, then system templates
+  const filePath = existsSync(userPath) ? userPath : existsSync(systemPath) ? systemPath : null;
+  if (!filePath) {
+    return c.json({ error: 'Dockerfile not found' }, 404);
+  }
 
   try {
     const content = await readFile(filePath, 'utf-8');
