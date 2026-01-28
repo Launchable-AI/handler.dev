@@ -470,7 +470,6 @@ export interface AppConfig {
   sshJumpHost: string; // Jump host for ProxyJump (e.g., user@bastion.example.com)
   sshJumpHostKeyPath: string; // Path to SSH key for jump host (e.g., ~/.ssh/jump_key.pem)
   dataDirectory: string;
-  defaultDevNodeImage: string;
   cloudBackends?: CloudBackendsConfig;
 }
 
@@ -505,195 +504,6 @@ export async function browseDirectory(path?: string): Promise<BrowseDirectoryRes
   });
 }
 
-// Compose
-export interface ComposeService {
-  name: string;
-  containerId: string;
-  state: 'running' | 'exited' | 'paused' | 'restarting' | 'dead' | 'created' | 'unknown';
-  image: string;
-  ports: Array<{ container: number; host: number | null }>;
-  sshPort: number | null;
-}
-
-export interface ComposeProject {
-  name: string;
-  status: 'running' | 'partial' | 'stopped';
-  services: ComposeService[];
-  createdAt: string;
-}
-
-export interface ComposeContent {
-  name: string;
-  content: string;
-}
-
-export async function listComposeProjects(): Promise<ComposeProject[]> {
-  return fetchAPI('/composes');
-}
-
-export async function getComposeProject(name: string): Promise<ComposeProject> {
-  return fetchAPI(`/composes/${name}`);
-}
-
-export async function getComposeContent(name: string): Promise<ComposeContent> {
-  return fetchAPI(`/composes/${name}/content`);
-}
-
-export async function createComposeProject(name: string, content: string): Promise<ComposeProject> {
-  return fetchAPI('/composes', {
-    method: 'POST',
-    body: JSON.stringify({ name, content }),
-  });
-}
-
-export async function updateComposeProject(name: string, content: string): Promise<ComposeProject> {
-  return fetchAPI(`/composes/${name}`, {
-    method: 'PUT',
-    body: JSON.stringify({ content }),
-  });
-}
-
-export async function deleteComposeProject(name: string): Promise<void> {
-  await fetchAPI(`/composes/${name}`, { method: 'DELETE' });
-}
-
-export async function renameComposeProject(name: string, newName: string): Promise<ComposeProject> {
-  return fetchAPI(`/composes/${name}/rename`, {
-    method: 'POST',
-    body: JSON.stringify({ newName }),
-  });
-}
-
-export async function composeUp(
-  name: string,
-  onLog: (log: string) => void,
-  onDone: () => void,
-  onError: (error: string) => void
-): Promise<void> {
-  const serverUrl = getServerUrl();
-
-  return new Promise((resolve, reject) => {
-    fetch(`${serverUrl}/api/composes/${name}/up`, {
-      method: 'POST',
-    }).then(async (response) => {
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to start' }));
-        onError(error.error || 'Failed to start');
-        reject(new Error(error.error || 'Failed to start'));
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError('No response stream');
-        reject(new Error('No response stream'));
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const eventBlock of lines) {
-          const eventMatch = eventBlock.match(/event: (\w+)/);
-          const dataMatch = eventBlock.match(/data: (.+)/);
-
-          if (eventMatch && dataMatch) {
-            const event = eventMatch[1];
-            const data = JSON.parse(dataMatch[1]);
-
-            if (event === 'log') {
-              onLog(data);
-            } else if (event === 'done') {
-              onDone();
-              resolve();
-            } else if (event === 'error') {
-              onError(data);
-              reject(new Error(data));
-            }
-          }
-        }
-      }
-      resolve();
-    }).catch((err) => {
-      onError(err.message);
-      reject(err);
-    });
-  });
-}
-
-export async function composeDown(
-  name: string,
-  onLog: (log: string) => void,
-  onDone: () => void,
-  onError: (error: string) => void
-): Promise<void> {
-  const serverUrl = getServerUrl();
-
-  return new Promise((resolve, reject) => {
-    fetch(`${serverUrl}/api/composes/${name}/down`, {
-      method: 'POST',
-    }).then(async (response) => {
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to stop' }));
-        onError(error.error || 'Failed to stop');
-        reject(new Error(error.error || 'Failed to stop'));
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError('No response stream');
-        reject(new Error('No response stream'));
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const eventBlock of lines) {
-          const eventMatch = eventBlock.match(/event: (\w+)/);
-          const dataMatch = eventBlock.match(/data: (.+)/);
-
-          if (eventMatch && dataMatch) {
-            const event = eventMatch[1];
-            const data = JSON.parse(dataMatch[1]);
-
-            if (event === 'log') {
-              onLog(data);
-            } else if (event === 'done') {
-              onDone();
-              resolve();
-            } else if (event === 'error') {
-              onError(data);
-              reject(new Error(data));
-            }
-          }
-        }
-      }
-      resolve();
-    }).catch((err) => {
-      onError(err.message);
-      reject(err);
-    });
-  });
-}
-
 // AI Chat
 export interface AIStatus {
   configured: boolean;
@@ -701,76 +511,6 @@ export interface AIStatus {
 
 export async function getAIStatus(): Promise<AIStatus> {
   return fetchAPI('/ai/status');
-}
-
-export async function streamComposeChat(
-  message: string,
-  composeContent: string,
-  onChunk: (chunk: string) => void,
-  onDone: () => void,
-  onError: (error: string) => void
-): Promise<void> {
-  const serverUrl = getServerUrl();
-
-  return new Promise((resolve, reject) => {
-    fetch(`${serverUrl}/api/ai/compose-chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message, composeContent }),
-    }).then(async (response) => {
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'AI request failed' }));
-        onError(error.error || 'AI request failed');
-        reject(new Error(error.error || 'AI request failed'));
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError('No response stream');
-        reject(new Error('No response stream'));
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const eventBlock of lines) {
-          const eventMatch = eventBlock.match(/event: (\w+)/);
-          const dataMatch = eventBlock.match(/data: (.+)/);
-
-          if (eventMatch && dataMatch) {
-            const event = eventMatch[1];
-            const data = JSON.parse(dataMatch[1]);
-
-            if (event === 'chunk') {
-              onChunk(data);
-            } else if (event === 'done') {
-              onDone();
-              resolve();
-            } else if (event === 'error') {
-              onError(data);
-              reject(new Error(data));
-            }
-          }
-        }
-      }
-      resolve();
-    }).catch((err) => {
-      onError(err.message);
-      reject(err);
-    });
-  });
 }
 
 export async function streamDockerfileChat(
@@ -862,7 +602,6 @@ export interface ModelInfo {
 }
 
 export interface AIPrompts {
-  compose: AIPromptInfo;
   dockerfile: AIPromptInfo;
   mcpInstall: AIPromptInfo;
   mcpSearch: AIPromptInfo;
@@ -871,14 +610,6 @@ export interface AIPrompts {
 
 export async function getAIPrompts(): Promise<AIPrompts> {
   return fetchAPI('/ai/prompts');
-}
-
-export async function updateComposePrompt(prompt: string | null): Promise<{ success: boolean; prompt: string }> {
-  return fetchAPI('/ai/prompts/compose', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
-  });
 }
 
 export async function updateDockerfilePrompt(prompt: string | null): Promise<{ success: boolean; prompt: string }> {
@@ -910,91 +641,6 @@ export async function updateModel(model: string | null): Promise<{ success: bool
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model }),
-  });
-}
-
-// Components
-export interface ComponentPort {
-  container: number;
-  host?: number;
-  description?: string;
-}
-
-export interface ComponentVolume {
-  name: string;
-  path: string;
-  description?: string;
-}
-
-export interface ComponentEnvVar {
-  name: string;
-  value: string;
-  description?: string;
-  required?: boolean;
-}
-
-export interface Component {
-  id: string;
-  name: string;
-  description: string;
-  category: 'database' | 'cache' | 'web' | 'messaging' | 'storage' | 'monitoring' | 'development' | 'other';
-  icon?: string;
-  image: string;
-  defaultTag: string;
-  ports: ComponentPort[];
-  volumes: ComponentVolume[];
-  environment: ComponentEnvVar[];
-  healthcheck?: {
-    test: string;
-    interval?: string;
-    timeout?: string;
-    retries?: number;
-  };
-  dependsOn?: string[];
-  networks?: string[];
-  builtIn: boolean;
-  createdAt: string;
-}
-
-export async function listComponents(): Promise<Component[]> {
-  return fetchAPI('/components');
-}
-
-export async function getComponent(id: string): Promise<Component> {
-  return fetchAPI(`/components/${id}`);
-}
-
-export async function getComponentsByCategory(category: Component['category']): Promise<Component[]> {
-  return fetchAPI(`/components/category/${category}`);
-}
-
-export async function createComponent(component: Omit<Component, 'id' | 'builtIn' | 'createdAt'>): Promise<Component> {
-  return fetchAPI('/components', {
-    method: 'POST',
-    body: JSON.stringify(component),
-  });
-}
-
-export async function updateComponent(id: string, updates: Partial<Omit<Component, 'id' | 'builtIn' | 'createdAt'>>): Promise<Component> {
-  return fetchAPI(`/components/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(updates),
-  });
-}
-
-export async function deleteComponent(id: string): Promise<void> {
-  await fetchAPI(`/components/${id}`, { method: 'DELETE' });
-}
-
-export async function getComponentYaml(id: string, serviceName?: string): Promise<{ yaml: string }> {
-  const params = serviceName ? `?name=${encodeURIComponent(serviceName)}` : '';
-  return fetchAPI(`/components/${id}/yaml${params}`);
-}
-
-export async function createComponentFromAI(request: string): Promise<{ success: boolean; component: Component }> {
-  return fetchAPI('/ai/create-component', {
-    method: 'POST',
-    body: JSON.stringify({ request }),
   });
 }
 

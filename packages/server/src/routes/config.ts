@@ -14,7 +14,6 @@ const UpdateConfigSchema = z.object({
   sshJumpHost: z.string().optional(),
   sshJumpHostKeyPath: z.string().optional(),
   dataDirectory: z.string().optional(),
-  defaultDevNodeImage: z.string().min(1).optional(),
 });
 
 const BrowseDirectorySchema = z.object({

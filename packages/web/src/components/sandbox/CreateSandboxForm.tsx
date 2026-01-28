@@ -5,7 +5,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Loader2, Plus, Check, HardDrive, Box, Server, Cloud, Eye, EyeOff, RefreshCw, Settings } from 'lucide-react';
 import { useCreateSandbox, useSandboxBackends, useSandboxes } from '../../hooks/useSandboxes';
-import { useVolumes, useImages, useConfig, useCreateVolume, useVmBaseImages } from '../../hooks/useContainers';
+import { useVolumes, useImages, useCreateVolume, useVmBaseImages } from '../../hooks/useContainers';
 import type { SandboxBackend, DaytonaSnapshot } from '../../api/client';
 import * as api from '../../api/client';
 
@@ -78,7 +78,6 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
   const { data: images } = useImages();
   const { data: vmBaseImages } = useVmBaseImages();
   const { data: sandboxes } = useSandboxes();
-  const { data: config } = useConfig();
 
   // Form state
   const [backend, setBackend] = useState<SandboxBackend | null>(null);
@@ -192,9 +191,8 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
     return (Object.keys(backends) as SandboxBackend[]).filter((b) => backends[b]);
   }, [backends]);
 
-  // Use config default image if set
-  const fallbackImage = images?.flatMap((i) => i.repoTags).find((tag) => tag && tag !== '<none>:<none>') || 'ubuntu:24.04';
-  const defaultImage = config?.defaultDevNodeImage || fallbackImage;
+  // Use first available image or ubuntu as default
+  const defaultImage = images?.flatMap((i) => i.repoTags).find((tag) => tag && tag !== '<none>:<none>') || 'ubuntu:24.04';
   const selectedImage = image || defaultImage;
 
   // Common base images

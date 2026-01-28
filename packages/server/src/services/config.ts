@@ -22,7 +22,6 @@ export interface AppConfig {
   sshJumpHost: string; // Jump host for ProxyJump (e.g., user@bastion.example.com)
   sshJumpHostKeyPath: string; // Path to SSH key for jump host (e.g., ~/.ssh/jump_key.pem)
   dataDirectory: string; // Base directory for all data (volumes, ssh-keys, etc.)
-  defaultDevNodeImage: string; // Default image for dev-node containers
   cloudBackends?: CloudBackendsConfig; // Cloud backend configurations
 }
 
@@ -32,7 +31,6 @@ const DEFAULT_CONFIG: AppConfig = {
   sshJumpHost: '', // Empty means no jump host
   sshJumpHostKeyPath: '', // Empty means use default key
   dataDirectory: join(PROJECT_ROOT, 'data'),
-  defaultDevNodeImage: 'ubuntu:24.04',
   cloudBackends: undefined, // No cloud backends configured by default
 };
 

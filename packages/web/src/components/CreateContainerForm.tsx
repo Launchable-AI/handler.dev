@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Loader2, Plus, Check, HardDrive } from 'lucide-react';
-import { useCreateContainer, useVolumes, useImages, useContainers, useConfig, useCreateVolume } from '../hooks/useContainers';
+import { useCreateContainer, useVolumes, useImages, useContainers, useCreateVolume } from '../hooks/useContainers';
 
 interface CreateContainerFormProps {
   onClose: () => void;
@@ -17,7 +17,6 @@ export function CreateContainerForm({ onClose }: CreateContainerFormProps) {
   const { data: volumes } = useVolumes();
   const { data: images } = useImages();
   const { data: containers } = useContainers();
-  const { data: config } = useConfig();
 
   // Inline volume creation state
   const [isCreatingVolume, setIsCreatingVolume] = useState(false);
@@ -69,9 +68,8 @@ export function CreateContainerForm({ onClose }: CreateContainerFormProps) {
   const [newContainerPort, setNewContainerPort] = useState('');
   const [newHostPort, setNewHostPort] = useState('');
 
-  // Use config default image if set, otherwise fall back to first available image or ubuntu
-  const fallbackImage = images?.flatMap((i) => i.repoTags).find((tag) => tag && tag !== '<none>:<none>') || 'ubuntu:24.04';
-  const defaultImage = config?.defaultDevNodeImage || fallbackImage;
+  // Use first available image or ubuntu as default
+  const defaultImage = images?.flatMap((i) => i.repoTags).find((tag) => tag && tag !== '<none>:<none>') || 'ubuntu:24.04';
   const selectedImage = image || defaultImage;
 
   const handleSubmit = async (e: React.FormEvent) => {
