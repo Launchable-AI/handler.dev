@@ -4,7 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as dockerService from './docker.js';
 import { appendBuildLog } from './build-tracker.js';
-import { findAvailableSshPort, validateHostPorts } from '../utils/port.js';
+import { findAvailableSshPort, resolveAvailablePorts } from '../utils/port.js';
 import type { CreateContainerRequest, ContainerInfo } from '../types/index.js';
 
 const CAISSON_LABEL = 'caisson';
@@ -60,9 +60,18 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
     throw new Error('Either image or dockerfile must be provided');
   }
 
-  // Validate that requested host ports are available
-  logCallback?.('Validating port availability...');
-  await validateHostPorts(ports);
+  // Resolve ports - find available alternatives for any in use
+  logCallback?.('Resolving port availability...');
+  const resolvedPorts = await resolveAvailablePorts(ports);
+  if (ports && ports.length > 0) {
+    const portChanges = ports.map((orig, i) => {
+      const resolved = resolvedPorts[i];
+      return orig.host !== resolved.host
+        ? `${orig.host} -> ${resolved.host}`
+        : `${orig.host}`;
+    });
+    logCallback?.(`Ports: ${portChanges.join(', ')}`);
+  }
 
   // Find available SSH port
   const sshPort = await findAvailableSshPort();
@@ -75,7 +84,7 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
     image: imageName,
     sshPort,
     volumes,
-    ports,
+    ports: resolvedPorts,
     env,
   });
 

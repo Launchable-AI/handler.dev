@@ -195,14 +195,6 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
   const defaultImage = images?.flatMap((i) => i.repoTags).find((tag) => tag && tag !== '<none>:<none>') || 'ubuntu:24.04';
   const selectedImage = image || defaultImage;
 
-  // Common base images
-  const commonImages = [
-    'ubuntu:24.04',
-    'ubuntu:22.04',
-    'debian:bookworm',
-    'debian:bullseye',
-  ];
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!backend) return;
@@ -380,29 +372,15 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
                   onChange={(e) => setImage(e.target.value)}
                   className="w-full px-3 py-2 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--cyan-dim)/0.3)]"
                 >
-                  {images && images.length > 0 && (
-                    <optgroup label="Built Images (ready to use)">
-                      {images
-                        .flatMap((i) => i.repoTags)
-                        .filter((tag) => tag && tag !== '<none>:<none>')
-                        .map((tag) => (
-                          <option key={tag} value={tag}>
-                            {tag}
-                          </option>
-                        ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="Base Images (will build with SSH setup)">
-                    {commonImages.map((img) => (
-                      <option key={img} value={img}>
-                        {img}
+                  {images
+                    ?.flatMap((i) => i.repoTags)
+                    .filter((tag) => tag && tag !== '<none>:<none>')
+                    .map((tag) => (
+                      <option key={tag} value={tag}>
+                        {tag}
                       </option>
                     ))}
-                  </optgroup>
                 </select>
-                <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
-                  Built images launch instantly. Base images require a one-time build.
-                </p>
               </div>
             )}
 

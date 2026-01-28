@@ -135,8 +135,23 @@ export async function renameContainer(id: string, newName: string): Promise<void
 }
 
 export async function listImages(): Promise<ImageInfo[]> {
-  const images = await docker.listImages({
+  // Get caisson-labeled images
+  const caissonImages = await docker.listImages({
     filters: { label: [IMAGE_LABEL] },
+  });
+
+  // Also include ubuntu:24.04 if present
+  const allImages = await docker.listImages({});
+  const ubuntuImage = allImages.filter(img =>
+    img.RepoTags?.some(tag => tag === 'ubuntu:24.04')
+  );
+
+  // Combine and dedupe by ID
+  const seenIds = new Set<string>();
+  const images = [...caissonImages, ...ubuntuImage].filter(img => {
+    if (seenIds.has(img.Id)) return false;
+    seenIds.add(img.Id);
+    return true;
   });
 
   // Fetch detailed info for each image to get labels
