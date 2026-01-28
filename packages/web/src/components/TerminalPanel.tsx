@@ -17,7 +17,7 @@ import '@xterm/xterm/css/xterm.css';
 
 // Types
 export type PanelPosition = 'right' | 'bottom';
-export type TerminalType = 'vm' | 'container' | 'daytona';
+export type TerminalType = 'vm' | 'container' | 'daytona' | 'aws';
 
 interface TerminalTab {
   id: string;
@@ -31,6 +31,9 @@ interface TerminalTab {
   isDevNode?: boolean;
   // For Daytona
   sandboxId?: string;
+  // For AWS
+  instanceId?: string;
+  publicIp?: string;
   connectionState: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
   errorMessage?: string;
   retryCount?: number;
@@ -45,6 +48,7 @@ interface TerminalPanelContextType {
   openTerminal: (vmId: string, vmName: string, vmIp: string) => void;
   openContainerTerminal: (containerId: string, containerName: string, isDevNode?: boolean) => void;
   openDaytonaTerminal: (sandboxId: string, sandboxName: string) => void;
+  openAwsTerminal: (instanceId: string, sandboxName: string, publicIp: string) => void;
   closeTerminal: (tabId: string) => void;
   closePanel: () => void;
   setPosition: (position: PanelPosition) => void;
@@ -159,6 +163,29 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
     setIsOpen(true);
   }, [tabs]);
 
+  const openAwsTerminal = useCallback((instanceId: string, sandboxName: string, publicIp: string) => {
+    // Check if terminal for this AWS instance already exists
+    const existingTab = tabs.find(t => t.type === 'aws' && t.instanceId === instanceId);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      setIsOpen(true);
+      return;
+    }
+
+    const newTab: TerminalTab = {
+      id: `term-aws-${instanceId}-${Date.now()}`,
+      name: sandboxName,
+      type: 'aws',
+      instanceId,
+      publicIp,
+      connectionState: 'connecting',
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+    setIsOpen(true);
+  }, [tabs]);
+
   const closeTerminal = useCallback((tabId: string) => {
     setTabs(prev => {
       const newTabs = prev.filter(t => t.id !== tabId);
@@ -190,6 +217,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
       openTerminal,
       openContainerTerminal,
       openDaytonaTerminal,
+      openAwsTerminal,
       closeTerminal,
       closePanel,
       setPosition,
@@ -557,6 +585,15 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
             cols: term.cols,
             rows: term.rows,
           }));
+        } else if (tab.type === 'aws') {
+          // AWS terminal - uses SSH with stored private key
+          ws.send(JSON.stringify({
+            type: 'start-aws',
+            instanceId: tab.instanceId,
+            publicIp: tab.publicIp,
+            cols: term.cols,
+            rows: term.rows,
+          }));
         } else {
           // VM terminal - uses SSH
           ws.send(JSON.stringify({
@@ -704,7 +741,7 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       fitAddonRef.current = null;
       wsRef.current = null;
     };
-  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.isDevNode, tab.sandboxId, getWsUrl]);
+  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.isDevNode, tab.sandboxId, tab.instanceId, tab.publicIp, getWsUrl]);
 
   return (
     <div className="h-full flex flex-col">
@@ -723,7 +760,7 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
         </span>
         <span className="text-[hsl(var(--text-muted))]">|</span>
         <span className="text-[hsl(var(--text-secondary))]">
-          {tab.type === 'container' ? `dev@${tab.name}` : tab.type === 'daytona' ? `daytona@${tab.name}` : `agent@${tab.vmIp}`}
+          {tab.type === 'container' ? `dev@${tab.name}` : tab.type === 'daytona' ? `daytona@${tab.name}` : tab.type === 'aws' ? `ubuntu@${tab.publicIp}` : `agent@${tab.vmIp}`}
         </span>
       </div>
 

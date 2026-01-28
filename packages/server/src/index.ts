@@ -158,12 +158,14 @@ import {
 import {
   createVmTerminalSession,
   createDaytonaTerminalSession,
+  createAwsTerminalSession,
   writeToVmSession,
   resizeVmSession,
   closeVmSessionByWebSocket,
   closeAllVmSessions,
 } from './services/vm-terminal.js';
 import { getDaytonaService } from './services/daytona.js';
+import { getAwsService } from './services/aws.js';
 import containers from './routes/containers.js';
 import images from './routes/images.js';
 import volumes from './routes/volumes.js';
@@ -179,6 +181,7 @@ import sandboxes from './routes/sandboxes.js';
 import unifiedVolumes from './routes/unified-volumes.js';
 import templateRoutes from './routes/templates.js';
 import daytonaRoutes from './routes/daytona.js';
+import awsRoutes from './routes/aws.js';
 
 const app = new Hono();
 
@@ -236,6 +239,7 @@ app.route('/api/sandboxes', sandboxes);
 app.route('/api/unified-volumes', unifiedVolumes);
 app.route('/api/templates', templateRoutes);
 app.route('/api/daytona', daytonaRoutes);
+app.route('/api/backends/aws', awsRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {
@@ -328,6 +332,44 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
               }
             } else {
               ws.send(JSON.stringify({ type: 'error', message: 'sandboxId is required' }));
+            }
+            break;
+
+          case 'start-aws':
+            // Start a new AWS terminal session
+            if (msg.instanceId && msg.publicIp) {
+              try {
+                const awsService = getAwsService();
+                const sshPrivateKey = await awsService.getSshPrivateKey();
+
+                if (!sshPrivateKey) {
+                  ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'SSH key not available for AWS instances'
+                  }));
+                  break;
+                }
+
+                console.log(`[WS Terminal] Creating AWS terminal for instance: ${msg.instanceId}`);
+
+                sessionId = createAwsTerminalSession(
+                  ws,
+                  msg.instanceId,
+                  msg.publicIp,
+                  sshPrivateKey,
+                  msg.cols || 80,
+                  msg.rows || 24
+                );
+                isVmSession = true; // Use VM session handlers for write/resize/close
+              } catch (err) {
+                console.error('[WS Terminal] Failed to create AWS terminal:', err);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  message: err instanceof Error ? err.message : 'Failed to create terminal'
+                }));
+              }
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'instanceId and publicIp are required' }));
             }
             break;
 

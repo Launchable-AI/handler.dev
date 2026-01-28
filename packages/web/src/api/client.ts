@@ -1265,6 +1265,7 @@ export interface BackendStatus {
   cloudHypervisor: BackendInfo;
   firecracker: BackendInfo;
   daytona: BackendInfo;
+  aws: BackendInfo;
 }
 
 export async function getBackendStatus(): Promise<BackendStatus> {
@@ -1581,7 +1582,7 @@ export async function downloadBaseImage(
 /**
  * Backend types for sandboxes
  */
-export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona';
+export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws';
 
 /**
  * Unified status across all backends
@@ -1682,7 +1683,27 @@ export interface Sandbox {
   startedAt?: string;
 
   /** Backend-specific metadata */
-  backendMeta?: DockerMeta | VmMeta | DaytonaMeta;
+  backendMeta?: DockerMeta | VmMeta | DaytonaMeta | AwsMeta;
+}
+
+/**
+ * AWS-specific metadata
+ */
+export interface AwsMeta {
+  type: 'aws';
+  instanceId: string;
+  instanceType: string;
+  spotRequestId?: string;
+  volumeId?: string;
+  availabilityZone: string;
+  publicIp?: string;
+  privateIp?: string;
+  region: string;
+  ec2State?: string;
+  launchTime?: string;
+  securityGroupId?: string;
+  subnetId?: string;
+  vpcId?: string;
 }
 
 /**
@@ -1695,6 +1716,7 @@ export interface SandboxListResponse {
     'cloud-hypervisor': boolean;
     firecracker: boolean;
     daytona: boolean;
+    aws: boolean;
   };
 }
 
@@ -1738,6 +1760,17 @@ export interface CreateSandboxRequest {
     sizeClass?: 'small' | 'medium' | 'large';
     language?: string;
     volumes?: Array<{ name: string; mountPath: string }>;
+  };
+
+  awsOptions?: {
+    sizeClass?: 'small' | 'medium' | 'large';
+    instanceType?: string;
+    amiId?: string;
+    volumeId?: string;
+    volumeSizeGb?: number;
+    availabilityZone?: string;
+    securityGroupIds?: string[];
+    subnetId?: string;
   };
 }
 
@@ -2489,4 +2522,165 @@ export async function activateDaytonaSnapshot(id: string): Promise<DaytonaSnapsh
  */
 export async function deactivateDaytonaSnapshot(id: string): Promise<void> {
   await fetchAPI(`/daytona/snapshots/${encodeURIComponent(id)}/deactivate`, { method: 'POST' });
+}
+
+// ==================== AWS Backend API ====================
+
+/**
+ * AWS size class presets for display
+ */
+export type AwsSizeClass = 'small' | 'medium' | 'large';
+
+export const AWS_SIZE_PRESETS: Record<AwsSizeClass, {
+  instanceType: string;
+  vcpus: number;
+  memoryMb: number;
+  diskGb: number;
+  label: string;
+}> = {
+  small: { instanceType: 't3.micro', vcpus: 2, memoryMb: 1024, diskGb: 8, label: 'Small' },
+  medium: { instanceType: 't3.medium', vcpus: 2, memoryMb: 4096, diskGb: 20, label: 'Medium' },
+  large: { instanceType: 't3.large', vcpus: 2, memoryMb: 8192, diskGb: 30, label: 'Large' },
+};
+
+/**
+ * AWS region info
+ */
+export interface AwsRegion {
+  id: string;
+  name: string;
+}
+
+/**
+ * AWS configuration response
+ */
+export interface AwsConfigResponse {
+  configured: boolean;
+  region: string;
+  enabled: boolean;
+  hasCredentials?: boolean;
+  hasSshKey?: boolean;
+  sshKeyPath?: string;
+  defaultVpcId?: string;
+  defaultSubnetId?: string;
+}
+
+/**
+ * Get AWS backend configuration
+ */
+export async function getAwsConfig(): Promise<AwsConfigResponse> {
+  return fetchAPI('/backends/aws/config');
+}
+
+/**
+ * Configure AWS backend
+ */
+export async function configureAws(config: {
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  region?: string;
+  enabled?: boolean;
+  defaultVpcId?: string;
+  defaultSubnetId?: string;
+}): Promise<{ success: boolean; aws?: AwsConfigResponse }> {
+  return fetchAPI('/backends/aws/configure', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+/**
+ * Test AWS connection
+ */
+export async function testAwsConnection(config?: {
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  region?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/aws/test', {
+    method: 'POST',
+    body: JSON.stringify(config || {}),
+  });
+}
+
+/**
+ * Get list of available AWS regions
+ */
+export async function listAwsRegions(): Promise<AwsRegion[]> {
+  return fetchAPI('/backends/aws/regions');
+}
+
+/**
+ * Get default AMIs per region
+ */
+export async function getAwsAmis(): Promise<Record<string, string>> {
+  return fetchAPI('/backends/aws/amis');
+}
+
+/**
+ * Get AWS size presets from server
+ */
+export async function getAwsSizes(): Promise<Record<AwsSizeClass, {
+  instanceType: string;
+  vcpus: number;
+  memoryMb: number;
+  diskGb: number;
+}>> {
+  return fetchAPI('/backends/aws/sizes');
+}
+
+/**
+ * Refresh AWS instance cache
+ */
+export async function refreshAwsCache(): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/aws/refresh', {
+    method: 'POST',
+  });
+}
+
+/**
+ * Download AWS SSH key
+ */
+export async function downloadAwsSshKey(): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/backends/aws/ssh-key`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to download SSH key' }));
+    throw new Error(error.error || 'Failed to download SSH key');
+  }
+  return response.blob();
+}
+
+/**
+ * List AWS-managed volumes
+ */
+export async function listAwsVolumes(): Promise<Array<{
+  VolumeId: string;
+  Size: number;
+  State: string;
+  AvailabilityZone: string;
+  Tags?: Array<{ Key: string; Value: string }>;
+}>> {
+  return fetchAPI('/backends/aws/volumes');
+}
+
+/**
+ * Create an AWS EBS volume
+ */
+export async function createAwsVolume(request: {
+  name: string;
+  sizeGb: number;
+  availabilityZone?: string;
+}): Promise<{ volumeId: string }> {
+  return fetchAPI('/backends/aws/volumes', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Delete an AWS EBS volume
+ */
+export async function deleteAwsVolume(volumeId: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/backends/aws/volumes/${volumeId}`, { method: 'DELETE' });
 }

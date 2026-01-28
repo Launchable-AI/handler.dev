@@ -6,7 +6,7 @@
  * and Daytona cloud workspaces.
  */
 
-export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona';
+export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws';
 
 export type SandboxStatus =
   | 'creating'
@@ -73,7 +73,7 @@ export interface Sandbox {
   startedAt?: string;
 
   /** Backend-specific metadata */
-  backendMeta?: DockerMeta | VmMeta | DaytonaMeta;
+  backendMeta?: DockerMeta | VmMeta | DaytonaMeta | AwsMeta;
 }
 
 export interface PortMapping {
@@ -137,6 +137,39 @@ export interface DaytonaMeta {
 }
 
 /**
+ * AWS-specific metadata
+ */
+export interface AwsMeta {
+  type: 'aws';
+  /** EC2 Instance ID */
+  instanceId: string;
+  /** EC2 Instance type (e.g., t3.micro) */
+  instanceType: string;
+  /** Spot Instance request ID */
+  spotRequestId?: string;
+  /** EBS volume ID for persistent storage */
+  volumeId?: string;
+  /** Availability zone */
+  availabilityZone: string;
+  /** Public IP address */
+  publicIp?: string;
+  /** Private IP address */
+  privateIp?: string;
+  /** AWS region */
+  region: string;
+  /** EC2 instance state */
+  ec2State?: string;
+  /** Instance launch time */
+  launchTime?: string;
+  /** Security group ID */
+  securityGroupId?: string;
+  /** Subnet ID */
+  subnetId?: string;
+  /** VPC ID */
+  vpcId?: string;
+}
+
+/**
  * Request to create a new sandbox
  */
 export interface CreateSandboxRequest {
@@ -166,6 +199,8 @@ export interface CreateSandboxRequest {
   vmOptions?: VmCreateOptions;
   /** Daytona-specific options */
   daytonaOptions?: DaytonaCreateOptions;
+  /** AWS-specific options */
+  awsOptions?: AwsCreateOptions;
 }
 
 export interface DockerCreateOptions {
@@ -207,6 +242,25 @@ export interface DaytonaCreateOptions {
   volumes?: Array<{ name: string; mountPath: string }>;
 }
 
+export interface AwsCreateOptions {
+  /** Size class preset (uses predefined instance types) */
+  sizeClass?: 'small' | 'medium' | 'large';
+  /** Override instance type (e.g., t3.large) */
+  instanceType?: string;
+  /** Custom AMI ID (uses region default if not specified) */
+  amiId?: string;
+  /** Existing EBS volume ID to attach */
+  volumeId?: string;
+  /** Size for new EBS volume in GB */
+  volumeSizeGb?: number;
+  /** Availability zone (uses region default if not specified) */
+  availabilityZone?: string;
+  /** Security group IDs */
+  securityGroupIds?: string[];
+  /** Subnet ID */
+  subnetId?: string;
+}
+
 /**
  * Filter options for listing sandboxes
  */
@@ -230,5 +284,6 @@ export interface SandboxListResponse {
     'cloud-hypervisor': boolean;
     firecracker: boolean;
     daytona: boolean;
+    aws: boolean;
   };
 }

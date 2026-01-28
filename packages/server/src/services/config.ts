@@ -12,8 +12,20 @@ export interface DaytonaConfig {
   enabled: boolean;
 }
 
+export interface AwsConfig {
+  accessKeyId: string;        // AWS Access Key ID
+  secretAccessKey: string;    // AWS Secret Access Key
+  region: string;             // e.g., "us-east-1"
+  enabled: boolean;
+  defaultVpcId?: string;      // Optional: use default VPC if not specified
+  defaultSubnetId?: string;   // Optional: use default subnet if not specified
+  sshKeyName?: string;        // AWS key pair name (auto-created if not specified)
+  sshPrivateKey?: string;     // Private key content (stored when auto-created)
+}
+
 export interface CloudBackendsConfig {
   daytona?: DaytonaConfig;
+  aws?: AwsConfig;
 }
 
 export interface AppConfig {

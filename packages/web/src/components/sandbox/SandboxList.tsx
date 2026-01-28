@@ -72,6 +72,7 @@ const BACKEND_OPTIONS: Array<{ value: SandboxBackend; label: string; icon: React
   { value: 'cloud-hypervisor', label: 'Cloud-Hypervisor', icon: Cloud },
   { value: 'firecracker', label: 'Firecracker', icon: Flame },
   { value: 'daytona', label: 'Daytona', icon: Globe },
+  { value: 'aws', label: 'AWS', icon: Cloud },
 ];
 
 // Sortable columns for list view
@@ -240,6 +241,7 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
     'cloud-hypervisor': false,
     firecracker: false,
     daytona: false,
+    aws: false,
   };
 
   // Filter sandboxes by search query

@@ -357,6 +357,7 @@ export function useSandboxesByBackend(filter?: SandboxListFilter) {
       'cloud-hypervisor': [] as Sandbox[],
       firecracker: [] as Sandbox[],
       daytona: [] as Sandbox[],
+      aws: [] as Sandbox[],
     };
   }
 
@@ -365,6 +366,7 @@ export function useSandboxesByBackend(filter?: SandboxListFilter) {
     'cloud-hypervisor': [],
     firecracker: [],
     daytona: [],
+    aws: [],
   };
 
   for (const sandbox of data.sandboxes) {

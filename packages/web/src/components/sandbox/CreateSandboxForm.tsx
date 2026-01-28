@@ -68,6 +68,11 @@ const BACKEND_INFO: Record<SandboxBackend, { label: string; icon: typeof Box; de
     icon: Cloud,
     description: 'Cloud-hosted workspace. Accessible anywhere, no local resources.',
   },
+  aws: {
+    label: 'AWS EC2',
+    icon: Cloud,
+    description: 'Cost-effective Spot instances with persistent EBS volumes.',
+  },
 };
 
 export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
@@ -103,6 +108,9 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
     const saved = localStorage.getItem('caisson:show-daytona-managed');
     return saved === 'true'; // Default to false (hide managed)
   });
+
+  // AWS state
+  const [awsSizeClass, setAwsSizeClass] = useState<'small' | 'medium' | 'large'>('small');
 
   // Calculate ports already in use
   const usedHostPorts = useMemo(() => {
@@ -220,6 +228,9 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
         } : undefined,
         daytonaOptions: backend === 'daytona' ? {
           sizeClass: memoryMb <= 2048 ? 'small' : memoryMb <= 8192 ? 'medium' : 'large',
+        } : undefined,
+        awsOptions: backend === 'aws' ? {
+          sizeClass: awsSizeClass,
         } : undefined,
       });
       onClose();
@@ -574,6 +585,27 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
                   <option value="medium">Medium (2 vCPU, 4GB RAM, 8GB disk)</option>
                   <option value="large">Large (4 vCPU, 8GB RAM, 10GB disk)</option>
                 </select>
+              </div>
+            )}
+
+            {/* AWS size class */}
+            {backend === 'aws' && (
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
+                  Instance Size
+                </label>
+                <select
+                  value={awsSizeClass}
+                  onChange={(e) => setAwsSizeClass(e.target.value as 'small' | 'medium' | 'large')}
+                  className="w-full px-3 py-2 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none"
+                >
+                  <option value="small">Small - t3.micro (2 vCPU, 1GB RAM, 8GB disk)</option>
+                  <option value="medium">Medium - t3.medium (2 vCPU, 4GB RAM, 20GB disk)</option>
+                  <option value="large">Large - t3.large (2 vCPU, 8GB RAM, 30GB disk)</option>
+                </select>
+                <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
+                  Uses EC2 Spot instances for cost savings. Ubuntu 24.04 LTS with persistent EBS storage.
+                </p>
               </div>
             )}
 

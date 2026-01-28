@@ -11,10 +11,11 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { getSandboxService, initializeSandboxService } from '../services/sandbox/index.js';
+import { getSandboxService, initializeSandboxService, resetSandboxService } from '../services/sandbox/index.js';
 import { getCloudHypervisorService, initializeCloudHypervisorService } from '../services/hypervisor.js';
 import { getFirecrackerService, initializeFirecrackerService } from '../services/firecracker.js';
 import { getDaytonaService, initializeDaytonaService } from '../services/daytona.js';
+import { getAwsService, initializeAwsService } from '../services/aws.js';
 import * as dockerService from '../services/docker.js';
 import * as containerBuilder from '../services/container-builder.js';
 import type { SandboxBackend, SandboxStatus } from '../types/sandbox.js';
@@ -23,6 +24,15 @@ const sandboxes = new Hono();
 
 // Lazy initialization state
 let sandboxServiceInitialized = false;
+
+/**
+ * Reset the sandbox service so it will be reinitialized on next use.
+ * Call this after cloud backend configuration changes.
+ */
+export function reinitializeSandboxService() {
+  sandboxServiceInitialized = false;
+  resetSandboxService();
+}
 
 /**
  * Ensure sandbox service is initialized with all available backends
@@ -36,6 +46,7 @@ async function ensureSandboxServiceInitialized() {
   let hypervisor = null;
   let firecracker = null;
   let daytona = null;
+  let aws = null;
 
   // Cloud-Hypervisor
   try {
@@ -64,11 +75,23 @@ async function ensureSandboxServiceInitialized() {
     console.log('[SandboxRoutes] Daytona not available:', err instanceof Error ? err.message : 'unknown');
   }
 
+  // AWS
+  try {
+    await initializeAwsService();
+    const awsService = getAwsService();
+    if (await awsService.isAvailable()) {
+      aws = awsService;
+    }
+  } catch (err) {
+    console.log('[SandboxRoutes] AWS not available:', err instanceof Error ? err.message : 'unknown');
+  }
+
   // Initialize sandbox service with available backends
   await initializeSandboxService({
     hypervisor: hypervisor ?? undefined,
     firecracker: firecracker ?? undefined,
     daytona: daytona ?? undefined,
+    aws: aws ?? undefined,
   });
 
   sandboxServiceInitialized = true;
@@ -76,7 +99,7 @@ async function ensureSandboxServiceInitialized() {
 }
 
 // Validation schemas
-const SandboxBackendEnum = z.enum(['docker', 'cloud-hypervisor', 'firecracker', 'daytona']);
+const SandboxBackendEnum = z.enum(['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws']);
 const SandboxStatusEnum = z.enum([
   'creating', 'starting', 'running', 'stopping',
   'stopped', 'paused', 'error', 'archived', 'building'
@@ -136,6 +159,18 @@ const CreateSandboxSchema = z.object({
       mountPath: z.string(),
     })).optional(),
   }).optional(),
+
+  // AWS-specific options
+  awsOptions: z.object({
+    sizeClass: z.enum(['small', 'medium', 'large']).optional(),
+    instanceType: z.string().optional(),
+    amiId: z.string().optional(),
+    volumeId: z.string().optional(),
+    volumeSizeGb: z.number().optional(),
+    availabilityZone: z.string().optional(),
+    securityGroupIds: z.array(z.string()).optional(),
+    subnetId: z.string().optional(),
+  }).optional(),
 });
 
 /**
@@ -155,7 +190,7 @@ sandboxes.get('/', zValidator('query', ListSandboxesQuerySchema), async (c) => {
   let backends: SandboxBackend[] | undefined;
   if (query.backend) {
     backends = query.backend.split(',').filter((b): b is SandboxBackend =>
-      ['docker', 'cloud-hypervisor', 'firecracker', 'daytona'].includes(b)
+      ['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws'].includes(b)
     );
   }
 
@@ -350,6 +385,9 @@ sandboxes.get('/:id/logs', async (c) => {
     } else if (sandbox.backend === 'daytona') {
       // Daytona - logs not supported directly, return info message
       logs = '[Daytona workspaces: Use SSH to view logs directly on the workspace]';
+    } else if (sandbox.backend === 'aws') {
+      // AWS - logs not supported directly, return info message
+      logs = '[AWS instances: Use SSH to view logs directly on the instance]';
     }
 
     return c.json({ logs });
@@ -486,6 +524,17 @@ sandboxes.get('/:id/ssh-key', async (c) => {
       } else {
         return c.json({ error: 'SSH key not available for this Daytona workspace' }, 404);
       }
+    } else if (sandbox.backend === 'aws') {
+      // AWS instances use a shared key stored in config
+      const awsService = service.getAwsService();
+      if (!awsService) {
+        return c.json({ error: 'AWS service not available' }, 500);
+      }
+      const key = await awsService.getSshPrivateKey();
+      if (!key) {
+        return c.json({ error: 'SSH key not available. Create an AWS instance first to generate a key.' }, 404);
+      }
+      privateKey = key;
     } else {
       return c.json({ error: 'SSH key not supported for this backend' }, 400);
     }
@@ -528,6 +577,19 @@ sandboxes.get('/:id/ssh-command', async (c) => {
       const sshCommand = await daytona.getSshCommand(workspaceId);
 
       return c.json({ sshCommand });
+    } else if (sandbox.backend === 'aws') {
+      // Get SSH command from AWS service
+      const { getAwsService } = await import('../services/aws.js');
+      const awsService = getAwsService();
+
+      // Extract the instance ID from sandbox ID (remove aws- prefix)
+      const instanceId = id.startsWith('aws-') ? id.slice(4) : id;
+      const sshCommand = await awsService.getSshCommand(instanceId);
+
+      if (sshCommand) {
+        return c.json({ sshCommand });
+      }
+      return c.json({ error: 'SSH command not available - instance may not have a public IP' }, 404);
     } else if (sandbox.sshCommand) {
       // Return existing SSH command from sandbox
       return c.json({ sshCommand: sandbox.sshCommand });
@@ -564,6 +626,7 @@ sandboxes.post('/:id/upload', async (c) => {
     // Use appropriate default path based on backend
     const defaultDestPath = sandbox.backend === 'docker' ? '/home/dev/workspace'
       : sandbox.backend === 'daytona' ? '/home/daytona'
+      : sandbox.backend === 'aws' ? '/home/ubuntu'
       : '/home/agent';  // firecracker/cloud-hypervisor
     const destPath = formData.get('destPath') as string || defaultDestPath;
 
@@ -723,6 +786,61 @@ sandboxes.post('/:id/upload', async (c) => {
       }
 
       return c.json({ success: true, path: `${destPath}/${filename}` });
+    } else if (sandbox.backend === 'aws') {
+      // AWS: upload via SSH using stored private key
+      if (!sandbox.guestIp) {
+        return c.json({ error: 'AWS instance does not have a public IP address' }, 400);
+      }
+
+      const fs = await import('fs');
+      const path = await import('path');
+      const os = await import('os');
+      const { execSync } = await import('child_process');
+
+      const awsService = service.getAwsService();
+      if (!awsService) {
+        return c.json({ error: 'AWS service not available' }, 500);
+      }
+
+      const sshPrivateKey = await awsService.getSshPrivateKey();
+      if (!sshPrivateKey) {
+        return c.json({ error: 'SSH key not available for AWS instances' }, 400);
+      }
+
+      // Write SSH key and file to temp locations
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
+      const tempKeyPath = path.join(tempDir, 'key');
+      const tempFilePath = path.join(tempDir, filename);
+
+      fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
+      fs.mkdirSync(path.dirname(tempFilePath), { recursive: true });
+      fs.writeFileSync(tempFilePath, buffer);
+
+      try {
+        // Ensure destination directory exists
+        const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
+        try {
+          execSync(
+            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ubuntu@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
+            { stdio: 'pipe', timeout: 60000 }
+          );
+        } catch {
+          // Ignore if already exists
+        }
+
+        // Upload via SCP
+        execSync(
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tempFilePath}" ubuntu@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          { stdio: 'pipe', timeout: 300000 }
+        );
+      } finally {
+        // Cleanup temp files
+        fs.unlinkSync(tempKeyPath);
+        fs.unlinkSync(tempFilePath);
+        fs.rmSync(tempDir, { recursive: true });
+      }
+
+      return c.json({ success: true, path: `${destPath}/${filename}` });
     }
 
     return c.json({ error: 'Upload not supported for this backend' }, 400);
@@ -758,6 +876,7 @@ sandboxes.post('/:id/upload-directory', async (c) => {
     // Use appropriate default path based on backend
     const defaultDestPath = sandbox.backend === 'docker' ? '/home/dev/workspace'
       : sandbox.backend === 'daytona' ? '/home/daytona'
+      : sandbox.backend === 'aws' ? '/home/ubuntu'
       : '/home/agent';  // firecracker/cloud-hypervisor
     const destPath = (formData.get('destPath') as string) || defaultDestPath;
 
@@ -902,6 +1021,45 @@ sandboxes.post('/:id/upload-directory', async (c) => {
         );
 
         console.log(`[SandboxRoutes] Directory uploaded to Daytona workspace ${sandbox.guestIp}`);
+      } else if (sandbox.backend === 'aws') {
+        if (!sandbox.guestIp) {
+          return c.json({ error: 'AWS instance does not have a public IP address' }, 400);
+        }
+
+        const awsService = service.getAwsService();
+        if (!awsService) {
+          return c.json({ error: 'AWS service not available' }, 500);
+        }
+
+        const sshPrivateKey = await awsService.getSshPrivateKey();
+        if (!sshPrivateKey) {
+          return c.json({ error: 'SSH key not available for AWS instances' }, 400);
+        }
+
+        const tempKeyPath = path.join(tempDir, 'key');
+        fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
+
+        // Ensure destination directory exists
+        try {
+          execSync(
+            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ubuntu@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            { stdio: 'pipe', timeout: 60000 }
+          );
+        } catch {
+          // Ignore if already exists
+        }
+
+        // Copy tar to instance and extract
+        execSync(
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tarPath}" ubuntu@${sandbox.guestIp}:/tmp/upload.tar.gz`,
+          { stdio: 'pipe', timeout: 300000 }
+        );
+        execSync(
+          `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ubuntu@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
+          { stdio: 'pipe', timeout: 120000 }
+        );
+
+        console.log(`[SandboxRoutes] Directory uploaded to AWS instance ${sandbox.guestIp}`);
       } else {
         return c.json({ error: 'Upload not supported for this backend' }, 400);
       }

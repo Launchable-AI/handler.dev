@@ -41,6 +41,12 @@ const BACKEND_CONFIG: Record<SandboxBackend, {
     color: 'text-[hsl(var(--amber))]',
     bgColor: 'bg-[hsl(var(--amber)/0.1)]',
   },
+  aws: {
+    icon: Cloud,
+    label: 'AWS',
+    color: 'text-[hsl(var(--orange))]',
+    bgColor: 'bg-[hsl(var(--orange)/0.1)]',
+  },
 };
 
 export function BackendBadge({ backend, size = 'sm', showLabel = false }: BackendBadgeProps) {
@@ -81,5 +87,7 @@ export function getBackendShortName(backend: SandboxBackend): string {
       return 'FC';
     case 'daytona':
       return 'Daytona';
+    case 'aws':
+      return 'AWS';
   }
 }

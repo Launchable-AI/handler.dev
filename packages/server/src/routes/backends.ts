@@ -4,7 +4,8 @@ import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
 import { testConnection } from '../services/docker.js';
 import { getConfig, setConfig } from '../services/config.js';
-import { getDaytonaService } from '../services/daytona.js';
+import { getDaytonaService, initializeDaytonaService } from '../services/daytona.js';
+import { reinitializeSandboxService } from './sandboxes.js';
 import os from 'os';
 
 const execAsync = promisify(exec);
@@ -24,6 +25,7 @@ interface BackendStatus {
   cloudHypervisor: BackendInfo;
   firecracker: BackendInfo;
   daytona: BackendInfo;
+  aws: BackendInfo;
 }
 
 // Helper to check if a binary exists in PATH or common locations
@@ -194,13 +196,48 @@ async function getDaytonaStatus(): Promise<BackendInfo> {
   return info;
 }
 
+// Check AWS cloud backend status (doesn't hit API - just checks config)
+// Use the /backends/aws/test endpoint for actual connectivity checks
+async function getAwsStatus(): Promise<BackendInfo> {
+  const info: BackendInfo = {
+    installed: false,
+    enabled: false,
+    running: false,
+  };
+
+  try {
+    const config = await getConfig();
+    const aws = config.cloudBackends?.aws;
+
+    // If no credentials are configured, it's not installed (from user perspective)
+    if (!aws?.accessKeyId || !aws?.secretAccessKey) {
+      return info;
+    }
+
+    // Credentials are configured, so it's "installed"
+    info.installed = true;
+    info.enabled = aws.enabled ?? false;
+
+    // Don't hit the AWS API on regular status polling to avoid rate limits
+    // Assume it's running if enabled - use test endpoint for explicit checks
+    if (aws.enabled) {
+      info.running = true;
+    }
+  } catch (err) {
+    info.error = err instanceof Error ? err.message : 'Failed to check AWS status';
+  }
+
+  return info;
+}
+
 // GET /backends/status - Get status of all backends
 backends.get('/status', async (c) => {
-  const [docker, cloudHypervisor, firecracker, daytona] = await Promise.all([
+  const [docker, cloudHypervisor, firecracker, daytona, aws] = await Promise.all([
     getDockerStatus(),
     getCloudHypervisorStatus(),
     getFirecrackerStatus(),
     getDaytonaStatus(),
+    getAwsStatus(),
   ]);
 
   const status: BackendStatus = {
@@ -208,6 +245,7 @@ backends.get('/status', async (c) => {
     cloudHypervisor,
     firecracker,
     daytona,
+    aws,
   };
 
   return c.json(status);
@@ -257,6 +295,27 @@ backends.post('/:backend/enable', async (c) => {
         return c.json({ success: false, message: 'Failed to enable Daytona' }, 500);
       }
 
+    case 'aws':
+      // Enable AWS cloud backend
+      try {
+        const config = await getConfig();
+        if (!config.cloudBackends?.aws?.accessKeyId || !config.cloudBackends?.aws?.secretAccessKey) {
+          return c.json({ success: false, message: 'AWS credentials not configured' }, 400);
+        }
+        await setConfig({
+          cloudBackends: {
+            ...config.cloudBackends,
+            aws: {
+              ...config.cloudBackends.aws,
+              enabled: true,
+            },
+          },
+        });
+        return c.json({ success: true, message: 'AWS backend enabled' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to enable AWS' }, 500);
+      }
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
   }
@@ -298,6 +357,26 @@ backends.post('/:backend/disable', async (c) => {
         return c.json({ success: true, message: 'Daytona backend disabled' });
       } catch (err) {
         return c.json({ success: false, message: 'Failed to disable Daytona' }, 500);
+      }
+
+    case 'aws':
+      // Disable AWS cloud backend
+      try {
+        const config = await getConfig();
+        if (config.cloudBackends?.aws) {
+          await setConfig({
+            cloudBackends: {
+              ...config.cloudBackends,
+              aws: {
+                ...config.cloudBackends.aws,
+                enabled: false,
+              },
+            },
+          });
+        }
+        return c.json({ success: true, message: 'AWS backend disabled' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to disable AWS' }, 500);
       }
 
     default:
@@ -369,6 +448,13 @@ backends.post('/:backend/install', async (c) => {
         message: 'Daytona is a cloud service. Configure it via the Cloud Backends settings.',
       }, 400);
 
+    case 'aws':
+      // AWS is a cloud service - "install" means configure it
+      return c.json({
+        success: false,
+        message: 'AWS is a cloud service. Configure it via the Cloud Backends settings.',
+      }, 400);
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
   }
@@ -419,6 +505,21 @@ backends.post('/:backend/uninstall', async (c) => {
         return c.json({ success: false, message: 'Failed to remove Daytona configuration' }, 500);
       }
 
+    case 'aws':
+      // Remove AWS configuration
+      try {
+        const config = await getConfig();
+        await setConfig({
+          cloudBackends: {
+            ...config.cloudBackends,
+            aws: undefined,
+          },
+        });
+        return c.json({ success: true, message: 'AWS configuration removed' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to remove AWS configuration' }, 500);
+      }
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
   }
@@ -455,6 +556,17 @@ backends.post('/daytona/configure', async (c) => {
         daytona: newDaytona,
       },
     });
+
+    // Reinitialize services if credentials or enabled state changed
+    if (apiKey || enabled !== undefined) {
+      try {
+        await initializeDaytonaService();
+        // Reset the sandbox service so Daytona adapter gets registered on next use
+        reinitializeSandboxService();
+      } catch {
+        // Ignore initialization errors - they'll show up in test
+      }
+    }
 
     return c.json({ success: true, daytona: { ...newDaytona, apiKey: '***' } });
   } catch (err) {

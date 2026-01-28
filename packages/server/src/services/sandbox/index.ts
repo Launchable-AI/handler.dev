@@ -16,9 +16,11 @@ import type {
 import { DockerAdapter } from './docker-adapter.js';
 import { CloudHypervisorAdapter, FirecrackerAdapter } from './vm-adapter.js';
 import { DaytonaAdapter } from './daytona-adapter.js';
+import { AwsAdapter } from './aws-adapter.js';
 import { CloudHypervisorService } from '../hypervisor.js';
 import { FirecrackerService } from '../firecracker.js';
 import { DaytonaService } from '../daytona.js';
+import { AwsService } from '../aws.js';
 
 export class SandboxService {
   private adapters: Map<SandboxBackend, SandboxAdapter> = new Map();
@@ -28,6 +30,7 @@ export class SandboxService {
   private hypervisorService: CloudHypervisorService | null = null;
   private firecrackerService: FirecrackerService | null = null;
   private daytonaService: DaytonaService | null = null;
+  private awsService: AwsService | null = null;
 
   /**
    * Initialize the sandbox service with all available adapters
@@ -36,6 +39,7 @@ export class SandboxService {
     hypervisor?: CloudHypervisorService;
     firecracker?: FirecrackerService;
     daytona?: DaytonaService;
+    aws?: AwsService;
   }): Promise<void> {
     if (this.initialized) return;
 
@@ -78,6 +82,16 @@ export class SandboxService {
       }
     }
 
+    // Register AWS adapter
+    if (options?.aws) {
+      this.awsService = options.aws;
+      const awsAdapter = new AwsAdapter(options.aws);
+      if (await awsAdapter.isAvailable()) {
+        this.adapters.set('aws', awsAdapter);
+        console.log('[SandboxService] AWS adapter registered');
+      }
+    }
+
     this.initialized = true;
     console.log(`[SandboxService] Initialized with ${this.adapters.size} adapters`);
   }
@@ -91,6 +105,7 @@ export class SandboxService {
       'cloud-hypervisor': false,
       firecracker: false,
       daytona: false,
+      aws: false,
     };
 
     for (const [backend, adapter] of this.adapters) {
@@ -282,6 +297,9 @@ export class SandboxService {
     if (id.startsWith('daytona-')) {
       return 'daytona';
     }
+    if (id.startsWith('aws-')) {
+      return 'aws';
+    }
     // Default to cloud-hypervisor for 'vm-' prefix or unknown
     return 'cloud-hypervisor';
   }
@@ -320,6 +338,26 @@ export class SandboxService {
   getDaytonaService(): DaytonaService | null {
     return this.daytonaService;
   }
+
+  /**
+   * Get the underlying AWS service (for cloud-specific operations)
+   */
+  getAwsService(): AwsService | null {
+    return this.awsService;
+  }
+
+  /**
+   * Reset the service so it can be reinitialized with new adapters
+   */
+  reset(): void {
+    this.adapters.clear();
+    this.hypervisorService = null;
+    this.firecrackerService = null;
+    this.daytonaService = null;
+    this.awsService = null;
+    this.initialized = false;
+    console.log('[SandboxService] Reset - will reinitialize on next use');
+  }
 }
 
 // Singleton instance
@@ -342,10 +380,21 @@ export async function initializeSandboxService(options?: {
   hypervisor?: CloudHypervisorService;
   firecracker?: FirecrackerService;
   daytona?: DaytonaService;
+  aws?: AwsService;
 }): Promise<SandboxService> {
   const service = getSandboxService();
   await service.initialize(options);
   return service;
+}
+
+/**
+ * Reset the sandbox service so it will be reinitialized on next use.
+ * Call this after cloud backend configuration changes.
+ */
+export function resetSandboxService(): void {
+  if (sandboxServiceInstance) {
+    sandboxServiceInstance.reset();
+  }
 }
 
 // Re-export types
@@ -353,3 +402,4 @@ export type { SandboxAdapter, SandboxServiceConfig, AdapterResult } from './type
 export { DockerAdapter } from './docker-adapter.js';
 export { CloudHypervisorAdapter, FirecrackerAdapter } from './vm-adapter.js';
 export { DaytonaAdapter } from './daytona-adapter.js';
+export { AwsAdapter } from './aws-adapter.js';

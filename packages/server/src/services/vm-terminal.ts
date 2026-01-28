@@ -232,6 +232,104 @@ export function createDaytonaTerminalSession(
   return sessionId;
 }
 
+/**
+ * Create an AWS terminal session using SSH with the stored private key
+ * AWS instances are accessed via SSH to the ubuntu user
+ */
+export function createAwsTerminalSession(
+  ws: WebSocket,
+  instanceId: string,
+  publicIp: string,
+  sshPrivateKey: string,
+  cols: number = 80,
+  rows: number = 24
+): string {
+  const sessionId = `aws-${instanceId}-${Date.now()}`;
+
+  console.log(`[AWS Terminal] Creating session: ${sessionId}`);
+  console.log(`[AWS Terminal] Connecting to ${publicIp}`);
+
+  // Write the private key to a temporary file
+  const tempDir = fs.mkdtempSync('/tmp/aws-terminal-');
+  const keyPath = `${tempDir}/key.pem`;
+  fs.writeFileSync(keyPath, sshPrivateKey, { mode: 0o600 });
+
+  // SSH command arguments
+  const sshArgs = [
+    '-tt',                                    // Force PTY allocation
+    '-i', keyPath,                            // SSH key
+    '-o', 'IdentitiesOnly=yes',               // Only use specified key, not agent keys
+    '-o', 'StrictHostKeyChecking=no',         // Don't prompt for host key
+    '-o', 'UserKnownHostsFile=/dev/null',     // Don't save host keys
+    '-o', 'ConnectTimeout=10',                // Connection timeout
+    '-o', 'ServerAliveInterval=30',           // Keep-alive
+    '-o', 'ServerAliveCountMax=3',            // Keep-alive retries
+    `ubuntu@${publicIp}`,
+    '/bin/bash'
+  ];
+
+  console.log(`[AWS Terminal] SSH command: ssh ${sshArgs.join(' ')}`);
+
+  const sshProcess = spawn('ssh', sshArgs, {
+    env: {
+      ...process.env,
+      TERM: 'xterm-256color',
+    }
+  });
+
+  // Handle process output -> WebSocket
+  sshProcess.stdout?.on('data', (data: Buffer) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+    }
+  });
+
+  sshProcess.stderr?.on('data', (data: Buffer) => {
+    console.log(`[AWS Terminal] SSH stderr: ${data.toString()}`);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+    }
+  });
+
+  // Handle process exit
+  sshProcess.on('exit', (code) => {
+    console.log(`[AWS Terminal] Session ${sessionId} exited with code ${code}`);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'exit', code }));
+    }
+    sessions.delete(sessionId);
+    // Clean up temp key file
+    try {
+      fs.unlinkSync(keyPath);
+      fs.rmdirSync(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  sshProcess.on('error', (err) => {
+    console.error(`[AWS Terminal] Session ${sessionId} error:`, err);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'error', message: err.message }));
+    }
+    sessions.delete(sessionId);
+    // Clean up temp key file
+    try {
+      fs.unlinkSync(keyPath);
+      fs.rmdirSync(tempDir);
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  sessions.set(sessionId, { process: sshProcess, ws, vmId: instanceId });
+
+  // Send connected message
+  ws.send(JSON.stringify({ type: 'connected', sessionId }));
+
+  return sessionId;
+}
+
 export function closeAllVmSessions(): void {
   console.log(`[VM Terminal] Closing ${sessions.size} active session(s)...`);
   for (const [id, session] of sessions.entries()) {

@@ -115,6 +115,14 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
     } else if (sandbox.backend === 'daytona') {
       // Daytona uses its own SSH access API
       terminalPanel.openDaytonaTerminal(sandbox.id, sandbox.name);
+    } else if (sandbox.backend === 'aws') {
+      // AWS uses SSH with stored private key
+      const awsMeta = sandbox.backendMeta as { type: 'aws'; instanceId: string; publicIp?: string } | undefined;
+      const instanceId = awsMeta?.instanceId || sandbox.id.replace('aws-', '');
+      const publicIp = awsMeta?.publicIp || sandbox.guestIp;
+      if (publicIp) {
+        terminalPanel.openAwsTerminal(instanceId, sandbox.name, publicIp);
+      }
     } else {
       // Local VMs use SSH with local key
       if (sandbox.guestIp) {

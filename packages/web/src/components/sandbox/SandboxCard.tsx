@@ -52,6 +52,8 @@ function getDefaultWorkspacePath(backend: Sandbox['backend']): string {
       return '/home/dev/workspace';
     case 'daytona':
       return '/home/daytona';
+    case 'aws':
+      return '/home/ubuntu';
     case 'firecracker':
     case 'cloud-hypervisor':
     default:
@@ -259,6 +261,14 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     } else if (sandbox.backend === 'daytona') {
       // Daytona uses its own SSH access API
       terminalPanel.openDaytonaTerminal(sandbox.id, sandbox.name);
+    } else if (sandbox.backend === 'aws') {
+      // AWS uses SSH with stored private key
+      const awsMeta = sandbox.backendMeta as { type: 'aws'; instanceId: string; publicIp?: string } | undefined;
+      const instanceId = awsMeta?.instanceId || sandbox.id.replace('aws-', '');
+      const publicIp = awsMeta?.publicIp || sandbox.guestIp;
+      if (publicIp) {
+        terminalPanel.openAwsTerminal(instanceId, sandbox.name, publicIp);
+      }
     } else if (sandbox.guestIp) {
       // Local VMs use SSH with local key
       terminalPanel.openTerminal(sandbox.id, sandbox.name, sandbox.guestIp);

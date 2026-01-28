@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ExternalLink, Eye, EyeOff, ChevronDown } from 'lucide-react';
 import { useConfig, useUpdateConfig } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
@@ -58,6 +58,19 @@ export function Settings() {
   const [cloudTestResult, setCloudTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
 
+  // AWS state
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState('');
+  const [awsSecretAccessKey, setAwsSecretAccessKey] = useState('');
+  const [awsRegion, setAwsRegion] = useState('us-east-1');
+  const [awsEnabled, setAwsEnabled] = useState(false);
+  const [awsConfigured, setAwsConfigured] = useState(false);
+  const [awsSaving, setAwsSaving] = useState(false);
+  const [awsTestResult, setAwsTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [showAwsSecretKey, setShowAwsSecretKey] = useState(false);
+  const [awsRegions, setAwsRegions] = useState<{ id: string; name: string }[]>([]);
+  const [awsHasSshKey, setAwsHasSshKey] = useState(false);
+  const [awsSshKeyPath, setAwsSshKeyPath] = useState('');
+
   useEffect(() => {
     if (config) {
       setDataDirectory(config.dataDirectory || '');
@@ -114,13 +127,32 @@ export function Settings() {
   const loadCloudConfig = async () => {
     setCloudLoading(true);
     try {
-      const daytonaConfig = await api.getDaytonaConfig();
+      const [daytonaConfig, awsConfig, regions] = await Promise.all([
+        api.getDaytonaConfig(),
+        api.getAwsConfig(),
+        api.listAwsRegions(),
+      ]);
+
+      // Daytona
       setDaytonaApiUrl(daytonaConfig.apiUrl || 'https://app.daytona.io/api');
       setDaytonaEnabled(daytonaConfig.enabled);
       setDaytonaConfigured(daytonaConfig.configured);
       // Don't load API key - it's sensitive and we don't send it back from server
       if (!daytonaConfig.hasApiKey) {
         setDaytonaApiKey('');
+      }
+
+      // AWS
+      setAwsRegion(awsConfig.region || 'us-east-1');
+      setAwsEnabled(awsConfig.enabled);
+      setAwsConfigured(awsConfig.configured);
+      setAwsRegions(regions);
+      setAwsHasSshKey(awsConfig.hasSshKey || false);
+      setAwsSshKeyPath(awsConfig.sshKeyPath || '');
+      // Don't load credentials - they're sensitive
+      if (!awsConfig.hasCredentials) {
+        setAwsAccessKeyId('');
+        setAwsSecretAccessKey('');
       }
     } catch {
       // Ignore errors - defaults are fine
@@ -138,9 +170,16 @@ export function Settings() {
         apiKey: daytonaApiKey || undefined,
         enabled: daytonaEnabled,
       });
-      setDaytonaConfigured(!!daytonaApiKey);
+      // API key is now configured (either new one sent or existing one preserved)
+      if (daytonaApiKey) {
+        setDaytonaConfigured(true);
+      }
       // Refresh backend status in the UI
       queryClient.invalidateQueries({ queryKey: ['backend-status'] });
+      queryClient.invalidateQueries({ queryKey: ['sandbox-backends'] });
+      queryClient.invalidateQueries({ queryKey: ['sandboxes'] });
+      // Reload cloud config to get the latest state from server
+      await loadCloudConfig();
     } finally {
       setCloudSaving(false);
     }
@@ -156,6 +195,68 @@ export function Settings() {
       setCloudTestResult(result);
     } catch (err) {
       setCloudTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+    }
+  };
+
+  const handleSaveAws = async () => {
+    setAwsSaving(true);
+    setAwsTestResult(null);
+    try {
+      await api.configureAws({
+        accessKeyId: awsAccessKeyId || undefined,
+        secretAccessKey: awsSecretAccessKey || undefined,
+        region: awsRegion,
+        enabled: awsEnabled,
+      });
+      // Credentials are now configured (either new ones sent or existing ones preserved)
+      // Only set to false if we explicitly cleared them
+      if (awsAccessKeyId || awsSecretAccessKey) {
+        setAwsConfigured(true);
+      }
+      // Refresh backend status in the UI
+      queryClient.invalidateQueries({ queryKey: ['backend-status'] });
+      queryClient.invalidateQueries({ queryKey: ['sandbox-backends'] });
+      queryClient.invalidateQueries({ queryKey: ['sandboxes'] });
+      // Reload cloud config to get the latest state from server
+      await loadCloudConfig();
+    } finally {
+      setAwsSaving(false);
+    }
+  };
+
+  const handleTestAws = async () => {
+    setAwsTestResult(null);
+    try {
+      const result = await api.testAwsConnection({
+        accessKeyId: awsAccessKeyId || undefined,
+        secretAccessKey: awsSecretAccessKey || undefined,
+        region: awsRegion,
+      });
+      setAwsTestResult(result);
+    } catch (err) {
+      setAwsTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+    }
+  };
+
+  const handleDownloadAwsSshKey = async () => {
+    try {
+      const response = await fetch('/api/backends/aws/ssh-key');
+      if (!response.ok) {
+        const error = await response.json();
+        setAwsTestResult({ success: false, error: error.error || 'Failed to download SSH key' });
+        return;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'caisson-key.pem';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setAwsTestResult({ success: false, error: err instanceof Error ? err.message : 'Failed to download SSH key' });
     }
   };
 
@@ -403,7 +504,7 @@ export function Settings() {
                   </div>
                 )}
                 {sshJumpHost && !sshJumpHostKeyPath && (
-                  <div className="text-[10px] text-[hsl(var(--amber))]">
+                  <div className="text-[10px] text-[#06B6D4]">
                     Add Jump Host SSH Key Path to enable remote access
                   </div>
                 )}
@@ -449,7 +550,7 @@ export function Settings() {
                     onClick={() => setBackendsView('cloud')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
                       backendsView === 'cloud'
-                        ? 'bg-[hsl(var(--amber)/0.2)] text-[hsl(var(--amber))] border border-[hsl(var(--amber)/0.3)]'
+                        ? 'bg-[hsl(var(--amber)/0.2)] text-[#06B6D4] border border-[hsl(var(--amber)/0.3)]'
                         : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
                     }`}
                   >
@@ -555,7 +656,7 @@ export function Settings() {
                       <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
                         <div className="flex items-start gap-3">
                           <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-                            <Cloud className="h-5 w-5 text-[hsl(var(--amber))]" />
+                            <Cloud className="h-5 w-5 text-[#06B6D4]" />
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
@@ -573,7 +674,7 @@ export function Settings() {
                               href="https://www.daytona.io"
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--amber))] hover:underline mt-1"
+                              className="inline-flex items-center gap-1 text-[10px] text-[#06B6D4] hover:underline mt-1"
                             >
                               Learn more <ExternalLink className="h-3 w-3" />
                             </a>
@@ -584,7 +685,7 @@ export function Settings() {
                               checked={daytonaEnabled}
                               onChange={(e) => setDaytonaEnabled(e.target.checked)}
                               disabled={!daytonaConfigured}
-                              className="w-4 h-4 accent-[hsl(var(--amber))]"
+                              className="w-4 h-4 accent-[#06B6D4]"
                             />
                             <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
                           </label>
@@ -664,7 +765,7 @@ export function Settings() {
                             <button
                               onClick={handleSaveDaytona}
                               disabled={cloudSaving}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--amber))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--amber)/0.9)] disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#06B6D4] text-white hover:bg-[hsl(var(--amber)/0.8)] disabled:opacity-50"
                             >
                               {cloudSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                               Save
@@ -673,16 +774,183 @@ export function Settings() {
                         </div>
                       </div>
 
+                      {/* AWS Configuration */}
+                      <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+                            <Cloud className="h-5 w-5 text-[#FF9900]" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">AWS EC2</h4>
+                              {awsConfigured && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                                  Configured
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+                              EC2 Spot instances with persistent EBS volumes for cost-effective cloud sandboxes.
+                            </p>
+                            <a
+                              href="https://aws.amazon.com/ec2/spot/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] text-[#FF9900] hover:underline mt-1"
+                            >
+                              Learn more <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={awsEnabled}
+                              onChange={(e) => setAwsEnabled(e.target.checked)}
+                              disabled={!awsConfigured}
+                              className="w-4 h-4 accent-[#FF9900]"
+                            />
+                            <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
+                          </label>
+                        </div>
+
+                        <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
+                          {/* Region */}
+                          <div>
+                            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+                              Region
+                            </label>
+                            <select
+                              value={awsRegion}
+                              onChange={(e) => setAwsRegion(e.target.value)}
+                              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
+                            >
+                              {awsRegions.length > 0 ? (
+                                awsRegions.map((region) => (
+                                  <option key={region.id} value={region.id}>
+                                    {region.name} ({region.id})
+                                  </option>
+                                ))
+                              ) : (
+                                <>
+                                  <option value="us-east-1">US East (N. Virginia) (us-east-1)</option>
+                                  <option value="us-west-2">US West (Oregon) (us-west-2)</option>
+                                  <option value="eu-west-1">EU (Ireland) (eu-west-1)</option>
+                                </>
+                              )}
+                            </select>
+                          </div>
+
+                          {/* Access Key ID */}
+                          <div>
+                            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+                              Access Key ID
+                            </label>
+                            <input
+                              type="text"
+                              value={awsAccessKeyId}
+                              onChange={(e) => setAwsAccessKeyId(e.target.value)}
+                              placeholder={awsConfigured ? '••••••••••••••••' : 'AKIA...'}
+                              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                            />
+                          </div>
+
+                          {/* Secret Access Key */}
+                          <div>
+                            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+                              Secret Access Key
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={showAwsSecretKey ? 'text' : 'password'}
+                                value={awsSecretAccessKey}
+                                onChange={(e) => setAwsSecretAccessKey(e.target.value)}
+                                placeholder={awsConfigured ? '••••••••••••••••' : 'Enter your AWS Secret Access Key'}
+                                className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowAwsSecretKey(!showAwsSecretKey)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+                              >
+                                {showAwsSecretKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">
+                              Get credentials from the AWS IAM console
+                            </p>
+                          </div>
+
+                          {/* Test Result */}
+                          {awsTestResult && (
+                            <div className={`p-3 text-xs ${
+                              awsTestResult.success
+                                ? 'bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.2)] text-[hsl(var(--green))]'
+                                : 'bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-[hsl(var(--red))]'
+                            }`}>
+                              {awsTestResult.success ? (
+                                <span className="flex items-center gap-1.5">
+                                  <CheckCircle className="h-4 w-4" />
+                                  {awsTestResult.message || 'Connection successful'}
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1.5">
+                                  <XCircle className="h-4 w-4" />
+                                  {awsTestResult.error || 'Connection failed'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-2 pt-2">
+                            <button
+                              onClick={handleTestAws}
+                              disabled={(!awsAccessKeyId || !awsSecretAccessKey) || awsSaving}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50"
+                            >
+                              Test Connection
+                            </button>
+                            <button
+                              onClick={handleSaveAws}
+                              disabled={awsSaving}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#FF9900] text-white hover:bg-[#E88B00] disabled:opacity-50"
+                            >
+                              {awsSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                              Save
+                            </button>
+                            {awsHasSshKey && (
+                              <button
+                                onClick={handleDownloadAwsSshKey}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]"
+                                title="Download SSH private key for connecting to instances"
+                              >
+                                <Download className="h-3 w-3" />
+                                SSH Key
+                              </button>
+                            )}
+                          </div>
+                          {awsHasSshKey && awsSshKeyPath && (
+                            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-2">
+                              SSH key stored at: <code className="bg-[hsl(var(--bg-base))] px-1">{awsSshKeyPath}</code>. This key is used for all AWS instances.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Info section */}
                       <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
                         <h4 className="text-xs font-medium text-[hsl(var(--text-primary))] uppercase tracking-wider">About Cloud Backends</h4>
                         <div className="space-y-2 text-[10px] text-[hsl(var(--text-muted))]">
                           <p>
-                            <strong className="text-[hsl(var(--amber))]">Daytona</strong>: Cloud-based development environments with full IDE support.
+                            <strong className="text-[#06B6D4]">Daytona</strong>: Cloud-based development environments with full IDE support.
                             Create standardized, reproducible workspaces from any Git repository.
                           </p>
                           <p>
-                            Cloud backends appear as additional options when creating new VMs, alongside local hypervisors.
+                            <strong className="text-[#FF9900]">AWS EC2</strong>: Cost-effective Spot instances in your own AWS account.
+                            Persistent EBS volumes preserve state across stop/start cycles.
+                          </p>
+                          <p>
+                            Cloud backends appear as additional options when creating new sandboxes, alongside local hypervisors.
                             They&apos;re ideal for remote development and team collaboration.
                           </p>
                         </div>
@@ -703,7 +971,7 @@ export function Settings() {
               ) : (
                 <>
                   {!aiConfigured && (
-                    <div className="p-3 bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.2)] text-xs text-[hsl(var(--amber))]">
+                    <div className="p-3 bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.2)] text-xs text-[#06B6D4]">
                       AI is not configured. Add <code className="bg-[hsl(var(--bg-base))] px-1">OPENROUTER_API_KEY</code> to <code className="bg-[hsl(var(--bg-base))] px-1">.env.local</code> to enable AI features.
                     </div>
                   )}
@@ -894,7 +1162,7 @@ function BackendCard({ name, description, status, icon, onAction, actionInProgre
     if (!status.installed) return <XCircle className="h-4 w-4 text-[hsl(var(--text-muted))]" />;
     if (status.error) return <AlertCircle className="h-4 w-4 text-[hsl(var(--red))]" />;
     if (status.running) return <CheckCircle className="h-4 w-4 text-[hsl(var(--green))]" />;
-    if (status.enabled) return <Power className="h-4 w-4 text-[hsl(var(--amber))]" />;
+    if (status.enabled) return <Power className="h-4 w-4 text-[#06B6D4]" />;
     return <PowerOff className="h-4 w-4 text-[hsl(var(--text-muted))]" />;
   };
 
@@ -910,7 +1178,7 @@ function BackendCard({ name, description, status, icon, onAction, actionInProgre
     if (!status.installed) return 'text-[hsl(var(--text-muted))]';
     if (status.error) return 'text-[hsl(var(--red))]';
     if (status.running) return 'text-[hsl(var(--green))]';
-    if (status.enabled) return 'text-[hsl(var(--amber))]';
+    if (status.enabled) return 'text-[#06B6D4]';
     return 'text-[hsl(var(--text-muted))]';
   };
 
@@ -944,7 +1212,7 @@ function BackendCard({ name, description, status, icon, onAction, actionInProgre
                 <button
                   onClick={() => onAction('disable')}
                   disabled={isLoading}
-                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-[10px] text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] disabled:opacity-50"
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-[10px] text-[#06B6D4] hover:bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] disabled:opacity-50"
                 >
                   {actionInProgress === `${name.toLowerCase().replace('-', '')}-disable` ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
