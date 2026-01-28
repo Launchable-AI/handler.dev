@@ -42,21 +42,19 @@ function SnapshotCard({ snapshot, onClone, onPromote, isCloning, isPromoting }: 
   };
 
   return (
-    <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] p-4 hover:border-[hsl(var(--cyan)/0.3)] transition-colors">
+    <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] p-4 hover:border-[hsl(var(--cyan)/0.3)] transition-colors min-w-0">
       {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Camera className="h-4 w-4 text-[hsl(var(--purple))]" />
-          <h3 className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">
-            {snapshot.name || snapshot.id}
-          </h3>
-        </div>
+      <div className="flex items-start gap-2 mb-3 min-w-0">
+        <Camera className="h-4 w-4 text-[hsl(var(--purple))] flex-shrink-0 mt-0.5" />
+        <h3 className="text-sm font-medium text-[hsl(var(--text-primary))] break-all leading-tight">
+          {snapshot.name || snapshot.id}
+        </h3>
       </div>
 
       {/* VM Info */}
-      <div className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--text-muted))] mb-2">
-        <Server className="h-3 w-3" />
-        <span className="text-[hsl(var(--cyan))]">{snapshot.vmName}</span>
+      <div className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--text-muted))] mb-2 min-w-0">
+        <Server className="h-3 w-3 flex-shrink-0" />
+        <span className="text-[hsl(var(--cyan))] truncate">{snapshot.vmName}</span>
       </div>
 
       {/* Details */}
@@ -69,7 +67,7 @@ function SnapshotCard({ snapshot, onClone, onPromote, isCloning, isPromoting }: 
       </div>
 
       {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[hsl(var(--border))]">
+      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[hsl(var(--border))]">
         <button
           onClick={() => onClone(snapshot)}
           disabled={isBusy}
@@ -96,7 +94,6 @@ function SnapshotCard({ snapshot, onClone, onPromote, isCloning, isPromoting }: 
           )}
           {isPromoting ? 'Saving...' : 'Save as Image'}
         </button>
-        <div className="flex-1" />
         <button
           onClick={handleDelete}
           disabled={isBusy}
@@ -298,15 +295,15 @@ export function VMSnapshots() {
       </div>
 
       {/* Info text */}
-      <div className="text-xs text-[hsl(var(--text-muted))] mb-4 p-2 bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]">
-        <strong>New VM:</strong> Create a new, independent VM from this snapshot (one-time use).{' '}
-        <strong>Save as Image:</strong> Add to Base Images list so you can create multiple VMs from it later.{' '}
-        <em>To rollback a VM to a snapshot, use the Rollback button in the VM's Instances view.</em>
+      <div className="text-xs text-[hsl(var(--text-muted))] mb-4 p-2 bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] space-y-1 overflow-hidden">
+        <p className="break-words"><strong>New VM:</strong> Create a new, independent VM from this snapshot.</p>
+        <p className="break-words"><strong>Save as Image:</strong> Add to Base Images list for creating future VMs.</p>
+        <p className="break-words"><strong>Rollback:</strong> Restore a VM to a snapshot from the Instances view.</p>
       </div>
 
       {/* Snapshots Grid */}
       {filteredSnapshots && filteredSnapshots.length > 0 ? (
-        <div className="flex-1 overflow-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 content-start">
+        <div className="flex-1 overflow-auto grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 content-start">
           {filteredSnapshots.map(snapshot => (
             <SnapshotCard
               key={`${snapshot.vmId}-${snapshot.id}`}

@@ -68,42 +68,7 @@ function loadEnvLocal(): void {
 loadEnvLocal();
 
 // Configurable prompts (can be modified at runtime)
-let composePrompt: string | null = null;
 let dockerfilePrompt: string | null = null;
-
-const DEFAULT_COMPOSE_PROMPT = `You are a Docker Compose expert assistant. Help users modify their docker-compose.yml files.
-
-When asked to make changes:
-1. Understand the current compose file structure
-2. Make the requested modifications
-3. Return the complete updated YAML in a code block using \`\`\`yaml
-4. Briefly explain what changed
-
-Important guidelines:
-- Always return valid docker-compose YAML
-- Preserve existing services unless explicitly asked to remove them
-- Use appropriate default values for common services (e.g., postgres default port 5432)
-- Include helpful comments in the YAML where appropriate
-- If adding a database, include common environment variables
-
-Example response format:
-"I'll add PostgreSQL to your compose file:
-
-\`\`\`yaml
-version: '3.8'
-services:
-  # ... existing services ...
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_PASSWORD: changeme
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-volumes:
-  postgres_data:
-\`\`\`
-
-This adds a PostgreSQL 15 database with persistent storage."`;
 
 const DEFAULT_MCP_INSTALL_PROMPT = `You are an expert at extracting installation instructions from README files for MCP (Model Context Protocol) servers.
 
@@ -181,24 +146,12 @@ export function isAIConfigured(): boolean {
 }
 
 // Prompt getters and setters
-export function getComposePrompt(): string {
-  return composePrompt || DEFAULT_COMPOSE_PROMPT;
-}
-
-export function setComposePrompt(prompt: string | null): void {
-  composePrompt = prompt;
-}
-
 export function getDockerfilePrompt(): string {
   return dockerfilePrompt || DEFAULT_DOCKERFILE_PROMPT;
 }
 
 export function setDockerfilePrompt(prompt: string | null): void {
   dockerfilePrompt = prompt;
-}
-
-export function getDefaultComposePrompt(): string {
-  return DEFAULT_COMPOSE_PROMPT;
 }
 
 export function getDefaultDockerfilePrompt(): string {
@@ -326,192 +279,6 @@ export async function searchMCPServersWithAI(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return { serverNames: [], error: `AI search failed: ${message}` };
-  }
-}
-
-export async function streamComposeAssistant(
-  message: string,
-  composeContent: string,
-  callbacks: AIStreamCallbacks
-): Promise<void> {
-  const apiKey = getOpenRouterApiKey();
-
-  if (!apiKey) {
-    callbacks.onError('OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.');
-    return;
-  }
-
-  const userMessage = composeContent
-    ? `Current docker-compose.yml:\n\`\`\`yaml\n${composeContent}\n\`\`\`\n\nRequest: ${message}`
-    : message;
-
-  try {
-    const response = await fetch(OPENROUTER_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://caisson.dev',
-        'X-Title': 'Caisson',
-      },
-      body: JSON.stringify({
-        model: getModel(),
-        stream: true,
-        messages: [
-          { role: 'system', content: getComposePrompt() },
-          { role: 'user', content: userMessage }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage = `OpenRouter API error: ${response.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorMessage;
-      } catch {
-        // Use default error message
-      }
-      callbacks.onError(errorMessage);
-      return;
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      callbacks.onError('No response stream available');
-      return;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') {
-            callbacks.onDone();
-            return;
-          }
-
-          try {
-            const parsed = JSON.parse(data);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              callbacks.onChunk(content);
-            }
-          } catch {
-            // Skip invalid JSON lines
-          }
-        }
-      }
-    }
-
-    callbacks.onDone();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    callbacks.onError(`Failed to connect to OpenRouter: ${message}`);
-  }
-}
-
-const COMPONENT_CREATION_PROMPT = `You are a Docker expert. When asked to create a component for a docker-compose library, you will output ONLY a JSON object with the component definition. No markdown, no explanations, just valid JSON.
-
-The JSON must follow this exact schema:
-{
-  "name": "Human readable name (e.g., PostgreSQL)",
-  "description": "Brief description of what this component does",
-  "category": "database" | "cache" | "web" | "messaging" | "storage" | "monitoring" | "development" | "other",
-  "icon": "Single emoji representing the service",
-  "image": "Docker image name without tag (e.g., postgres)",
-  "defaultTag": "Recommended version tag (e.g., 16-alpine)",
-  "ports": [{ "container": 5432, "host": 5432, "description": "Port description" }],
-  "volumes": [{ "name": "volume_name", "path": "/container/path", "description": "Volume description" }],
-  "environment": [{ "name": "ENV_VAR", "value": "default_value", "description": "What this var does", "required": true/false }],
-  "healthcheck": { "test": "healthcheck command", "interval": "10s", "timeout": "5s", "retries": 5 }
-}
-
-Guidelines:
-- Use official Docker images when available
-- Include sensible default environment variables
-- Add volume mounts for persistent data
-- Include healthcheck when the image supports it
-- Use alpine variants when available for smaller images
-- Include typical default ports
-
-Examples of component requests and expected output:
-- "add mongodb" → MongoDB component with mongo image, port 27017, data volume
-- "add nginx" → Nginx component with nginx image, ports 80/443, config volumes
-- "add redis" → Redis component with redis image, port 6379, data volume`;
-
-export async function createComponentFromAI(
-  request: string
-): Promise<{ component: Record<string, unknown> | null; error?: string }> {
-  const apiKey = getOpenRouterApiKey();
-
-  if (!apiKey) {
-    return { component: null, error: 'OpenRouter API key not configured' };
-  }
-
-  try {
-    const response = await fetch(OPENROUTER_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://caisson.dev',
-        'X-Title': 'Caisson',
-      },
-      body: JSON.stringify({
-        model: getModel(),
-        messages: [
-          { role: 'system', content: COMPONENT_CREATION_PROMPT },
-          { role: 'user', content: `Create a component for: ${request}` }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage = `OpenRouter API error: ${response.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorMessage;
-      } catch {
-        // Use default error message
-      }
-      return { component: null, error: errorMessage };
-    }
-
-    const result = await response.json();
-    const content = result.choices?.[0]?.message?.content;
-
-    if (!content) {
-      return { component: null, error: 'No response from AI' };
-    }
-
-    // Try to parse JSON from the response
-    // Sometimes the AI wraps it in markdown code blocks
-    let jsonContent = content.trim();
-    if (jsonContent.startsWith('```')) {
-      const match = jsonContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (match) {
-        jsonContent = match[1].trim();
-      }
-    }
-
-    const component = JSON.parse(jsonContent);
-    return { component };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return { component: null, error: `Failed to create component: ${message}` };
   }
 }
 

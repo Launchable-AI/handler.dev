@@ -5,9 +5,15 @@
 # https://github.com/firecracker-microvm/firecracker-containerd
 #
 # Usage:
-#   Kernel boot args: init=/sbin/overlay-init overlay_root=vdb
+#   Kernel boot args: init=/sbin/overlay-init overlay_root=vdc
+#   For layered images: init=/sbin/overlay-init overlay_root=vdd parent_layers=vdb,vdc
 #
 # IMPORTANT: The rootfs MUST have /overlay and /mnt directories pre-created!
+#
+# Layer stacking (from bottom to top):
+#   - Base rootfs (vda) - read-only kernel root
+#   - Parent layers (vdb, vdc, ...) - read-only promoted snapshots
+#   - Overlay device (vdN) - read-write layer for this VM
 #
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -18,31 +24,91 @@
 # Ensure required directories exist
 mkdir -p /overlay /mnt /rom
 
-# Parse kernel command line for overlay_root parameter
+# Parse kernel command line for overlay_root and parent_layers parameters
 for arg in $(cat /proc/cmdline); do
     case "$arg" in
         overlay_root=*)
             overlay_root="${arg#overlay_root=}"
+            ;;
+        parent_layers=*)
+            parent_layers="${arg#parent_layers=}"
             ;;
     esac
 done
 
 # pivot_root to the overlay filesystem
 pivot() {
-    local rw_root work_dir
+    local rw_root work_dir lowerdir
     rw_root="$1"
     work_dir="$2"
+    lowerdir="$3"
 
     /bin/mount \
-        -o noatime,lowerdir=/,upperdir=${rw_root},workdir=${work_dir} \
+        -o noatime,lowerdir=${lowerdir},upperdir=${rw_root},workdir=${work_dir} \
         -t overlay "overlayfs:${rw_root}" /mnt
 
     cd /mnt
     pivot_root . rom
 }
 
+# Mount parent layers and build lowerdir string
+# Returns the lowerdir via the LOWERDIR global variable
+mount_parent_layers() {
+    LOWERDIR="/"
+
+    if [ -z "$parent_layers" ]; then
+        return
+    fi
+
+    # parent_layers is comma-separated: vdb,vdc,vdd
+    # These are ordered from base to derived (vdb is closest to rootfs, vdc is more derived)
+    # overlayfs lowerdir must be from TOP to BOTTOM (most derived first)
+
+    # Convert comma-separated to space-separated and count layers
+    layer_list=$(echo "$parent_layers" | tr ',' ' ')
+    layer_count=0
+    for layer in $layer_list; do
+        layer_count=$((layer_count + 1))
+    done
+
+    # Mount each parent layer in order (idx matches position in parent_layers)
+    # /parent1 gets vdb (base-most), /parent2 gets vdc (more derived), etc.
+    idx=1
+    for layer in $layer_list; do
+        mkdir -p "/parent${idx}"
+        if [ -b "/dev/${layer}" ]; then
+            /bin/mount -t ext4 -o noatime,ro "/dev/${layer}" "/parent${idx}"
+            echo "[overlay-init] Mounted parent layer /dev/${layer} at /parent${idx}"
+        else
+            echo "[overlay-init] WARNING: Parent layer /dev/${layer} not found"
+        fi
+        idx=$((idx + 1))
+    done
+
+    # Build lowerdir string from top (most derived) to bottom (base rootfs)
+    # overlayfs lowerdir: first entry = top layer, last entry = bottom layer
+    # /parentN (most derived) -> /parent1 (base-most) -> / (rootfs)
+    LOWERDIR=""
+    for i in $(seq $layer_count -1 1); do
+        if [ -d "/parent${i}" ]; then
+            if [ -z "$LOWERDIR" ]; then
+                LOWERDIR="/parent${i}"
+            else
+                LOWERDIR="${LOWERDIR}:/parent${i}"
+            fi
+        fi
+    done
+    # Append the base rootfs at the bottom
+    LOWERDIR="${LOWERDIR}:/"
+
+    echo "[overlay-init] Built lowerdir: ${LOWERDIR}"
+}
+
 # Set up the overlay filesystem
 do_overlay() {
+    # Mount parent layers first (if any)
+    mount_parent_layers
+
     # Mount the overlay storage on /overlay (directory must pre-exist)
     if [ "$overlay_root" = "ram" ] || [ -z "$overlay_root" ]; then
         # Use tmpfs - changes are lost on reboot
@@ -55,8 +121,8 @@ do_overlay() {
     # Create overlayfs directories on the writable overlay storage
     mkdir -p /overlay/upper /overlay/work
 
-    # Pivot to the overlay
-    pivot /overlay/upper /overlay/work
+    # Pivot to the overlay with the built lowerdir
+    pivot /overlay/upper /overlay/work "$LOWERDIR"
 }
 
 # Validate block device if specified

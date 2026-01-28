@@ -102,11 +102,25 @@ export async function createContainer(options: {
 
 export async function startContainer(id: string): Promise<void> {
   const container = docker.getContainer(id);
+  const info = await container.inspect();
+
+  // Don't try to start if already running
+  if (info.State.Running) {
+    return;
+  }
+
   await container.start();
 }
 
 export async function stopContainer(id: string): Promise<void> {
   const container = docker.getContainer(id);
+  const info = await container.inspect();
+
+  // Don't try to stop if not running
+  if (!info.State.Running) {
+    return;
+  }
+
   await container.stop();
 }
 
@@ -115,16 +129,70 @@ export async function removeContainer(id: string): Promise<void> {
   await container.remove({ force: true });
 }
 
+export async function renameContainer(id: string, newName: string): Promise<void> {
+  const container = docker.getContainer(id);
+  await container.rename({ name: newName });
+}
+
 export async function listImages(): Promise<ImageInfo[]> {
-  const images = await docker.listImages({
+  // Get caisson-labeled images
+  const caissonImages = await docker.listImages({
     filters: { label: [IMAGE_LABEL] },
   });
-  return images.map((img) => ({
-    id: img.Id,
-    repoTags: img.RepoTags || [],
-    size: img.Size,
-    created: new Date(img.Created * 1000).toISOString(),
-  }));
+
+  // Also include ubuntu:24.04 if present
+  const allImages = await docker.listImages({});
+  const ubuntuImage = allImages.filter(img =>
+    img.RepoTags?.some(tag => tag === 'ubuntu:24.04')
+  );
+
+  // Combine and dedupe by ID
+  const seenIds = new Set<string>();
+  const images = [...caissonImages, ...ubuntuImage].filter(img => {
+    if (seenIds.has(img.Id)) return false;
+    seenIds.add(img.Id);
+    return true;
+  });
+
+  // Fetch detailed info for each image to get labels
+  const imageInfos: ImageInfo[] = [];
+  for (const img of images) {
+    try {
+      const image = docker.getImage(img.Id);
+      const inspect = await image.inspect();
+      const labels = inspect.Config?.Labels || {};
+
+      // Decode Dockerfile content if present
+      let dockerfile: string | undefined;
+      if (labels['caisson.dockerfile']) {
+        try {
+          dockerfile = Buffer.from(labels['caisson.dockerfile'], 'base64').toString('utf-8');
+        } catch {
+          // If decoding fails, use raw value
+          dockerfile = labels['caisson.dockerfile'];
+        }
+      }
+
+      imageInfos.push({
+        id: img.Id,
+        repoTags: img.RepoTags || [],
+        size: img.Size,
+        created: new Date(img.Created * 1000).toISOString(),
+        dockerfile,
+        dockerfileName: labels['caisson.dockerfile-name'],
+      });
+    } catch {
+      // If inspection fails, return basic info
+      imageInfos.push({
+        id: img.Id,
+        repoTags: img.RepoTags || [],
+        size: img.Size,
+        created: new Date(img.Created * 1000).toISOString(),
+      });
+    }
+  }
+
+  return imageInfos;
 }
 
 export async function pullImage(imageName: string): Promise<void> {
@@ -145,6 +213,18 @@ export async function pullImage(imageName: string): Promise<void> {
 export async function removeImage(id: string): Promise<void> {
   const image = docker.getImage(id);
   await image.remove({ force: true });
+}
+
+export async function renameImage(currentTag: string, newTag: string): Promise<void> {
+  const image = docker.getImage(currentTag);
+  // Tag with new name
+  await image.tag({ repo: newTag.split(':')[0], tag: newTag.split(':')[1] || 'latest' });
+  // Remove old tag (but not the image itself if it has other tags)
+  try {
+    await docker.getImage(currentTag).remove({ force: false, noprune: true });
+  } catch {
+    // Old tag might already be removed or shared with other references
+  }
 }
 
 export async function imageHasLabel(imageName: string, label: string): Promise<boolean> {
@@ -204,12 +284,22 @@ export async function buildImage(dockerfile: string, tag: string): Promise<void>
 export async function buildImageWithLogs(
   dockerfile: string,
   tag: string,
-  onLog: (message: string) => void
+  onLog: (message: string) => void,
+  dockerfileName?: string
 ): Promise<void> {
   const tar = await createTarFromDockerfile(dockerfile);
 
+  // Build labels including Dockerfile content (base64 encoded)
+  const labels: Record<string, string> = {
+    [IMAGE_LABEL]: 'true',
+    'caisson.dockerfile': Buffer.from(dockerfile).toString('base64'),
+  };
+  if (dockerfileName) {
+    labels['caisson.dockerfile-name'] = dockerfileName;
+  }
+
   return new Promise((resolve, reject) => {
-    docker.buildImage(tar, { t: tag, labels: { [IMAGE_LABEL]: 'true' }, rm: true }, (err, stream) => {
+    docker.buildImage(tar, { t: tag, labels, rm: true }, (err, stream) => {
       if (err) {
         reject(err);
         return;

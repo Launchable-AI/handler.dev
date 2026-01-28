@@ -3,7 +3,6 @@ import type {
   CommandCentreState,
   CommandCentreContextValue,
   TerminalSession,
-  LayoutMode,
   SplitLayout,
 } from '../types/command-centre';
 
@@ -20,7 +19,6 @@ const initialState: CommandCentreState = {
   sessions: [],
   layouts: [],
   activeSessionId: null,
-  layoutMode: 'split',
   splitLayout: 'grid',
   focusedSessionIds: [],
   isFullscreen: false,
@@ -35,10 +33,11 @@ type Action =
   | { type: 'CLOSE_SESSION'; payload: string }
   | { type: 'UPDATE_SESSION_STATUS'; payload: { id: string; status: TerminalSession['status']; errorMessage?: string } }
   | { type: 'SET_ACTIVE_SESSION'; payload: string | null }
-  | { type: 'SET_LAYOUT_MODE'; payload: LayoutMode }
   | { type: 'SET_SPLIT_LAYOUT'; payload: SplitLayout }
   | { type: 'FOCUS_SESSION'; payload: string }
+  | { type: 'FOCUS_SESSION_AT_INDEX'; payload: { sessionId: string; index: number } }
   | { type: 'UNFOCUS_SESSION'; payload: string }
+  | { type: 'SWAP_FOCUS'; payload: { focusedId: string; unfocusedId: string } }
   | { type: 'TOGGLE_FOCUS'; payload: string }
   | { type: 'FOCUS_ALL' }
   | { type: 'UNFOCUS_ALL' }
@@ -46,7 +45,9 @@ type Action =
   | { type: 'SET_SIDEBAR_WIDTH'; payload: number }
   | { type: 'TOGGLE_FULLSCREEN' }
   | { type: 'MAXIMIZE_SESSION'; payload: string | null }
-  | { type: 'TOGGLE_MAXIMIZE'; payload: string };
+  | { type: 'TOGGLE_MAXIMIZE'; payload: string }
+  | { type: 'REORDER_SESSIONS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'REORDER_FOCUSED_SESSIONS'; payload: { fromIndex: number; toIndex: number } };
 
 // Reducer
 function commandCentreReducer(state: CommandCentreState, action: Action): CommandCentreState {
@@ -98,18 +99,6 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         activeSessionId: action.payload,
       };
     }
-    case 'SET_LAYOUT_MODE': {
-      // When switching to focus mode, focus all sessions if none are focused
-      let focusedIds = state.focusedSessionIds;
-      if (action.payload === 'focus' && focusedIds.length === 0 && state.sessions.length > 0) {
-        focusedIds = state.sessions.map(s => s.id);
-      }
-      return {
-        ...state,
-        layoutMode: action.payload,
-        focusedSessionIds: focusedIds,
-      };
-    }
     case 'SET_SPLIT_LAYOUT': {
       return {
         ...state,
@@ -124,6 +113,22 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         ...state,
         focusedSessionIds: [...state.focusedSessionIds, action.payload],
         activeSessionId: action.payload,
+      };
+    }
+    case 'FOCUS_SESSION_AT_INDEX': {
+      const { sessionId, index } = action.payload;
+      // Remove from current position if already focused
+      const filtered = state.focusedSessionIds.filter(id => id !== sessionId);
+      // Insert at specified index
+      const newFocusedIds = [
+        ...filtered.slice(0, index),
+        sessionId,
+        ...filtered.slice(index),
+      ];
+      return {
+        ...state,
+        focusedSessionIds: newFocusedIds,
+        activeSessionId: sessionId,
       };
     }
     case 'UNFOCUS_SESSION': {
@@ -141,6 +146,20 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         ...state,
         focusedSessionIds: newFocusedIds,
         activeSessionId: newActiveId,
+      };
+    }
+    case 'SWAP_FOCUS': {
+      const { focusedId, unfocusedId } = action.payload;
+      // Find the index of the focused session
+      const focusedIndex = state.focusedSessionIds.indexOf(focusedId);
+      if (focusedIndex === -1) return state;
+      // Replace the focused session with the unfocused one at the same position
+      const newFocusedIds = [...state.focusedSessionIds];
+      newFocusedIds[focusedIndex] = unfocusedId;
+      return {
+        ...state,
+        focusedSessionIds: newFocusedIds,
+        activeSessionId: unfocusedId,
       };
     }
     case 'TOGGLE_FOCUS': {
@@ -216,6 +235,26 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         maximizedSessionId: state.maximizedSessionId === action.payload ? null : action.payload,
       };
     }
+    case 'REORDER_SESSIONS': {
+      const { fromIndex, toIndex } = action.payload;
+      const newSessions = [...state.sessions];
+      const [removed] = newSessions.splice(fromIndex, 1);
+      newSessions.splice(toIndex, 0, removed);
+      return {
+        ...state,
+        sessions: newSessions,
+      };
+    }
+    case 'REORDER_FOCUSED_SESSIONS': {
+      const { fromIndex, toIndex } = action.payload;
+      const newFocusedIds = [...state.focusedSessionIds];
+      const [removed] = newFocusedIds.splice(fromIndex, 1);
+      newFocusedIds.splice(toIndex, 0, removed);
+      return {
+        ...state,
+        focusedSessionIds: newFocusedIds,
+      };
+    }
     default:
       return state;
   }
@@ -273,10 +312,6 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_ACTIVE_SESSION', payload: sessionId });
   }, []);
 
-  const setLayoutMode = useCallback((mode: LayoutMode) => {
-    dispatch({ type: 'SET_LAYOUT_MODE', payload: mode });
-  }, []);
-
   const setSplitLayout = useCallback((layout: SplitLayout) => {
     dispatch({ type: 'SET_SPLIT_LAYOUT', payload: layout });
   }, []);
@@ -285,8 +320,16 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'FOCUS_SESSION', payload: sessionId });
   }, []);
 
+  const focusSessionAtIndex = useCallback((sessionId: string, index: number) => {
+    dispatch({ type: 'FOCUS_SESSION_AT_INDEX', payload: { sessionId, index } });
+  }, []);
+
   const unfocusSession = useCallback((sessionId: string) => {
     dispatch({ type: 'UNFOCUS_SESSION', payload: sessionId });
+  }, []);
+
+  const swapFocus = useCallback((focusedId: string, unfocusedId: string) => {
+    dispatch({ type: 'SWAP_FOCUS', payload: { focusedId, unfocusedId } });
   }, []);
 
   const toggleFocus = useCallback((sessionId: string) => {
@@ -329,16 +372,25 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'TOGGLE_MAXIMIZE', payload: sessionId });
   }, []);
 
+  const reorderSessions = useCallback((fromIndex: number, toIndex: number) => {
+    dispatch({ type: 'REORDER_SESSIONS', payload: { fromIndex, toIndex } });
+  }, []);
+
+  const reorderFocusedSessions = useCallback((fromIndex: number, toIndex: number) => {
+    dispatch({ type: 'REORDER_FOCUSED_SESSIONS', payload: { fromIndex, toIndex } });
+  }, []);
+
   const value: CommandCentreContextValue = {
     state,
     createSession,
     closeSession,
     updateSessionStatus,
     setActiveSession,
-    setLayoutMode,
     setSplitLayout,
     focusSession,
+    focusSessionAtIndex,
     unfocusSession,
+    swapFocus,
     toggleFocus,
     focusAll,
     unfocusAll,
@@ -349,6 +401,8 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     toggleFullscreen,
     maximizeSession,
     toggleMaximize,
+    reorderSessions,
+    reorderFocusedSessions,
   };
 
   return (

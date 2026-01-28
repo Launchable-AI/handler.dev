@@ -289,7 +289,7 @@ export interface FirecrackerVmState {
   /** Disk size in GB */
   diskGb: number;
   /** Volume mounts (for future use) */
-  volumes: Array<{ name: string; hostPath: string; mountPath: string; readOnly?: boolean }>;
+  volumes: Array<{ id?: string; name: string; hostPath: string; mountPath: string; readOnly?: boolean }>;
   /** Current MMDS metadata */
   mmdsMetadata?: MmdsMetadata;
   /** Source snapshot (if restored from snapshot) */

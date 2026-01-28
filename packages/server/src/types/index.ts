@@ -44,6 +44,8 @@ export interface ImageInfo {
   repoTags: string[];
   size: number;
   created: string;
+  dockerfile?: string;      // The Dockerfile content used to build this image
+  dockerfileName?: string;  // The name of the source Dockerfile file
 }
 
 export const CreateVolumeSchema = z.object({
@@ -58,6 +60,12 @@ export const SaveDockerfileSchema = z.object({
 });
 
 export type SaveDockerfileRequest = z.infer<typeof SaveDockerfileSchema>;
+
+export const RenameDockerfileSchema = z.object({
+  newName: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/, 'Name can only contain letters, numbers, underscores, and hyphens'),
+});
+
+export type RenameDockerfileRequest = z.infer<typeof RenameDockerfileSchema>;
 
 export const PullImageSchema = z.object({
   image: z.string().min(1),
@@ -84,41 +92,3 @@ export const ReconfigureContainerSchema = z.object({
 });
 
 export type ReconfigureContainerRequest = z.infer<typeof ReconfigureContainerSchema>;
-
-// Compose types
-export const CreateComposeSchema = z.object({
-  name: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/,
-    'Project name must start with alphanumeric and contain only alphanumeric, underscore, period, or hyphen'),
-  content: z.string().min(1),
-});
-
-export type CreateComposeRequest = z.infer<typeof CreateComposeSchema>;
-
-export const UpdateComposeSchema = z.object({
-  content: z.string().min(1),
-});
-
-export type UpdateComposeRequest = z.infer<typeof UpdateComposeSchema>;
-
-export const RenameComposeSchema = z.object({
-  newName: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/,
-    'Project name must start with alphanumeric and contain only alphanumeric, underscore, period, or hyphen'),
-});
-
-export type RenameComposeRequest = z.infer<typeof RenameComposeSchema>;
-
-export interface ComposeService {
-  name: string;
-  containerId: string;
-  state: 'running' | 'exited' | 'paused' | 'restarting' | 'dead' | 'created' | 'unknown';
-  image: string;
-  ports: Array<{ container: number; host: number | null }>;
-  sshPort: number | null;
-}
-
-export interface ComposeProject {
-  name: string;
-  status: 'running' | 'partial' | 'stopped';
-  services: ComposeService[];
-  createdAt: string;
-}

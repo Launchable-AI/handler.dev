@@ -28,18 +28,14 @@ export interface TileLayout {
 // Split layouts for main view
 export type SplitLayout = 'grid' | 'vertical' | 'horizontal';
 
-// Main layout modes
-export type LayoutMode = 'split' | 'focus';
-
 export interface CommandCentreState {
   sessions: TerminalSession[];
   layouts: TileLayout[];
   activeSessionId: string | null;
 
   // Layout
-  layoutMode: LayoutMode;           // 'split' = all in main, 'focus' = main + sidebar
   splitLayout: SplitLayout;         // How to arrange sessions in main area
-  focusedSessionIds: string[];      // Sessions in main area (focus mode only)
+  focusedSessionIds: string[];      // Sessions in main area (unfocused go to sidebar)
 
   // Fullscreen/maximize
   isFullscreen: boolean;            // Hide app sidebar/header
@@ -62,12 +58,13 @@ export interface CommandCentreContextValue {
   setActiveSession: (sessionId: string | null) => void;
 
   // Layout
-  setLayoutMode: (mode: LayoutMode) => void;
   setSplitLayout: (layout: SplitLayout) => void;
 
-  // Focus mode: move sessions between main and sidebar
-  focusSession: (sessionId: string) => void;      // Move to main area
+  // Move sessions between main area and sidebar
+  focusSession: (sessionId: string) => void;      // Move to main area (append)
+  focusSessionAtIndex: (sessionId: string, index: number) => void; // Move to main at specific position
   unfocusSession: (sessionId: string) => void;    // Move to sidebar
+  swapFocus: (focusedId: string, unfocusedId: string) => void; // Swap focused/unfocused sessions
   toggleFocus: (sessionId: string) => void;       // Toggle between main/sidebar
   focusAll: () => void;                           // Move all to main
   unfocusAll: () => void;                         // Move all to sidebar (keep one)
@@ -84,4 +81,8 @@ export interface CommandCentreContextValue {
   toggleFullscreen: () => void;
   maximizeSession: (sessionId: string | null) => void;
   toggleMaximize: (sessionId: string) => void;
+
+  // Reorder sessions (drag and drop)
+  reorderSessions: (fromIndex: number, toIndex: number) => void;
+  reorderFocusedSessions: (fromIndex: number, toIndex: number) => void;
 }

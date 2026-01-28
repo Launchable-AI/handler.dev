@@ -257,6 +257,14 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
+   * Normalize image name for filesystem paths
+   * Docker-style names use colons (ubuntu:24.04) but we store dirs with hyphens (ubuntu-24.04)
+   */
+  private normalizeImageName(imageName: string): string {
+    return imageName.replace(/:/g, '-');
+  }
+
+  /**
    * Generate a MAC address
    */
   private generateMacAddress(): string {
@@ -504,38 +512,65 @@ export class FirecrackerService extends EventEmitter {
    * 2. A small overlay ext4 file is created per-VM (sparse, ~1MB initially)
    * 3. Guest kernel uses overlayfs to combine them (via /sbin/overlay-init)
    *
+   * For layered images (created via snapshot promotion):
+   * - Multiple parent layers are mounted as additional read-only drives
+   * - overlay-init sets up multi-layer overlayfs: base -> layer1 -> layer2 -> vm-overlay
+   *
    * Benefits:
    * - No root/sudo required on host
    * - True copy-on-write (only changed blocks stored in overlay)
    * - Base image shared read-only by all VMs
    * - Each VM overlay is ~1MB initially, grows only as data is written
+   * - Promoted images only store the diff (~100MB vs ~2.5GB)
    *
-   * Returns: { basePath, overlayPath } for configuring Firecracker drives
+   * Returns: { basePath, overlayPath, parentLayers? } for configuring Firecracker drives
    */
-  private async prepareDiskImage(vm: FirecrackerVmState, vmDir: string): Promise<{ basePath: string; overlayPath: string }> {
-    const baseImageDir = path.join(this.config.baseImagesDir, vm.baseImage);
-    const baseImagePath = path.join(baseImageDir, 'rootfs.ext4');
-    const overlayPath = path.join(vmDir, 'overlay.ext4');
+  private async prepareDiskImage(vm: FirecrackerVmState, vmDir: string): Promise<{ basePath: string; overlayPath: string; parentLayers?: string[] }> {
+    // Get the full layer chain for this image
+    const layerChain = this.getImageLayerChain(vm.baseImage);
+    const isLayered = layerChain.length > 1;
 
-    // Ensure base image exists
-    if (!fs.existsSync(baseImagePath)) {
+    if (isLayered) {
+      console.log(`[FirecrackerService] Image ${vm.baseImage} is layered with ${layerChain.length} layers: ${layerChain.join(' -> ')}`);
+    }
+
+    // The root base image is always the first in the chain
+    const rootImageName = layerChain[0];
+    const normalizedRootName = this.normalizeImageName(rootImageName);
+    const rootImageDir = path.join(this.config.baseImagesDir, normalizedRootName);
+    const basePath = path.join(rootImageDir, 'rootfs.ext4');
+
+    // Ensure root base image exists
+    if (!fs.existsSync(basePath)) {
       // Check for QCOW2 image and convert (one-time operation)
-      const qcow2Path = path.join(baseImageDir, 'image.qcow2');
+      const qcow2Path = path.join(rootImageDir, 'image.qcow2');
       if (fs.existsSync(qcow2Path)) {
         console.log(`[FirecrackerService] Converting QCOW2 to raw for Firecracker`);
-        execSync(`qemu-img convert -f qcow2 -O raw "${qcow2Path}" "${baseImagePath}"`, {
+        execSync(`qemu-img convert -f qcow2 -O raw "${qcow2Path}" "${basePath}"`, {
           stdio: 'pipe',
         });
       } else {
-        throw new Error(`Base image not found: ${vm.baseImage}. Run scripts/prepare-fc-image.sh first.`);
+        throw new Error(`Base image not found: ${rootImageName}. Run scripts/prepare-fc-image.sh first.`);
       }
     }
 
-    // Check that overlay-init is installed in the base image
-    // (This is done by prepare-fc-image.sh)
+    // Collect parent layer paths (intermediate layers, excluding root base and the image itself)
+    const parentLayers: string[] = [];
+    for (let i = 1; i < layerChain.length; i++) {
+      const layerName = layerChain[i];
+      const normalizedLayerName = this.normalizeImageName(layerName);
+      const layerDir = path.join(this.config.baseImagesDir, normalizedLayerName);
+      const layerPath = path.join(layerDir, 'layer.ext4');
 
-    // Create overlay ext4 file for this VM (sparse file, grows on demand)
-    // Size: 5GB virtual, but starts at ~1MB actual (just filesystem metadata)
+      if (!fs.existsSync(layerPath)) {
+        throw new Error(`Layer file not found for ${layerName}: ${layerPath}`);
+      }
+
+      parentLayers.push(layerPath);
+    }
+
+    // Create VM's own overlay
+    const overlayPath = path.join(vmDir, 'overlay.ext4');
     if (!fs.existsSync(overlayPath)) {
       const overlaySize = Math.max(vm.diskGb || 5, 5); // At least 5GB for overlay
       console.log(`[FirecrackerService] Creating ${overlaySize}GB overlay for VM ${vm.id} (sparse, ~1MB actual)`);
@@ -543,11 +578,14 @@ export class FirecrackerService extends EventEmitter {
       execSync(`mkfs.ext4 -F -q "${overlayPath}"`, { stdio: 'pipe' });
 
       // Pre-inject SSH keys into the overlay using debugfs (no root needed!)
-      // This bypasses mmds-configure and ensures we can always SSH into the VM
       await this.injectSshKeysToOverlay(overlayPath, vm.mmdsMetadata?.ssh?.authorized_keys || []);
     }
 
-    return { basePath: baseImagePath, overlayPath };
+    return {
+      basePath,
+      overlayPath,
+      parentLayers: parentLayers.length > 0 ? parentLayers : undefined,
+    };
   }
 
   /**
@@ -629,12 +667,14 @@ export class FirecrackerService extends EventEmitter {
     id: string,
     vmDir: string,
     apiSocket: string,
-    diskPaths: { basePath: string; overlayPath: string }
+    diskPaths: { basePath: string; overlayPath: string; parentLayers?: string[] }
   ): Promise<void> {
     const vm = this.vms.get(id);
     if (!vm) return;
 
     const startTime = Date.now();
+    const hasParentLayers = diskPaths.parentLayers && diskPaths.parentLayers.length > 0;
+    const numParentLayers = diskPaths.parentLayers?.length || 0;
 
     try {
       // Wait for API socket to be ready
@@ -644,21 +684,47 @@ export class FirecrackerService extends EventEmitter {
       // Get kernel path - prefer Firecracker-optimized kernel (vmlinux-fc)
       // The FC kernel has CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=n which prevents
       // conflicts with Firecracker's direct device setup
-      const baseImageDir = path.join(this.config.baseImagesDir, vm.baseImage);
-      const fcKernelPath = path.join(baseImageDir, 'vmlinux-fc');
-      const defaultKernelPath = path.join(baseImageDir, 'vmlinux');
+      // For layered images, the kernel is symlinked to the root base image
+      const layerChain = this.getImageLayerChain(vm.baseImage);
+      const rootImageName = layerChain[0];
+      const normalizedRootName = this.normalizeImageName(rootImageName);
+      const rootImageDir = path.join(this.config.baseImagesDir, normalizedRootName);
+      const fcKernelPath = path.join(rootImageDir, 'vmlinux-fc');
+      const defaultKernelPath = path.join(rootImageDir, 'vmlinux');
       const kernelPath = fs.existsSync(fcKernelPath) ? fcKernelPath : defaultKernelPath;
 
       if (!fs.existsSync(kernelPath)) {
         throw new Error(`Kernel not found: ${kernelPath}. Run scripts/prepare-fc-image.sh first.`);
       }
 
+      // Device assignment:
+      // - vda: root base image (is_root_device: true)
+      // - vdb, vdc, ...: parent layers (if any, read-only)
+      // - next: overlay (writable)
+      // - after: data volumes
+      //
+      // Device letter for overlay depends on number of parent layers:
+      // - No parents: overlay = vdb
+      // - 1 parent: overlay = vdc
+      // - 2 parents: overlay = vdd
+      const overlayDeviceLetter = String.fromCharCode('b'.charCodeAt(0) + numParentLayers);
+      const overlayDevice = `vd${overlayDeviceLetter}`;
+
       // 1. Configure boot source with overlay-init for per-VM writable layer
       // - init=/sbin/overlay-init: Use our custom init that sets up overlayfs
-      // - overlay_root=vdb: Use /dev/vdb (the overlay drive) for writes
+      // - overlay_root=vdX: Specifies which device is the writable overlay
+      // - parent_layers=vdb,vdc: Specifies intermediate layer devices (if any)
       // - root=/dev/vda ro: Mount base rootfs read-only
-      // - kernel ip= args: Configure network at boot time
-      let bootArgs = 'console=ttyS0 reboot=k panic=1 root=/dev/vda ro init=/sbin/overlay-init overlay_root=vdb';
+      let bootArgs = `console=ttyS0 reboot=k panic=1 root=/dev/vda ro init=/sbin/overlay-init overlay_root=${overlayDevice}`;
+
+      // Add parent layer devices to boot args if this is a layered image
+      if (hasParentLayers) {
+        const parentDevices = diskPaths.parentLayers!.map((_, i) =>
+          `vd${String.fromCharCode('b'.charCodeAt(0) + i)}`
+        );
+        bootArgs += ` parent_layers=${parentDevices.join(',')}`;
+        console.log(`[FirecrackerService] Layered image with ${numParentLayers} parent layers: ${parentDevices.join(', ')}`);
+      }
 
       // Add kernel-level network configuration if we have TAP networking
       if (vm.networkConfig.mode === 'tap' && vm.guestIp && vm.networkConfig.gateway) {
@@ -683,7 +749,22 @@ export class FirecrackerService extends EventEmitter {
         is_read_only: true,  // READ-ONLY: Base image shared by all VMs
       } as Drive);
 
-      // 3. Configure overlay drive (WRITABLE - per-VM overlay)
+      // 3. Configure parent layer drives (if any, READ-ONLY)
+      if (hasParentLayers) {
+        for (let i = 0; i < diskPaths.parentLayers!.length; i++) {
+          const layerPath = diskPaths.parentLayers![i];
+          const driveId = `layer${i}`;
+          console.log(`[FirecrackerService] Configuring parent layer ${driveId}: ${layerPath}`);
+          await this.sendApiRequest(apiSocket, 'PUT', `/drives/${driveId}`, {
+            drive_id: driveId,
+            path_on_host: layerPath,
+            is_root_device: false,
+            is_read_only: true,  // READ-ONLY: Parent layers are immutable
+          } as Drive);
+        }
+      }
+
+      // 4. Configure overlay drive (WRITABLE - per-VM overlay)
       await this.sendApiRequest(apiSocket, 'PUT', '/drives/overlay', {
         drive_id: 'overlay',
         path_on_host: diskPaths.overlayPath,
@@ -691,7 +772,28 @@ export class FirecrackerService extends EventEmitter {
         is_read_only: false,  // WRITABLE: VM-specific changes go here
       } as Drive);
 
-      // 3. Configure network interface (if TAP available)
+      // 5. Configure attached volume drives (appear after overlay)
+      // First available letter after overlay
+      let dataVolumeOffset = numParentLayers + 1; // +1 for overlay
+      if (vm.volumes && vm.volumes.length > 0) {
+        for (let i = 0; i < vm.volumes.length; i++) {
+          const volume = vm.volumes[i];
+          if (volume.hostPath && fs.existsSync(volume.hostPath)) {
+            const driveId = `data${i}`;
+            console.log(`[FirecrackerService] Configuring volume drive ${driveId}: ${volume.hostPath} -> ${volume.mountPath}`);
+            await this.sendApiRequest(apiSocket, 'PUT', `/drives/${driveId}`, {
+              drive_id: driveId,
+              path_on_host: volume.hostPath,
+              is_root_device: false,
+              is_read_only: volume.readOnly || false,
+            } as Drive);
+          } else {
+            console.warn(`[FirecrackerService] Volume ${volume.name} path not found: ${volume.hostPath}`);
+          }
+        }
+      }
+
+      // 5. Configure network interface (if TAP available)
       if (vm.networkConfig.mode === 'tap' && vm.networkConfig.tapDevice) {
         await this.sendApiRequest(apiSocket, 'PUT', '/network-interfaces/eth0', {
           iface_id: 'eth0',
@@ -700,13 +802,13 @@ export class FirecrackerService extends EventEmitter {
         } as NetworkInterface);
       }
 
-      // 4. Configure machine
+      // 6. Configure machine
       await this.sendApiRequest(apiSocket, 'PUT', '/machine-config', {
         vcpu_count: vm.vcpus,
         mem_size_mib: vm.memoryMb,
       } as MachineConfig);
 
-      // 5. Configure MMDS
+      // 7. Configure MMDS
       if (vm.networkConfig.mode === 'tap') {
         await this.sendApiRequest(apiSocket, 'PUT', '/mmds/config', {
           network_interfaces: ['eth0'],
@@ -714,13 +816,13 @@ export class FirecrackerService extends EventEmitter {
           ipv4_address: '169.254.169.254',
         } as MmdsConfig);
 
-        // 6. Set MMDS metadata
+        // 8. Set MMDS metadata
         if (vm.mmdsMetadata) {
           await this.sendApiRequest(apiSocket, 'PUT', '/mmds', vm.mmdsMetadata);
         }
       }
 
-      // 7. Start the VM
+      // 9. Start the VM
       await this.sendApiRequest(apiSocket, 'PUT', '/actions', {
         action_type: 'InstanceStart',
       });
@@ -732,6 +834,14 @@ export class FirecrackerService extends EventEmitter {
 
       // Wait for SSH to be reachable
       await this.waitForSshReady(id);
+
+      // Configure hostname in /etc/hosts to avoid sudo warnings
+      await this.configureHostname(id);
+
+      // Mount attached volumes inside the guest
+      if (vm.volumes && vm.volumes.length > 0) {
+        await this.mountVolumesInGuest(id);
+      }
 
       vm.status = 'running';
       await this.saveVmState(vm);
@@ -879,6 +989,69 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
+   * Configure hostname in /etc/hosts to avoid sudo warnings
+   */
+  private async configureHostname(vmId: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm) return;
+
+    const sshKeyPath = this.getSshKeyPath();
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+    const hostname = vm.mmdsMetadata?.instance?.hostname || vm.name;
+
+    try {
+      // Add hostname to /etc/hosts if not already present
+      const hostsCmd = `grep -q "127.0.0.1.*${hostname}" /etc/hosts || echo "127.0.0.1 ${hostname}" | sudo tee -a /etc/hosts >/dev/null`;
+      const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o IdentitiesOnly=yes agent@${host} -p ${port} '${hostsCmd}'`;
+
+      execSync(sshCmd, { stdio: 'pipe', timeout: 15000 });
+      console.log(`[FirecrackerService] Configured hostname ${hostname} in /etc/hosts`);
+    } catch (error) {
+      console.warn(`[FirecrackerService] Failed to configure hostname:`, error);
+      // Non-fatal - sudo will still work, just with a warning
+    }
+  }
+
+  /**
+   * Mount attached volumes inside the guest VM
+   * Volumes are configured as drives data0, data1, etc. which appear as /dev/vdc, /dev/vdd, etc.
+   */
+  private async mountVolumesInGuest(vmId: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm || !vm.volumes || vm.volumes.length === 0) return;
+
+    const sshKeyPath = this.getSshKeyPath();
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+
+    // Device letters: vda=rootfs, vdb=overlay, vdc=data0, vdd=data1, etc.
+    const deviceLetters = 'cdefghijklmnop'; // Starting from 'c' for first data volume
+
+    for (let i = 0; i < vm.volumes.length; i++) {
+      const volume = vm.volumes[i];
+      const deviceLetter = deviceLetters[i];
+      const device = `/dev/vd${deviceLetter}`;
+      const mountPath = volume.mountPath || '/mnt/data';
+
+      console.log(`[FirecrackerService] Mounting ${device} at ${mountPath} in VM ${vmId}`);
+
+      try {
+        // Create mount directory and mount the device
+        // Use sudo since agent user needs root for mounting
+        const mountCmd = `sudo mkdir -p ${mountPath} && sudo mount ${device} ${mountPath} 2>/dev/null && sudo chown agent:agent ${mountPath}`;
+        const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o IdentitiesOnly=yes agent@${host} -p ${port} '${mountCmd}'`;
+
+        execSync(sshCmd, { stdio: 'pipe', timeout: 30000 });
+        console.log(`[FirecrackerService] Mounted ${volume.name} at ${mountPath}`);
+      } catch (error) {
+        console.warn(`[FirecrackerService] Failed to mount volume ${volume.name} at ${mountPath}:`, error);
+        // Don't fail the VM start if mounting fails - the volume is still accessible
+      }
+    }
+  }
+
+  /**
    * Stop a VM
    */
   async stopVm(id: string): Promise<VmInfo> {
@@ -969,6 +1142,88 @@ export class FirecrackerService extends EventEmitter {
 
       check();
     });
+  }
+
+  /**
+   * Attach a volume to a VM
+   * Note: Firecracker doesn't support hot-plugging, so this requires a VM restart
+   */
+  async attachVolume(
+    vmId: string,
+    volumeConfig: { id?: string; name: string; hostPath: string; mountPath: string; readOnly?: boolean }
+  ): Promise<VmInfo> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    // Check if volume is already attached
+    const existingIndex = vm.volumes.findIndex(v => v.name === volumeConfig.name);
+    if (existingIndex !== -1) {
+      throw new Error(`Volume ${volumeConfig.name} is already attached to VM ${vmId}`);
+    }
+
+    console.log(`[FirecrackerService] Attaching volume ${volumeConfig.name} to VM ${vmId}`);
+
+    // Add volume to VM state
+    vm.volumes.push({
+      id: volumeConfig.id,
+      name: volumeConfig.name,
+      hostPath: volumeConfig.hostPath,
+      mountPath: volumeConfig.mountPath,
+      readOnly: volumeConfig.readOnly,
+    });
+
+    const wasRunning = vm.status === 'running' || vm.status === 'booting';
+
+    // If VM is running, we need to restart it for the drive to be configured
+    if (wasRunning) {
+      console.log(`[FirecrackerService] Restarting VM ${vmId} to attach volume`);
+      await this.stopVm(vmId);
+      await this.startVm(vmId);
+    } else {
+      // Just save the state - volume will be configured on next start
+      await this.saveVmState(vm);
+    }
+
+    this.emit('vm:volume-attached', { vmId, volumeName: volumeConfig.name });
+    return this.vmToInfo(this.vms.get(vmId)!);
+  }
+
+  /**
+   * Detach a volume from a VM
+   * Note: Firecracker doesn't support hot-unplugging, so this requires a VM restart
+   */
+  async detachVolume(vmId: string, volumeName: string): Promise<VmInfo> {
+    const vm = this.vms.get(vmId);
+    if (!vm) {
+      throw new Error(`VM ${vmId} not found`);
+    }
+
+    const volumeIndex = vm.volumes.findIndex(v => v.name === volumeName);
+    if (volumeIndex === -1) {
+      throw new Error(`Volume ${volumeName} is not attached to VM ${vmId}`);
+    }
+
+    console.log(`[FirecrackerService] Detaching volume ${volumeName} from VM ${vmId}`);
+
+    // Remove volume from VM state
+    vm.volumes.splice(volumeIndex, 1);
+
+    const wasRunning = vm.status === 'running' || vm.status === 'booting';
+
+    // If VM is running, we need to restart it for the drive to be removed
+    if (wasRunning) {
+      console.log(`[FirecrackerService] Restarting VM ${vmId} to detach volume`);
+      await this.stopVm(vmId);
+      await this.startVm(vmId);
+    } else {
+      // Just save the state
+      await this.saveVmState(vm);
+    }
+
+    this.emit('vm:volume-detached', { vmId, volumeName });
+    return this.vmToInfo(this.vms.get(vmId)!);
   }
 
   /**
@@ -1325,9 +1580,14 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
-   * Promote a snapshot to a base image
-   * This merges the base image + overlay into a new standalone base image
-   * that can be used to create fresh VMs.
+   * Promote a snapshot to a base image using layered storage.
+   *
+   * Instead of copying the full disk, this creates a layered image that:
+   * - References the parent base image
+   * - Stores only the overlay diff (much smaller, typically ~100MB vs ~2.5GB)
+   *
+   * When a VM is created from a layered image, the overlay-init script
+   * sets up multi-layer overlayfs: base -> parent-layer -> vm-overlay
    */
   async promoteSnapshotToImage(
     vmId: string,
@@ -1348,7 +1608,7 @@ export class FirecrackerService extends EventEmitter {
       throw new Error(`Snapshot disk not found: ${snapshotMeta.diskPath}`);
     }
 
-    console.log(`[FirecrackerService] Promoting snapshot ${snapshotId} to base image: ${newImageName}`);
+    console.log(`[FirecrackerService] Promoting snapshot ${snapshotId} to layered base image: ${newImageName}`);
 
     // Create new image directory
     const newImageDir = path.join(this.config.baseImagesDir, newImageName);
@@ -1357,34 +1617,82 @@ export class FirecrackerService extends EventEmitter {
     }
     fs.mkdirSync(newImageDir, { recursive: true });
 
-    // Get the original base image
-    const baseImageDir = path.join(this.config.baseImagesDir, snapshotMeta.baseImage);
-    const baseRootfs = path.join(baseImageDir, 'rootfs.ext4');
-    const baseKernel = path.join(baseImageDir, 'vmlinux');
+    // Get the original base image (normalize name for filesystem path)
+    const normalizedParentName = this.normalizeImageName(snapshotMeta.baseImage);
+    const parentImageDir = path.join(this.config.baseImagesDir, normalizedParentName);
+    const parentKernel = path.join(parentImageDir, 'vmlinux');
 
-    // Copy the kernel
+    // Symlink to parent's kernel (saves disk space)
     const newKernel = path.join(newImageDir, 'vmlinux');
-    fs.copyFileSync(baseKernel, newKernel);
+    fs.symlinkSync(parentKernel, newKernel);
 
-    // Create merged rootfs by:
-    // 1. Copy base image
-    // 2. Mount both and copy overlay contents
-    // For simplicity, we'll just copy the overlay as the new rootfs
-    // (The overlay contains the full filesystem state after overlayfs merge)
-    const newRootfs = path.join(newImageDir, 'rootfs.ext4');
+    // Copy the overlay as the layer diff (sparse copy to minimize disk usage)
+    // This file contains only the changes from the parent image
+    const layerPath = path.join(newImageDir, 'layer.ext4');
+    execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${layerPath}"`, { stdio: 'pipe' });
 
-    // The overlay.ext4 from snapshot IS the full merged state
-    // (Firecracker's overlay-init creates a proper overlayfs merge)
-    execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${newRootfs}"`, { stdio: 'pipe' });
+    // Get actual size of the layer file
+    const layerStats = fs.statSync(layerPath);
+    const layerSizeMB = Math.round(layerStats.blocks * 512 / 1024 / 1024); // blocks are 512 bytes
 
-    console.log(`[FirecrackerService] Created new base image: ${newImageName}`);
-    console.log(`[FirecrackerService]   Kernel: ${newKernel}`);
-    console.log(`[FirecrackerService]   Rootfs: ${newRootfs}`);
+    // Create layer metadata file
+    const layerMeta = {
+      parent: snapshotMeta.baseImage,
+      parentNormalized: normalizedParentName,
+      createdAt: new Date().toISOString(),
+      sourceVmId: vmId,
+      sourceSnapshotId: snapshotId,
+      layerSizeMB,
+    };
+    fs.writeFileSync(
+      path.join(newImageDir, 'layer.json'),
+      JSON.stringify(layerMeta, null, 2)
+    );
+
+    console.log(`[FirecrackerService] Created layered base image: ${newImageName}`);
+    console.log(`[FirecrackerService]   Parent: ${snapshotMeta.baseImage}`);
+    console.log(`[FirecrackerService]   Layer size: ${layerSizeMB}MB (actual disk usage)`);
+    console.log(`[FirecrackerService]   Kernel: symlinked to parent`);
 
     return {
       imageName: newImageName,
       imagePath: newImageDir,
     };
+  }
+
+  /**
+   * Check if an image is a layered image (has layer.json)
+   */
+  private isLayeredImage(imageName: string): boolean {
+    const normalizedName = this.normalizeImageName(imageName);
+    const imageDir = path.join(this.config.baseImagesDir, normalizedName);
+    return fs.existsSync(path.join(imageDir, 'layer.json'));
+  }
+
+  /**
+   * Get the layer chain for an image (resolves parent references)
+   * Returns array from root base image to the requested image
+   */
+  private getImageLayerChain(imageName: string): string[] {
+    const chain: string[] = [];
+    let currentImage = imageName;
+
+    while (currentImage) {
+      chain.unshift(currentImage); // Add to front
+
+      const normalizedName = this.normalizeImageName(currentImage);
+      const layerJsonPath = path.join(this.config.baseImagesDir, normalizedName, 'layer.json');
+
+      if (fs.existsSync(layerJsonPath)) {
+        const layerMeta = JSON.parse(fs.readFileSync(layerJsonPath, 'utf-8'));
+        currentImage = layerMeta.parent;
+      } else {
+        // This is the root base image
+        break;
+      }
+    }
+
+    return chain;
   }
 
   /**
@@ -1424,6 +1732,85 @@ export class FirecrackerService extends EventEmitter {
     });
 
     return this.vmToInfo(vm);
+  }
+
+  /**
+   * Rename a VM
+   */
+  renameVm(id: string, newName: string): VmInfo {
+    const vm = this.vms.get(id);
+    if (!vm) {
+      throw new Error(`VM ${id} not found`);
+    }
+
+    // Validate name
+    if (!newName || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(newName)) {
+      throw new Error('VM name must start with alphanumeric and contain only alphanumeric, underscore, period, or hyphen');
+    }
+
+    // Check for name uniqueness
+    for (const existingVm of this.vms.values()) {
+      if (existingVm.id !== id && existingVm.name === newName) {
+        throw new Error(`A VM with name '${newName}' already exists`);
+      }
+    }
+
+    const oldName = vm.name;
+    vm.name = newName;
+
+    // Update MMDS metadata if present
+    if (vm.mmdsMetadata?.instance) {
+      vm.mmdsMetadata.instance.name = newName;
+      vm.mmdsMetadata.instance.hostname = newName;
+    }
+
+    // Save state synchronously (fire and forget the async version)
+    this.saveVmState(vm).catch(err => {
+      console.error(`[FirecrackerService] Failed to save VM state after rename:`, err);
+    });
+
+    // If VM is running, update hostname inside the guest
+    if (vm.status === 'running') {
+      this.updateGuestHostname(id, oldName, newName).catch(err => {
+        console.warn(`[FirecrackerService] Failed to update guest hostname:`, err);
+      });
+    }
+
+    this.emit('vm:renamed', { id, newName });
+    console.log(`[FirecrackerService] VM ${id} renamed to ${newName}`);
+
+    return this.vmToInfo(vm);
+  }
+
+  /**
+   * Update hostname inside a running VM
+   */
+  private async updateGuestHostname(vmId: string, oldName: string, newName: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm || vm.status !== 'running') return;
+
+    const sshKeyPath = this.getSshKeyPath();
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+
+    if (!host) return;
+
+    try {
+      // Update /etc/hosts: remove old hostname entry and add new one
+      const hostsCmd = `sudo sed -i 's/127.0.0.1.*${oldName}/127.0.0.1 ${newName}/g' /etc/hosts; grep -q "127.0.0.1.*${newName}" /etc/hosts || echo "127.0.0.1 ${newName}" | sudo tee -a /etc/hosts >/dev/null`;
+
+      // Also set the hostname using hostnamectl if available
+      const hostnameCmd = `command -v hostnamectl >/dev/null && sudo hostnamectl set-hostname ${newName} || sudo hostname ${newName}`;
+
+      const fullCmd = `${hostsCmd} && ${hostnameCmd}`;
+      const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o IdentitiesOnly=yes agent@${host} -p ${port} '${fullCmd}'`;
+
+      execSync(sshCmd, { stdio: 'pipe', timeout: 15000 });
+      console.log(`[FirecrackerService] Updated guest hostname from ${oldName} to ${newName}`);
+    } catch (error) {
+      console.warn(`[FirecrackerService] Failed to update guest hostname:`, error);
+      // Non-fatal - the rename still worked at the VM level
+    }
   }
 
   /**
@@ -1789,27 +2176,59 @@ export class FirecrackerService extends EventEmitter {
 
   /**
    * List available base images (shared with cloud-hypervisor)
+   * Includes both root base images (with rootfs.ext4) and layered images (with layer.ext4)
    */
-  listBaseImages(): { name: string; hasFirecrackerImage: boolean }[] {
+  listBaseImages(): { name: string; hasFirecrackerImage: boolean; isLayered?: boolean; parent?: string; layerSizeMB?: number }[] {
     const baseImagesDir = this.config.baseImagesDir;
     if (!fs.existsSync(baseImagesDir)) {
       return [];
     }
 
-    const images: { name: string; hasFirecrackerImage: boolean }[] = [];
+    const images: { name: string; hasFirecrackerImage: boolean; isLayered?: boolean; parent?: string; layerSizeMB?: number }[] = [];
     const entries = fs.readdirSync(baseImagesDir, { withFileTypes: true });
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
 
       const imageDir = path.join(baseImagesDir, entry.name);
-      const hasFirecrackerImage = fs.existsSync(path.join(imageDir, 'rootfs.ext4')) &&
-                                   fs.existsSync(path.join(imageDir, 'vmlinux'));
+      const layerJsonPath = path.join(imageDir, 'layer.json');
 
-      images.push({
-        name: entry.name,
-        hasFirecrackerImage,
-      });
+      // Check for root base image (has rootfs.ext4 + vmlinux)
+      const isRootBaseImage = fs.existsSync(path.join(imageDir, 'rootfs.ext4')) &&
+                              fs.existsSync(path.join(imageDir, 'vmlinux'));
+
+      // Check for layered image (has layer.ext4 + layer.json + vmlinux)
+      const isLayeredImage = fs.existsSync(path.join(imageDir, 'layer.ext4')) &&
+                             fs.existsSync(layerJsonPath) &&
+                             fs.existsSync(path.join(imageDir, 'vmlinux'));
+
+      const hasFirecrackerImage = isRootBaseImage || isLayeredImage;
+
+      if (hasFirecrackerImage) {
+        const imageInfo: { name: string; hasFirecrackerImage: boolean; isLayered?: boolean; parent?: string; layerSizeMB?: number } = {
+          name: entry.name,
+          hasFirecrackerImage: true,
+        };
+
+        // Add layer info for layered images
+        if (isLayeredImage) {
+          try {
+            const layerMeta = JSON.parse(fs.readFileSync(layerJsonPath, 'utf-8'));
+            imageInfo.isLayered = true;
+            imageInfo.parent = layerMeta.parent;
+            imageInfo.layerSizeMB = layerMeta.layerSizeMB;
+          } catch (e) {
+            console.error(`Failed to parse layer.json for ${entry.name}:`, e);
+          }
+        }
+
+        images.push(imageInfo);
+      } else {
+        images.push({
+          name: entry.name,
+          hasFirecrackerImage: false,
+        });
+      }
     }
 
     return images;

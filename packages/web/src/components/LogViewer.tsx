@@ -4,7 +4,6 @@ import * as api from '../api/client';
 
 interface LogViewerProps {
   containerId?: string;
-  composeName?: string;
   vmId?: string;
   buildId?: string;
   title: string;
@@ -12,7 +11,7 @@ interface LogViewerProps {
   onClose: () => void;
 }
 
-export function LogViewer({ containerId, composeName, vmId, buildId, title, logPath, onClose }: LogViewerProps) {
+export function LogViewer({ containerId, vmId, buildId, title, logPath, onClose }: LogViewerProps) {
   const [logs, setLogs] = useState<string[]>([]);
   const [buildStatus, setBuildStatus] = useState<'building' | 'completed' | 'failed' | null>(null);
   const [isStreaming, setIsStreaming] = useState(!vmId); // VMs don't support streaming
@@ -133,59 +132,6 @@ export function LogViewer({ containerId, composeName, vmId, buildId, title, logP
               0 // Don't fetch tail again, we already have initial logs
             );
           }
-        } else if (composeName) {
-          // For compose, use the existing compose logs API
-          const apiBase = await api.getApiBase();
-          const response = await fetch(`${apiBase}/composes/${composeName}/logs?tail=500`);
-
-          if (!response.ok) {
-            throw new Error(`HTTP error: ${response.status}`);
-          }
-
-          const reader = response.body?.getReader();
-          if (!reader) {
-            throw new Error('No response body');
-          }
-
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          const read = async () => {
-            while (mounted) {
-              const { done, value } = await reader.read();
-              if (done) {
-                setLogs((prev) => [...prev, '[Stream ended]']);
-                break;
-              }
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  try {
-                    const data = JSON.parse(line.slice(6));
-                    if (data.line) {
-                      setLogs((prev) => [...prev.slice(-2000), data.line]);
-                    }
-                  } catch {
-                    // Ignore parse errors
-                  }
-                }
-              }
-            }
-          };
-
-          read().catch((err) => {
-            if (mounted && err.name !== 'AbortError') {
-              setError(err.message);
-            }
-          });
-
-          cleanupRef.current = () => {
-            reader.cancel().catch(() => {});
-          };
         }
       } catch (err) {
         if (mounted) {
@@ -207,7 +153,7 @@ export function LogViewer({ containerId, composeName, vmId, buildId, title, logP
         clearInterval(pollIntervalRef.current);
       }
     };
-  }, [containerId, composeName, vmId, buildId, isStreaming]);
+  }, [containerId, vmId, buildId, isStreaming]);
 
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {

@@ -5,7 +5,7 @@
 <h1 align="center">Caisson</h1>
 
 <p align="center">
-  A web application for spawning and managing Docker containers and virtual machines, designed for isolated agentic coding environments.
+  A web application for spawning and managing sandboxes (Docker containers, VMs, and cloud workspaces), designed for isolated agentic coding environments.
 </p>
 
 <p align="center">
@@ -16,6 +16,24 @@
 </p>
 
 ## Features
+
+### Unified Sandbox Abstraction
+Caisson treats all compute environments as **Sandboxes** - a unified abstraction over different backends:
+
+- **Docker Containers**: Fast startup, easy volume management, port forwarding
+- **Cloud-Hypervisor VMs**: Full isolation with QCOW2 overlay disks
+- **Firecracker VMs**: Lightweight microVMs with OverlayFS
+- **Daytona Cloud**: Remote cloud workspaces (when configured)
+
+The UI presents a single "Sandboxes" view where you can filter by backend, manage all environments with consistent Start/Stop/Delete actions, and open terminals regardless of the underlying technology.
+
+**Enhanced Sandbox Cards** provide:
+- **Docker Exec Command**: Copyable `docker exec` command for quick container access
+- **SSH Command**: Copyable SSH connection string with key path
+- **Log Viewer**: Real-time log streaming (Docker) or polling (VMs)
+- **SSH Key Download**: One-click download of SSH private keys
+- **Volume Section**: Display attached volumes with upload shortcuts
+- **Smart Port Links**: Correct URLs based on backend (localhost for Docker, guest IP for VMs)
 
 ### Docker Containers
 - **Container Management**: Create, start, stop, and remove Docker containers with a clean web UI
@@ -186,6 +204,7 @@ ssh -i ~/.ssh/vm-name.pem agent@<vm-ip>
 ## Architecture
 
 - **Backend**: Node.js with Hono framework, dockerode for Docker API
+- **Sandbox Abstraction**: Adapter pattern unifying Docker, VMs, and cloud backends
 - **Frontend**: React 19 + Vite + Tailwind CSS v4 + TanStack Query
 - **VM Networking**: Custom TAP helper with CAP_NET_ADMIN capabilities
 - **Monorepo**: pnpm workspaces
@@ -196,15 +215,45 @@ ssh -i ~/.ssh/vm-name.pem agent@<vm-ip>
 ├── packages/
 │   ├── server/          # Hono backend API
 │   │   ├── src/
-│   │   │   ├── routes/  # API endpoints (containers, vms, images, etc.)
-│   │   │   ├── services/ # Docker, hypervisor & container logic
+│   │   │   ├── routes/  # API endpoints (sandboxes, containers, vms, images, etc.)
+│   │   │   ├── services/
+│   │   │   │   ├── sandbox/  # Unified sandbox service with backend adapters
+│   │   │   │   │   ├── index.ts          # SandboxService coordinator
+│   │   │   │   │   ├── docker-adapter.ts # Docker backend adapter
+│   │   │   │   │   ├── vm-adapter.ts     # CH/Firecracker adapters
+│   │   │   │   │   └── daytona-adapter.ts
+│   │   │   │   ├── volume/   # Unified volume service
+│   │   │   │   │   ├── index.ts          # VolumeService coordinator
+│   │   │   │   │   ├── docker-adapter.ts # Docker volume adapter
+│   │   │   │   │   ├── vm-adapter.ts     # VM ext4 volume adapter
+│   │   │   │   │   └── daytona-adapter.ts
+│   │   │   │   ├── template/ # Template/image management service
+│   │   │   │   │   └── index.ts          # TemplateService
+│   │   │   │   ├── docker.ts    # Docker-specific logic
+│   │   │   │   └── hypervisor.ts # VM-specific logic
 │   │   │   └── types/   # TypeScript types & Zod schemas
+│   │   │       ├── sandbox.ts   # Unified Sandbox types
+│   │   │       ├── volume.ts    # Unified Volume types
+│   │   │       └── template.ts  # Unified Template types
 │   │   └── templates/   # Dockerfile templates
 │   └── web/             # React frontend
 │       └── src/
-│           ├── api/     # API client
+│           ├── api/     # API client (includes unified types)
 │           ├── components/
-│           └── hooks/   # TanStack Query hooks
+│           │   ├── sandbox/  # Unified sandbox UI components
+│           │   │   ├── SandboxList.tsx
+│           │   │   ├── SandboxCard.tsx      # Enhanced with logs, SSH key, volumes
+│           │   │   ├── CommandBox.tsx       # Copyable command display
+│           │   │   ├── SandboxLogViewer.tsx # Log viewer with streaming
+│           │   │   ├── VolumeSection.tsx    # Volume display with upload
+│           │   │   ├── BackendBadge.tsx
+│           │   │   └── StatusIndicator.tsx
+│           │   └── volume/  # Unified volume UI components
+│           │       └── UnifiedVolumeList.tsx
+│           └── hooks/
+│               ├── useSandboxes.ts  # React Query hooks for sandbox API
+│               ├── useVolumes.ts    # React Query hooks for unified volume API
+│               └── useTemplates.ts  # React Query hooks for template API
 ├── helpers/
 │   └── tap-helper/      # Rust TAP device helper (caisson-tap-helper)
 ├── scripts/
@@ -252,7 +301,21 @@ VM data is stored in the user's home directory:
 
 ## API Reference
 
-### Containers
+### Sandboxes (Unified)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/sandboxes` | List all sandboxes (supports `?backends=docker,firecracker&status=running`) |
+| POST | `/api/sandboxes` | Create a new sandbox |
+| GET | `/api/sandboxes/:id` | Get sandbox details |
+| POST | `/api/sandboxes/:id/start` | Start a sandbox |
+| POST | `/api/sandboxes/:id/stop` | Stop a sandbox |
+| DELETE | `/api/sandboxes/:id` | Delete a sandbox |
+| GET | `/api/sandboxes/backends` | Get available backend types |
+| GET | `/api/sandboxes/:id/logs` | Get sandbox logs |
+| GET | `/api/sandboxes/:id/logs/stream` | Stream sandbox logs via SSE |
+| GET | `/api/sandboxes/:id/ssh-key` | Download SSH private key |
+
+### Containers (Legacy)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/containers` | List all containers |
@@ -263,12 +326,37 @@ VM data is stored in the user's home directory:
 | DELETE | `/api/containers/:id` | Remove a container |
 | GET | `/api/containers/:id/ssh-key` | Download SSH private key |
 
-### Volumes
+### Volumes (Docker)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/volumes` | List all volumes |
-| POST | `/api/volumes` | Create a new volume |
-| DELETE | `/api/volumes/:name` | Remove a volume |
+| GET | `/api/volumes` | List all Docker volumes |
+| POST | `/api/volumes` | Create a new Docker volume |
+| DELETE | `/api/volumes/:name` | Remove a Docker volume |
+
+### Unified Volumes (All Backends)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/unified-volumes` | List all volumes from all backends |
+| GET | `/api/unified-volumes/backends` | Get volume backend availability |
+| GET | `/api/unified-volumes/:id` | Get volume details |
+| POST | `/api/unified-volumes` | Create a new volume (auto-detects backend) |
+| DELETE | `/api/unified-volumes/:id` | Delete a volume |
+| GET | `/api/unified-volumes/:id/files` | List files in a volume |
+| POST | `/api/unified-volumes/:id/files` | Upload file to a volume |
+| GET | `/api/unified-volumes/:id/files/download` | Download file from a volume |
+| DELETE | `/api/unified-volumes/:id/files` | Delete file from a volume |
+
+### Templates (Dockerfile/Image Management)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/templates` | List all templates |
+| GET | `/api/templates/:id` | Get template details |
+| POST | `/api/templates` | Create a new template |
+| PATCH | `/api/templates/:id` | Update a template |
+| DELETE | `/api/templates/:id` | Delete a template |
+| POST | `/api/templates/:id/build` | Build template for specified backends |
+| GET | `/api/templates/:id/build/status` | Get build status |
+| GET | `/api/templates/:id/build/logs` | Stream build logs via SSE |
 
 ### Images
 | Method | Endpoint | Description |

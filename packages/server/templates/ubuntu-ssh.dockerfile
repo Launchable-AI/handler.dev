@@ -1,32 +1,33 @@
 FROM ubuntu:24.04
 
-# Install SSH server and common development tools
+# Install SSH server and minimal tools
 RUN apt-get update && apt-get install -y \
     openssh-server \
     sudo \
     curl \
     wget \
     git \
-    vim \
-    nano \
-    htop \
-    build-essential \
-    python3 \
-    python3-pip \
-    python3-venv \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /var/run/sshd
 
-# Configure SSH
-RUN mkdir -p /var/run/sshd /root/.ssh \
-    && chmod 700 /root/.ssh \
-    && sed -i 's/#PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config \
-    && sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config \
+# Create non-root user with sudo access
+RUN useradd -m -s /bin/bash dev \
+    && echo 'dev ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Configure SSH for key-based auth only
+RUN sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config \
     && sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 
-# SSH key will be injected at container creation time
-# COPY authorized_keys /root/.ssh/authorized_keys
-# RUN chmod 600 /root/.ssh/authorized_keys
+# Setup SSH key ({{PUBLIC_KEY}} is replaced at build time)
+RUN mkdir -p /home/dev/.ssh \
+    && chmod 700 /home/dev/.ssh \
+    && echo '{{PUBLIC_KEY}}' > /home/dev/.ssh/authorized_keys \
+    && chmod 600 /home/dev/.ssh/authorized_keys \
+    && chown -R dev:dev /home/dev/.ssh
+
+# Set working directory
+RUN mkdir -p /home/dev/workspace && chown dev:dev /home/dev/workspace
+WORKDIR /home/dev/workspace
 
 EXPOSE 22
-
 CMD ["/usr/sbin/sshd", "-D"]

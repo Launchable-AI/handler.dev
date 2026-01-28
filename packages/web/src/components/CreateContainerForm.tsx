@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Loader2, Plus, Check, HardDrive } from 'lucide-react';
-import { useCreateContainer, useVolumes, useImages, useContainers, useConfig, useCreateVolume } from '../hooks/useContainers';
+import { useCreateContainer, useVolumes, useImages, useContainers, useCreateVolume } from '../hooks/useContainers';
 
 interface CreateContainerFormProps {
   onClose: () => void;
@@ -17,7 +17,6 @@ export function CreateContainerForm({ onClose }: CreateContainerFormProps) {
   const { data: volumes } = useVolumes();
   const { data: images } = useImages();
   const { data: containers } = useContainers();
-  const { data: config } = useConfig();
 
   // Inline volume creation state
   const [isCreatingVolume, setIsCreatingVolume] = useState(false);
@@ -62,16 +61,24 @@ export function CreateContainerForm({ onClose }: CreateContainerFormProps) {
     Array<{ name: string; mountPath: string }>
   >([]);
   // Default port mappings: common dev server ports (dynamically calculated)
-  const [ports, setPorts] = useState<Array<{ container: number; host: number }>>([
-    { host: defaultPort1, container: 3000 },  // Node.js/Express
-    { host: defaultPort2, container: 5173 },  // Vite dev server
-  ]);
+  const [ports, setPorts] = useState<Array<{ container: number; host: number }>>([]);
+  const [portsInitialized, setPortsInitialized] = useState(false);
+
+  // Update default ports when container data loads (containers can be empty array)
+  useEffect(() => {
+    if (!portsInitialized && containers !== undefined) {
+      setPorts([
+        { host: defaultPort1, container: 3000 },  // Node.js/Express
+        { host: defaultPort2, container: 5173 },  // Vite dev server
+      ]);
+      setPortsInitialized(true);
+    }
+  }, [containers, defaultPort1, defaultPort2, portsInitialized]);
   const [newContainerPort, setNewContainerPort] = useState('');
   const [newHostPort, setNewHostPort] = useState('');
 
-  // Use config default image if set, otherwise fall back to first available image or ubuntu
-  const fallbackImage = images?.flatMap((i) => i.repoTags).find((tag) => tag && tag !== '<none>:<none>') || 'ubuntu:24.04';
-  const defaultImage = config?.defaultDevNodeImage || fallbackImage;
+  // Use first available image or ubuntu as default
+  const defaultImage = images?.flatMap((i) => i.repoTags).find((tag) => tag && tag !== '<none>:<none>') || 'ubuntu:24.04';
   const selectedImage = image || defaultImage;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -155,14 +162,6 @@ export function CreateContainerForm({ onClose }: CreateContainerFormProps) {
     }
   };
 
-  // Common base images
-  const commonImages = [
-    'ubuntu:24.04',
-    'ubuntu:22.04',
-    'debian:bookworm',
-    'debian:bullseye',
-  ];
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fade-in">
       <div className="w-full max-w-lg bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] p-6 shadow-lg animate-scale-in">
@@ -206,29 +205,15 @@ export function CreateContainerForm({ onClose }: CreateContainerFormProps) {
               onChange={(e) => setImage(e.target.value)}
               className="w-full px-3 py-2 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--cyan-dim)/0.3)]"
             >
-              {images && images.length > 0 && (
-                <optgroup label="Built Images (ready to use)">
-                  {images
-                    .flatMap((i) => i.repoTags)
-                    .filter((tag) => tag && tag !== '<none>:<none>')
-                    .map((tag) => (
-                      <option key={tag} value={tag}>
-                        {tag}
-                      </option>
-                    ))}
-                </optgroup>
-              )}
-              <optgroup label="Base Images (will build with SSH setup)">
-                {commonImages.map((img) => (
-                  <option key={img} value={img}>
-                    {img}
+              {images
+                ?.flatMap((i) => i.repoTags)
+                .filter((tag) => tag && tag !== '<none>:<none>')
+                .map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
                   </option>
                 ))}
-              </optgroup>
             </select>
-            <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
-              Built images launch instantly. Base images require a one-time build.
-            </p>
           </div>
 
           {/* Volumes */}

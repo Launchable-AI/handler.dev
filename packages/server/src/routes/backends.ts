@@ -4,7 +4,8 @@ import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
 import { testConnection } from '../services/docker.js';
 import { getConfig, setConfig } from '../services/config.js';
-import { getDaytonaService } from '../services/daytona.js';
+import { getDaytonaService, initializeDaytonaService } from '../services/daytona.js';
+import { reinitializeSandboxService } from './sandboxes.js';
 import os from 'os';
 
 const execAsync = promisify(exec);
@@ -24,6 +25,7 @@ interface BackendStatus {
   cloudHypervisor: BackendInfo;
   firecracker: BackendInfo;
   daytona: BackendInfo;
+  aws: BackendInfo;
 }
 
 // Helper to check if a binary exists in PATH or common locations
@@ -194,13 +196,48 @@ async function getDaytonaStatus(): Promise<BackendInfo> {
   return info;
 }
 
+// Check AWS cloud backend status (doesn't hit API - just checks config)
+// Use the /backends/aws/test endpoint for actual connectivity checks
+async function getAwsStatus(): Promise<BackendInfo> {
+  const info: BackendInfo = {
+    installed: false,
+    enabled: false,
+    running: false,
+  };
+
+  try {
+    const config = await getConfig();
+    const aws = config.cloudBackends?.aws;
+
+    // If no credentials are configured, it's not installed (from user perspective)
+    if (!aws?.accessKeyId || !aws?.secretAccessKey) {
+      return info;
+    }
+
+    // Credentials are configured, so it's "installed"
+    info.installed = true;
+    info.enabled = aws.enabled ?? false;
+
+    // Don't hit the AWS API on regular status polling to avoid rate limits
+    // Assume it's running if enabled - use test endpoint for explicit checks
+    if (aws.enabled) {
+      info.running = true;
+    }
+  } catch (err) {
+    info.error = err instanceof Error ? err.message : 'Failed to check AWS status';
+  }
+
+  return info;
+}
+
 // GET /backends/status - Get status of all backends
 backends.get('/status', async (c) => {
-  const [docker, cloudHypervisor, firecracker, daytona] = await Promise.all([
+  const [docker, cloudHypervisor, firecracker, daytona, aws] = await Promise.all([
     getDockerStatus(),
     getCloudHypervisorStatus(),
     getFirecrackerStatus(),
     getDaytonaStatus(),
+    getAwsStatus(),
   ]);
 
   const status: BackendStatus = {
@@ -208,6 +245,7 @@ backends.get('/status', async (c) => {
     cloudHypervisor,
     firecracker,
     daytona,
+    aws,
   };
 
   return c.json(status);
@@ -222,10 +260,10 @@ backends.post('/:backend/enable', async (c) => {
       // Docker doesn't really have an "enable" concept through our app
       // It's either running or not via systemd
       try {
-        await execAsync('sudo systemctl start docker');
+        await execAsync('sudo -n systemctl start docker');
         return c.json({ success: true, message: 'Docker service started' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to start Docker service' }, 500);
+        return c.json({ success: false, message: 'Run: sudo systemctl start docker' }, 500);
       }
 
     case 'cloud-hypervisor':
@@ -257,6 +295,27 @@ backends.post('/:backend/enable', async (c) => {
         return c.json({ success: false, message: 'Failed to enable Daytona' }, 500);
       }
 
+    case 'aws':
+      // Enable AWS cloud backend
+      try {
+        const config = await getConfig();
+        if (!config.cloudBackends?.aws?.accessKeyId || !config.cloudBackends?.aws?.secretAccessKey) {
+          return c.json({ success: false, message: 'AWS credentials not configured' }, 400);
+        }
+        await setConfig({
+          cloudBackends: {
+            ...config.cloudBackends,
+            aws: {
+              ...config.cloudBackends.aws,
+              enabled: true,
+            },
+          },
+        });
+        return c.json({ success: true, message: 'AWS backend enabled' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to enable AWS' }, 500);
+      }
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
   }
@@ -269,10 +328,10 @@ backends.post('/:backend/disable', async (c) => {
   switch (backend) {
     case 'docker':
       try {
-        await execAsync('sudo systemctl stop docker');
+        await execAsync('sudo -n systemctl stop docker');
         return c.json({ success: true, message: 'Docker service stopped' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to stop Docker service' }, 500);
+        return c.json({ success: false, message: 'Run: sudo systemctl stop docker' }, 500);
       }
 
     case 'cloud-hypervisor':
@@ -300,6 +359,26 @@ backends.post('/:backend/disable', async (c) => {
         return c.json({ success: false, message: 'Failed to disable Daytona' }, 500);
       }
 
+    case 'aws':
+      // Disable AWS cloud backend
+      try {
+        const config = await getConfig();
+        if (config.cloudBackends?.aws) {
+          await setConfig({
+            cloudBackends: {
+              ...config.cloudBackends,
+              aws: {
+                ...config.cloudBackends.aws,
+                enabled: false,
+              },
+            },
+          });
+        }
+        return c.json({ success: true, message: 'AWS backend disabled' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to disable AWS' }, 500);
+      }
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
   }
@@ -314,10 +393,10 @@ backends.post('/:backend/install', async (c) => {
       try {
         // Install Docker using official script
         await execAsync('curl -fsSL https://get.docker.com | sh', { timeout: 300000 });
-        await execAsync('sudo usermod -aG docker $USER');
+        await execAsync('sudo -n usermod -aG docker $USER');
         return c.json({ success: true, message: 'Docker installed. You may need to log out and back in for group changes.' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to install Docker' }, 500);
+        return c.json({ success: false, message: 'Failed to install Docker. See https://docs.docker.com/engine/install/' }, 500);
       }
 
     case 'cloud-hypervisor':
@@ -332,12 +411,12 @@ backends.post('/:backend/install', async (c) => {
           await execAsync(`
             curl -sL https://github.com/cloud-hypervisor/cloud-hypervisor/releases/latest/download/cloud-hypervisor-static-${arch} -o /tmp/cloud-hypervisor &&
             chmod +x /tmp/cloud-hypervisor &&
-            sudo mv /tmp/cloud-hypervisor /usr/local/bin/
+            sudo -n mv /tmp/cloud-hypervisor /usr/local/bin/
           `, { timeout: 120000 });
         }
         return c.json({ success: true, message: 'Cloud-Hypervisor installed' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to install Cloud-Hypervisor' }, 500);
+        return c.json({ success: false, message: 'Run: sudo ./scripts/install-cloud-hypervisor.sh' }, 500);
       }
 
     case 'firecracker':
@@ -353,13 +432,13 @@ backends.post('/:backend/install', async (c) => {
             LATEST=$(curl -s https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest | grep '"tag_name"' | cut -d'"' -f4) &&
             curl -sL "https://github.com/firecracker-microvm/firecracker/releases/download/\${LATEST}/firecracker-\${LATEST}-${arch}.tgz" -o /tmp/firecracker.tgz &&
             tar -xzf /tmp/firecracker.tgz -C /tmp &&
-            sudo mv /tmp/release-\${LATEST}-${arch}/firecracker-\${LATEST}-${arch} /usr/local/bin/firecracker &&
+            sudo -n mv /tmp/release-\${LATEST}-${arch}/firecracker-\${LATEST}-${arch} /usr/local/bin/firecracker &&
             rm -rf /tmp/firecracker.tgz /tmp/release-*
           `, { timeout: 120000 });
         }
         return c.json({ success: true, message: 'Firecracker installed' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to install Firecracker' }, 500);
+        return c.json({ success: false, message: 'Run: sudo ./scripts/install-firecracker.sh' }, 500);
       }
 
     case 'daytona':
@@ -367,6 +446,13 @@ backends.post('/:backend/install', async (c) => {
       return c.json({
         success: false,
         message: 'Daytona is a cloud service. Configure it via the Cloud Backends settings.',
+      }, 400);
+
+    case 'aws':
+      // AWS is a cloud service - "install" means configure it
+      return c.json({
+        success: false,
+        message: 'AWS is a cloud service. Configure it via the Cloud Backends settings.',
       }, 400);
 
     default:
@@ -381,27 +467,27 @@ backends.post('/:backend/uninstall', async (c) => {
   switch (backend) {
     case 'docker':
       try {
-        await execAsync('sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin');
-        await execAsync('sudo rm -rf /var/lib/docker /var/lib/containerd');
+        await execAsync('sudo -n apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin');
+        await execAsync('sudo -n rm -rf /var/lib/docker /var/lib/containerd');
         return c.json({ success: true, message: 'Docker uninstalled' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to uninstall Docker' }, 500);
+        return c.json({ success: false, message: 'Failed to uninstall Docker. See https://docs.docker.com/engine/install/' }, 500);
       }
 
     case 'cloud-hypervisor':
       try {
-        await execAsync('sudo rm -f /usr/local/bin/cloud-hypervisor');
+        await execAsync('sudo -n rm -f /usr/local/bin/cloud-hypervisor');
         return c.json({ success: true, message: 'Cloud-Hypervisor uninstalled' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to uninstall Cloud-Hypervisor' }, 500);
+        return c.json({ success: false, message: 'Run: sudo rm -f /usr/local/bin/cloud-hypervisor' }, 500);
       }
 
     case 'firecracker':
       try {
-        await execAsync('sudo rm -f /usr/local/bin/firecracker');
+        await execAsync('sudo -n rm -f /usr/local/bin/firecracker');
         return c.json({ success: true, message: 'Firecracker uninstalled' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to uninstall Firecracker' }, 500);
+        return c.json({ success: false, message: 'Run: sudo rm -f /usr/local/bin/firecracker' }, 500);
       }
 
     case 'daytona':
@@ -417,6 +503,21 @@ backends.post('/:backend/uninstall', async (c) => {
         return c.json({ success: true, message: 'Daytona configuration removed' });
       } catch (err) {
         return c.json({ success: false, message: 'Failed to remove Daytona configuration' }, 500);
+      }
+
+    case 'aws':
+      // Remove AWS configuration
+      try {
+        const config = await getConfig();
+        await setConfig({
+          cloudBackends: {
+            ...config.cloudBackends,
+            aws: undefined,
+          },
+        });
+        return c.json({ success: true, message: 'AWS configuration removed' });
+      } catch (err) {
+        return c.json({ success: false, message: 'Failed to remove AWS configuration' }, 500);
       }
 
     default:
@@ -455,6 +556,17 @@ backends.post('/daytona/configure', async (c) => {
         daytona: newDaytona,
       },
     });
+
+    // Reinitialize services if credentials or enabled state changed
+    if (apiKey || enabled !== undefined) {
+      try {
+        await initializeDaytonaService();
+        // Reset the sandbox service so Daytona adapter gets registered on next use
+        reinitializeSandboxService();
+      } catch {
+        // Ignore initialization errors - they'll show up in test
+      }
+    }
 
     return c.json({ success: true, daytona: { ...newDaytona, apiKey: '***' } });
   } catch (err) {

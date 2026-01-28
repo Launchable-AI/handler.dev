@@ -5,19 +5,41 @@ import { createServer, Server } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as net from 'net';
 import { testConnection } from './services/docker.js';
 import { getCloudHypervisorService } from './services/hypervisor.js';
 
 const execAsync = promisify(exec);
+
+// PID file location - use /tmp for simplicity
+const PID_FILE = '/tmp/caisson-server.pid';
+
+/**
+ * Check if a port is available
+ */
+function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close();
+      resolve(true);
+    });
+    server.listen(port);
+  });
+}
 
 /**
  * Find and kill any process using the specified port
  */
 async function killProcessOnPort(port: number): Promise<boolean> {
   try {
-    // Find process using the port
+    // Find process using the port (exclude our own PID)
+    const ourPid = process.pid;
     const { stdout } = await execAsync(`lsof -ti :${port} 2>/dev/null || true`);
-    const pids = stdout.trim().split('\n').filter(Boolean);
+    const pids = stdout.trim().split('\n').filter(p => p && p !== String(ourPid));
 
     if (pids.length === 0) {
       return false;
@@ -42,6 +64,90 @@ async function killProcessOnPort(port: number): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Kill process from PID file if it exists
+ */
+async function killFromPidFile(): Promise<boolean> {
+  try {
+    if (!fs.existsSync(PID_FILE)) {
+      return false;
+    }
+
+    const pid = fs.readFileSync(PID_FILE, 'utf-8').trim();
+    if (!pid) {
+      fs.unlinkSync(PID_FILE);
+      return false;
+    }
+
+    // Check if process is still running
+    try {
+      process.kill(parseInt(pid), 0); // Signal 0 just checks if process exists
+      console.log(`Found stale server process ${pid} from PID file`);
+      await execAsync(`kill -9 ${pid}`);
+      console.log(`   Killed process ${pid}`);
+      await new Promise(resolve => setTimeout(resolve, 300));
+    } catch {
+      // Process doesn't exist anymore
+    }
+
+    fs.unlinkSync(PID_FILE);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Write current PID to file
+ */
+function writePidFile(): void {
+  fs.writeFileSync(PID_FILE, String(process.pid));
+}
+
+/**
+ * Remove PID file
+ */
+function removePidFile(): void {
+  try {
+    if (fs.existsSync(PID_FILE)) {
+      fs.unlinkSync(PID_FILE);
+    }
+  } catch {
+    // Ignore errors
+  }
+}
+
+/**
+ * Clean up stale processes before starting
+ */
+async function cleanupBeforeStart(port: number): Promise<void> {
+  // First, check PID file for previous instance
+  await killFromPidFile();
+
+  // Check if port is available
+  const available = await isPortAvailable(port);
+  if (!available) {
+    console.log(`⚠️  Port ${port} is in use, cleaning up...`);
+    const killed = await killProcessOnPort(port);
+    if (killed) {
+      // Verify port is now available
+      const nowAvailable = await isPortAvailable(port);
+      if (!nowAvailable) {
+        console.error(`❌ Could not free port ${port} after cleanup`);
+        console.error(`   Please manually kill the process using:`);
+        console.error(`   lsof -ti :${port} | xargs kill -9`);
+        process.exit(1);
+      }
+      console.log(`   Port ${port} is now available`);
+    } else {
+      console.error(`❌ Could not identify process using port ${port}`);
+      console.error(`   Please manually kill the process using:`);
+      console.error(`   lsof -ti :${port} | xargs kill -9`);
+      process.exit(1);
+    }
+  }
+}
 import {
   createTerminalSession,
   writeToSession,
@@ -51,24 +157,31 @@ import {
 } from './services/terminal.js';
 import {
   createVmTerminalSession,
+  createDaytonaTerminalSession,
+  createAwsTerminalSession,
   writeToVmSession,
   resizeVmSession,
   closeVmSessionByWebSocket,
   closeAllVmSessions,
 } from './services/vm-terminal.js';
+import { getDaytonaService } from './services/daytona.js';
+import { getAwsService } from './services/aws.js';
 import containers from './routes/containers.js';
 import images from './routes/images.js';
 import volumes from './routes/volumes.js';
 import dockerfiles from './routes/dockerfiles.js';
 import configRoutes from './routes/config.js';
-import composes from './routes/composes.js';
 import ai from './routes/ai.js';
-import components from './routes/components.js';
 import mcp from './routes/mcp.js';
 import notes from './routes/notes.js';
 import vms from './routes/vms.js';
 import backends from './routes/backends.js';
 import vmVolumes from './routes/vm-volumes.js';
+import sandboxes from './routes/sandboxes.js';
+import unifiedVolumes from './routes/unified-volumes.js';
+import templateRoutes from './routes/templates.js';
+import daytonaRoutes from './routes/daytona.js';
+import awsRoutes from './routes/aws.js';
 
 const app = new Hono();
 
@@ -116,14 +229,17 @@ app.route('/api/images', images);
 app.route('/api/volumes', volumes);
 app.route('/api/dockerfiles', dockerfiles);
 app.route('/api/config', configRoutes);
-app.route('/api/composes', composes);
 app.route('/api/ai', ai);
-app.route('/api/components', components);
 app.route('/api/mcp', mcp);
 app.route('/api/notes', notes);
 app.route('/api/vms', vms);
 app.route('/api/backends', backends);
 app.route('/api/vm-volumes', vmVolumes);
+app.route('/api/sandboxes', sandboxes);
+app.route('/api/unified-volumes', unifiedVolumes);
+app.route('/api/templates', templateRoutes);
+app.route('/api/daytona', daytonaRoutes);
+app.route('/api/backends/aws', awsRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {
@@ -182,6 +298,78 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
               isVmSession = true;
             } else {
               ws.send(JSON.stringify({ type: 'error', message: 'vmId and vmIp are required' }));
+            }
+            break;
+
+          case 'start-daytona':
+            // Start a new Daytona terminal session
+            if (msg.sandboxId) {
+              try {
+                const daytona = getDaytonaService();
+                // Strip 'daytona-' prefix if present
+                const workspaceId = msg.sandboxId.startsWith('daytona-')
+                  ? msg.sandboxId.slice(8)
+                  : msg.sandboxId;
+
+                // Get SSH access from Daytona API
+                console.log(`[WS Terminal] Getting SSH access for Daytona sandbox: ${workspaceId}`);
+                const sshAccess = await daytona.createSshAccess(workspaceId);
+
+                sessionId = createDaytonaTerminalSession(
+                  ws,
+                  workspaceId,
+                  sshAccess.sshCommand,
+                  msg.cols || 80,
+                  msg.rows || 24
+                );
+                isVmSession = true; // Use VM session handlers for write/resize/close
+              } catch (err) {
+                console.error('[WS Terminal] Failed to create Daytona terminal:', err);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  message: err instanceof Error ? err.message : 'Failed to get SSH access'
+                }));
+              }
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'sandboxId is required' }));
+            }
+            break;
+
+          case 'start-aws':
+            // Start a new AWS terminal session
+            if (msg.instanceId && msg.publicIp) {
+              try {
+                const awsService = getAwsService();
+                const sshPrivateKey = await awsService.getSshPrivateKey();
+
+                if (!sshPrivateKey) {
+                  ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'SSH key not available for AWS instances'
+                  }));
+                  break;
+                }
+
+                console.log(`[WS Terminal] Creating AWS terminal for instance: ${msg.instanceId}`);
+
+                sessionId = createAwsTerminalSession(
+                  ws,
+                  msg.instanceId,
+                  msg.publicIp,
+                  sshPrivateKey,
+                  msg.cols || 80,
+                  msg.rows || 24
+                );
+                isVmSession = true; // Use VM session handlers for write/resize/close
+              } catch (err) {
+                console.error('[WS Terminal] Failed to create AWS terminal:', err);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  message: err instanceof Error ? err.message : 'Failed to create terminal'
+                }));
+              }
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'instanceId and publicIp are required' }));
             }
             break;
 
@@ -245,6 +433,9 @@ async function main() {
   // Use SERVER_PORT from env or default to 4001
   const port = parseInt(process.env.SERVER_PORT || '4001', 10);
 
+  // Clean up any stale processes before starting
+  await cleanupBeforeStart(port);
+
   // Test Docker connection
   const dockerConnected = await testConnection();
   if (!dockerConnected) {
@@ -299,44 +490,46 @@ async function main() {
   // Setup WebSocket server
   const wss = setupWebSocketServer(server);
 
-  // Function to start listening with retry on EADDRINUSE
-  const startListening = (retryCount = 0): void => {
-    server.listen(port, () => {
-      console.log(`\n🚀 Caisson API`);
-      console.log(`   Running on http://localhost:${port}`);
-      console.log(`   WebSocket: ws://localhost:${port}/ws/terminal`);
-      console.log(`   API docs: http://localhost:${port}/api/health\n`);
-    });
-  };
-
-  // Handle server errors (including EADDRINUSE)
-  server.on('error', async (err: NodeJS.ErrnoException) => {
+  // Handle server errors
+  server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
-      console.log(`\n⚠️  Port ${port} is already in use.`);
-      console.log('   Attempting to kill the existing process...');
-
-      const killed = await killProcessOnPort(port);
-      if (killed) {
-        console.log('   Retrying to start server...\n');
-        // Small delay before retry
-        setTimeout(() => startListening(1), 100);
-      } else {
-        console.error(`\n❌ Could not free port ${port}.`);
-        console.error('   Please manually kill the process using:');
-        console.error(`   lsof -ti :${port} | xargs kill -9\n`);
-        process.exit(1);
-      }
+      // This shouldn't happen since we do proactive cleanup, but handle it anyway
+      console.error(`\n❌ Port ${port} is still in use after cleanup.`);
+      console.error('   Please manually kill the process using:');
+      console.error(`   lsof -ti :${port} | xargs kill -9\n`);
     } else {
       console.error('Server error:', err);
-      process.exit(1);
     }
+    removePidFile();
+    process.exit(1);
   });
 
-  startListening();
+  // Start listening
+  server.listen(port, () => {
+    // Write PID file after successful startup
+    writePidFile();
+    console.log(`\n🚀 Caisson API (PID: ${process.pid})`);
+    console.log(`   Running on http://localhost:${port}`);
+    console.log(`   WebSocket: ws://localhost:${port}/ws/terminal`);
+    console.log(`   API docs: http://localhost:${port}/api/health\n`);
+  });
+
+  // Track if shutdown is in progress to prevent duplicate handling
+  let isShuttingDown = false;
 
   // Graceful shutdown handler
   const shutdown = (signal: string) => {
+    if (isShuttingDown) {
+      console.log(`\n⚠️  Shutdown already in progress, forcing exit...`);
+      removePidFile();
+      process.exit(1);
+    }
+    isShuttingDown = true;
+
     console.log(`\n📤 Received ${signal}, shutting down gracefully...`);
+
+    // Remove PID file early to prevent race conditions on restart
+    removePidFile();
 
     // Close all terminal sessions (kills SSH/docker exec processes)
     closeAllSessions();
@@ -378,6 +571,27 @@ async function main() {
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // Handle uncaught exceptions - clean up PID file before crashing
+  process.on('uncaughtException', (err) => {
+    console.error('Uncaught exception:', err);
+    removePidFile();
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    // Don't exit, but log the error
+  });
+
+  // Ensure PID file cleanup on any exit
+  process.on('exit', () => {
+    removePidFile();
+  });
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error('Fatal error during startup:', err);
+  removePidFile();
+  process.exit(1);
+});

@@ -1,14 +1,28 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
 import * as dockerService from '../services/docker.js';
 import { PullImageSchema, BuildImageSchema } from '../types/index.js';
+
+const RenameImageSchema = z.object({
+  newTag: z.string().min(1),
+});
 
 const images = new Hono();
 
 // List all images
 images.get('/', async (c) => {
-  const list = await dockerService.listImages();
-  return c.json(list);
+  try {
+    const list = await dockerService.listImages();
+    return c.json(list);
+  } catch (error) {
+    // Return empty array if Docker is not available
+    if (error instanceof Error && error.message.includes('ENOENT')) {
+      return c.json([]);
+    }
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: message }, 500);
+  }
 });
 
 // Pull image from registry
@@ -32,6 +46,22 @@ images.post('/build', zValidator('json', BuildImageSchema), async (c) => {
     await dockerService.buildImage(dockerfile, tag);
     return c.json({ success: true, tag });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: message }, 500);
+  }
+});
+
+// Rename image (re-tag)
+images.patch('/:tag/rename', zValidator('json', RenameImageSchema), async (c) => {
+  const currentTag = decodeURIComponent(c.req.param('tag'));
+  const { newTag } = c.req.valid('json');
+
+  try {
+    console.log(`Renaming image: ${currentTag} -> ${newTag}`);
+    await dockerService.renameImage(currentTag, newTag);
+    return c.json({ success: true, newTag });
+  } catch (error) {
+    console.error('Failed to rename image:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     return c.json({ error: message }, 500);
   }

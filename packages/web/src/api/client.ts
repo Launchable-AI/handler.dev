@@ -38,6 +38,8 @@ export interface ImageInfo {
   repoTags: string[];
   size: number;
   created: string;
+  dockerfile?: string;      // The Dockerfile content used to build this image
+  dockerfileName?: string;  // The name of the source Dockerfile file
 }
 
 export interface CreateContainerRequest {
@@ -49,7 +51,7 @@ export interface CreateContainerRequest {
   env?: Record<string, string>;
 }
 
-async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
+export async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const apiBase = await getApiBase();
 
   const response = await fetch(`${apiBase}${path}`, {
@@ -219,6 +221,13 @@ export async function removeImage(id: string): Promise<void> {
   await fetchAPI(`/images/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+export async function renameImage(currentTag: string, newTag: string): Promise<void> {
+  await fetchAPI(`/images/${encodeURIComponent(currentTag)}/rename`, {
+    method: 'PATCH',
+    body: JSON.stringify({ newTag }),
+  });
+}
+
 // Volumes
 export async function listVolumes(): Promise<VolumeInfo[]> {
   return fetchAPI('/volumes');
@@ -321,8 +330,29 @@ export async function uploadDirectoryToVolume(
   });
 }
 
+// Dockerfile Templates
+export interface TemplateInfo {
+  name: string;
+  description: string;
+}
+
+export async function listTemplates(): Promise<TemplateInfo[]> {
+  return fetchAPI('/dockerfiles/templates');
+}
+
+export async function getTemplate(name: string): Promise<{ name: string; content: string; description: string }> {
+  return fetchAPI(`/dockerfiles/templates/${name}`);
+}
+
 // Dockerfiles
-export async function listDockerfiles(): Promise<string[]> {
+export interface DockerfileInfo {
+  name: string;
+  modifiedAt: string;
+  isSystem?: boolean;
+  description?: string;
+}
+
+export async function listDockerfiles(): Promise<DockerfileInfo[]> {
   return fetchAPI('/dockerfiles');
 }
 
@@ -341,17 +371,28 @@ export async function deleteDockerfile(name: string): Promise<void> {
   await fetchAPI(`/dockerfiles/${name}`, { method: 'DELETE' });
 }
 
+export async function renameDockerfile(name: string, newName: string): Promise<{ success: boolean; name: string }> {
+  return fetchAPI(`/dockerfiles/${name}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ newName }),
+  });
+}
+
 export async function buildDockerfile(
   name: string,
   onLog: (log: string) => void,
   onDone: (tag: string) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  version?: string // Optional version tag (e.g., timestamp for auto-versioning)
 ): Promise<void> {
   const serverUrl = getServerUrl();
 
   return new Promise((resolve, reject) => {
     // Use fetch with streaming for SSE
-    fetch(`${serverUrl}/api/dockerfiles/${name}/build`, {
+    const url = version
+      ? `${serverUrl}/api/dockerfiles/${name}/build?version=${encodeURIComponent(version)}`
+      : `${serverUrl}/api/dockerfiles/${name}/build`;
+    fetch(url, {
       method: 'POST',
     }).then(async (response) => {
       if (!response.ok) {
@@ -429,7 +470,6 @@ export interface AppConfig {
   sshJumpHost: string; // Jump host for ProxyJump (e.g., user@bastion.example.com)
   sshJumpHostKeyPath: string; // Path to SSH key for jump host (e.g., ~/.ssh/jump_key.pem)
   dataDirectory: string;
-  defaultDevNodeImage: string;
   cloudBackends?: CloudBackendsConfig;
 }
 
@@ -464,195 +504,6 @@ export async function browseDirectory(path?: string): Promise<BrowseDirectoryRes
   });
 }
 
-// Compose
-export interface ComposeService {
-  name: string;
-  containerId: string;
-  state: 'running' | 'exited' | 'paused' | 'restarting' | 'dead' | 'created' | 'unknown';
-  image: string;
-  ports: Array<{ container: number; host: number | null }>;
-  sshPort: number | null;
-}
-
-export interface ComposeProject {
-  name: string;
-  status: 'running' | 'partial' | 'stopped';
-  services: ComposeService[];
-  createdAt: string;
-}
-
-export interface ComposeContent {
-  name: string;
-  content: string;
-}
-
-export async function listComposeProjects(): Promise<ComposeProject[]> {
-  return fetchAPI('/composes');
-}
-
-export async function getComposeProject(name: string): Promise<ComposeProject> {
-  return fetchAPI(`/composes/${name}`);
-}
-
-export async function getComposeContent(name: string): Promise<ComposeContent> {
-  return fetchAPI(`/composes/${name}/content`);
-}
-
-export async function createComposeProject(name: string, content: string): Promise<ComposeProject> {
-  return fetchAPI('/composes', {
-    method: 'POST',
-    body: JSON.stringify({ name, content }),
-  });
-}
-
-export async function updateComposeProject(name: string, content: string): Promise<ComposeProject> {
-  return fetchAPI(`/composes/${name}`, {
-    method: 'PUT',
-    body: JSON.stringify({ content }),
-  });
-}
-
-export async function deleteComposeProject(name: string): Promise<void> {
-  await fetchAPI(`/composes/${name}`, { method: 'DELETE' });
-}
-
-export async function renameComposeProject(name: string, newName: string): Promise<ComposeProject> {
-  return fetchAPI(`/composes/${name}/rename`, {
-    method: 'POST',
-    body: JSON.stringify({ newName }),
-  });
-}
-
-export async function composeUp(
-  name: string,
-  onLog: (log: string) => void,
-  onDone: () => void,
-  onError: (error: string) => void
-): Promise<void> {
-  const serverUrl = getServerUrl();
-
-  return new Promise((resolve, reject) => {
-    fetch(`${serverUrl}/api/composes/${name}/up`, {
-      method: 'POST',
-    }).then(async (response) => {
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to start' }));
-        onError(error.error || 'Failed to start');
-        reject(new Error(error.error || 'Failed to start'));
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError('No response stream');
-        reject(new Error('No response stream'));
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const eventBlock of lines) {
-          const eventMatch = eventBlock.match(/event: (\w+)/);
-          const dataMatch = eventBlock.match(/data: (.+)/);
-
-          if (eventMatch && dataMatch) {
-            const event = eventMatch[1];
-            const data = JSON.parse(dataMatch[1]);
-
-            if (event === 'log') {
-              onLog(data);
-            } else if (event === 'done') {
-              onDone();
-              resolve();
-            } else if (event === 'error') {
-              onError(data);
-              reject(new Error(data));
-            }
-          }
-        }
-      }
-      resolve();
-    }).catch((err) => {
-      onError(err.message);
-      reject(err);
-    });
-  });
-}
-
-export async function composeDown(
-  name: string,
-  onLog: (log: string) => void,
-  onDone: () => void,
-  onError: (error: string) => void
-): Promise<void> {
-  const serverUrl = getServerUrl();
-
-  return new Promise((resolve, reject) => {
-    fetch(`${serverUrl}/api/composes/${name}/down`, {
-      method: 'POST',
-    }).then(async (response) => {
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to stop' }));
-        onError(error.error || 'Failed to stop');
-        reject(new Error(error.error || 'Failed to stop'));
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError('No response stream');
-        reject(new Error('No response stream'));
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const eventBlock of lines) {
-          const eventMatch = eventBlock.match(/event: (\w+)/);
-          const dataMatch = eventBlock.match(/data: (.+)/);
-
-          if (eventMatch && dataMatch) {
-            const event = eventMatch[1];
-            const data = JSON.parse(dataMatch[1]);
-
-            if (event === 'log') {
-              onLog(data);
-            } else if (event === 'done') {
-              onDone();
-              resolve();
-            } else if (event === 'error') {
-              onError(data);
-              reject(new Error(data));
-            }
-          }
-        }
-      }
-      resolve();
-    }).catch((err) => {
-      onError(err.message);
-      reject(err);
-    });
-  });
-}
-
 // AI Chat
 export interface AIStatus {
   configured: boolean;
@@ -660,76 +511,6 @@ export interface AIStatus {
 
 export async function getAIStatus(): Promise<AIStatus> {
   return fetchAPI('/ai/status');
-}
-
-export async function streamComposeChat(
-  message: string,
-  composeContent: string,
-  onChunk: (chunk: string) => void,
-  onDone: () => void,
-  onError: (error: string) => void
-): Promise<void> {
-  const serverUrl = getServerUrl();
-
-  return new Promise((resolve, reject) => {
-    fetch(`${serverUrl}/api/ai/compose-chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message, composeContent }),
-    }).then(async (response) => {
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'AI request failed' }));
-        onError(error.error || 'AI request failed');
-        reject(new Error(error.error || 'AI request failed'));
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError('No response stream');
-        reject(new Error('No response stream'));
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const eventBlock of lines) {
-          const eventMatch = eventBlock.match(/event: (\w+)/);
-          const dataMatch = eventBlock.match(/data: (.+)/);
-
-          if (eventMatch && dataMatch) {
-            const event = eventMatch[1];
-            const data = JSON.parse(dataMatch[1]);
-
-            if (event === 'chunk') {
-              onChunk(data);
-            } else if (event === 'done') {
-              onDone();
-              resolve();
-            } else if (event === 'error') {
-              onError(data);
-              reject(new Error(data));
-            }
-          }
-        }
-      }
-      resolve();
-    }).catch((err) => {
-      onError(err.message);
-      reject(err);
-    });
-  });
 }
 
 export async function streamDockerfileChat(
@@ -821,7 +602,6 @@ export interface ModelInfo {
 }
 
 export interface AIPrompts {
-  compose: AIPromptInfo;
   dockerfile: AIPromptInfo;
   mcpInstall: AIPromptInfo;
   mcpSearch: AIPromptInfo;
@@ -830,14 +610,6 @@ export interface AIPrompts {
 
 export async function getAIPrompts(): Promise<AIPrompts> {
   return fetchAPI('/ai/prompts');
-}
-
-export async function updateComposePrompt(prompt: string | null): Promise<{ success: boolean; prompt: string }> {
-  return fetchAPI('/ai/prompts/compose', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
-  });
 }
 
 export async function updateDockerfilePrompt(prompt: string | null): Promise<{ success: boolean; prompt: string }> {
@@ -869,91 +641,6 @@ export async function updateModel(model: string | null): Promise<{ success: bool
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model }),
-  });
-}
-
-// Components
-export interface ComponentPort {
-  container: number;
-  host?: number;
-  description?: string;
-}
-
-export interface ComponentVolume {
-  name: string;
-  path: string;
-  description?: string;
-}
-
-export interface ComponentEnvVar {
-  name: string;
-  value: string;
-  description?: string;
-  required?: boolean;
-}
-
-export interface Component {
-  id: string;
-  name: string;
-  description: string;
-  category: 'database' | 'cache' | 'web' | 'messaging' | 'storage' | 'monitoring' | 'development' | 'other';
-  icon?: string;
-  image: string;
-  defaultTag: string;
-  ports: ComponentPort[];
-  volumes: ComponentVolume[];
-  environment: ComponentEnvVar[];
-  healthcheck?: {
-    test: string;
-    interval?: string;
-    timeout?: string;
-    retries?: number;
-  };
-  dependsOn?: string[];
-  networks?: string[];
-  builtIn: boolean;
-  createdAt: string;
-}
-
-export async function listComponents(): Promise<Component[]> {
-  return fetchAPI('/components');
-}
-
-export async function getComponent(id: string): Promise<Component> {
-  return fetchAPI(`/components/${id}`);
-}
-
-export async function getComponentsByCategory(category: Component['category']): Promise<Component[]> {
-  return fetchAPI(`/components/category/${category}`);
-}
-
-export async function createComponent(component: Omit<Component, 'id' | 'builtIn' | 'createdAt'>): Promise<Component> {
-  return fetchAPI('/components', {
-    method: 'POST',
-    body: JSON.stringify(component),
-  });
-}
-
-export async function updateComponent(id: string, updates: Partial<Omit<Component, 'id' | 'builtIn' | 'createdAt'>>): Promise<Component> {
-  return fetchAPI(`/components/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(updates),
-  });
-}
-
-export async function deleteComponent(id: string): Promise<void> {
-  await fetchAPI(`/components/${id}`, { method: 'DELETE' });
-}
-
-export async function getComponentYaml(id: string, serviceName?: string): Promise<{ yaml: string }> {
-  const params = serviceName ? `?name=${encodeURIComponent(serviceName)}` : '';
-  return fetchAPI(`/components/${id}/yaml${params}`);
-}
-
-export async function createComponentFromAI(request: string): Promise<{ success: boolean; component: Component }> {
-  return fetchAPI('/ai/create-component', {
-    method: 'POST',
-    body: JSON.stringify({ request }),
   });
 }
 
@@ -1335,6 +1022,9 @@ export interface BaseImageInfo {
   name: string;
   hasKernel: boolean;
   hasWarmupSnapshot: boolean;
+  isLayered?: boolean;
+  parent?: string;
+  layerSizeMB?: number;
 }
 
 export async function listVms(): Promise<VmInfo[]> {
@@ -1575,6 +1265,7 @@ export interface BackendStatus {
   cloudHypervisor: BackendInfo;
   firecracker: BackendInfo;
   daytona: BackendInfo;
+  aws: BackendInfo;
 }
 
 export async function getBackendStatus(): Promise<BackendStatus> {
@@ -1884,4 +1575,1112 @@ export async function downloadBaseImage(
       reject(err);
     });
   });
+}
+
+// ==================== Unified Sandbox API ====================
+
+/**
+ * Backend types for sandboxes
+ */
+export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws';
+
+/**
+ * Unified status across all backends
+ */
+export type SandboxStatus =
+  | 'creating'
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'paused'
+  | 'error'
+  | 'archived'
+  | 'building';
+
+/**
+ * Port mapping for sandboxes
+ */
+export interface SandboxPortMapping {
+  container: number;
+  host: number;
+  protocol?: string;
+}
+
+/**
+ * Docker-specific metadata
+ */
+export interface DockerMeta {
+  type: 'docker';
+  containerId: string;
+  volumes: Array<{ name: string; mountPath: string }>;
+  dockerState?: string;
+  buildId?: string;
+}
+
+/**
+ * VM-specific metadata
+ */
+export interface VmMeta {
+  type: 'vm';
+  hypervisor: 'cloud-hypervisor' | 'firecracker';
+  networkMode: string;
+  hasSnapshots: boolean;
+  tapDevice?: string;
+  bootTimeMs?: number;
+  volumes?: Array<{ id?: string; name: string; mountPath: string; sizeGb: number }>;
+}
+
+/**
+ * Daytona-specific metadata
+ */
+export interface DaytonaMeta {
+  type: 'daytona';
+  sizeClass: 'small' | 'medium' | 'large';
+  organizationId: string;
+  target: string;
+  daytonaState?: string;
+}
+
+/**
+ * Unified Sandbox type - represents any compute environment
+ */
+export interface Sandbox {
+  /** Prefixed ID: 'docker-xxx', 'vm-xxx', 'fc-xxx', 'daytona-xxx' */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Backend type */
+  backend: SandboxBackend;
+  /** Current status */
+  status: SandboxStatus;
+  /** Error message if status is 'error' */
+  error?: string;
+
+  // Resources
+  vcpus: number;
+  memoryMb: number;
+  diskGb: number;
+
+  // Network
+  ports: SandboxPortMapping[];
+  guestIp?: string;
+
+  // Access
+  terminalType: 'ssh' | 'docker-exec';
+  sshHost?: string;
+  sshPort?: number;
+  sshUser?: string;
+  sshCommand?: string;
+  /** Docker exec command for direct container access */
+  dockerExecCommand?: string;
+  /** SSH key identifier for download */
+  sshKeyId?: string;
+
+  // Metadata
+  image: string;
+  createdAt: string;
+  startedAt?: string;
+
+  /** Backend-specific metadata */
+  backendMeta?: DockerMeta | VmMeta | DaytonaMeta | AwsMeta;
+}
+
+/**
+ * AWS-specific metadata
+ */
+export interface AwsMeta {
+  type: 'aws';
+  instanceId: string;
+  instanceType: string;
+  spotRequestId?: string;
+  volumeId?: string;
+  availabilityZone: string;
+  publicIp?: string;
+  privateIp?: string;
+  region: string;
+  ec2State?: string;
+  launchTime?: string;
+  securityGroupId?: string;
+  subnetId?: string;
+  vpcId?: string;
+}
+
+/**
+ * Response from listing sandboxes
+ */
+export interface SandboxListResponse {
+  sandboxes: Sandbox[];
+  backends: {
+    docker: boolean;
+    'cloud-hypervisor': boolean;
+    firecracker: boolean;
+    daytona: boolean;
+    aws: boolean;
+  };
+}
+
+/**
+ * Filter options for listing sandboxes
+ */
+export interface SandboxListFilter {
+  backends?: SandboxBackend[];
+  status?: SandboxStatus[];
+  search?: string;
+}
+
+/**
+ * Request to create a new sandbox
+ */
+export interface CreateSandboxRequest {
+  name: string;
+  backend: SandboxBackend;
+  image: string;
+
+  vcpus?: number;
+  memoryMb?: number;
+  diskGb?: number;
+
+  ports?: SandboxPortMapping[];
+
+  dockerOptions?: {
+    dockerfile?: string;
+    volumes?: Array<{ name: string; mountPath: string }>;
+    env?: Record<string, string>;
+    enableSsh?: boolean;
+  };
+
+  vmOptions?: {
+    hypervisor?: 'cloud-hypervisor' | 'firecracker';
+    networkMode?: 'bridged' | 'nat';
+    volumes?: Array<{ id: string; mountPath: string }>;
+  };
+
+  daytonaOptions?: {
+    sizeClass?: 'small' | 'medium' | 'large';
+    language?: string;
+    volumes?: Array<{ name: string; mountPath: string }>;
+  };
+
+  awsOptions?: {
+    sizeClass?: 'small' | 'medium' | 'large';
+    instanceType?: string;
+    amiId?: string;
+    volumeId?: string;
+    volumeSizeGb?: number;
+    availabilityZone?: string;
+    securityGroupIds?: string[];
+    subnetId?: string;
+  };
+}
+
+/**
+ * List all sandboxes with optional filtering
+ */
+export async function listSandboxes(filter?: SandboxListFilter): Promise<SandboxListResponse> {
+  const params = new URLSearchParams();
+  if (filter?.backends?.length) {
+    params.set('backend', filter.backends.join(','));
+  }
+  if (filter?.status?.length) {
+    params.set('status', filter.status.join(','));
+  }
+  if (filter?.search) {
+    params.set('search', filter.search);
+  }
+
+  const query = params.toString();
+  return fetchAPI(`/sandboxes${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get backend availability status
+ */
+export async function getSandboxBackends(): Promise<Record<SandboxBackend, boolean>> {
+  return fetchAPI('/sandboxes/backends');
+}
+
+/**
+ * Get a specific sandbox by ID
+ */
+export async function getSandbox(id: string): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Create a new sandbox
+ */
+export async function createSandbox(request: CreateSandboxRequest): Promise<Sandbox> {
+  return fetchAPI('/sandboxes', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Start a stopped sandbox
+ */
+export async function startSandbox(id: string): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}/start`, { method: 'POST' });
+}
+
+/**
+ * Stop a running sandbox
+ */
+export async function stopSandbox(id: string): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}/stop`, { method: 'POST' });
+}
+
+/**
+ * Delete a sandbox
+ */
+export async function deleteSandbox(id: string): Promise<void> {
+  await fetchAPI(`/sandboxes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Rename a sandbox (Firecracker VMs only)
+ */
+export async function renameSandbox(id: string, newName: string): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: newName }),
+  });
+}
+
+/**
+ * Get sandbox logs
+ */
+export async function getSandboxLogs(id: string, tail: number = 200): Promise<string> {
+  const result = await fetchAPI<{ logs: string }>(`/sandboxes/${encodeURIComponent(id)}/logs?tail=${tail}`);
+  return result.logs;
+}
+
+/**
+ * Stream sandbox logs via SSE
+ */
+export async function streamSandboxLogs(
+  id: string,
+  callbacks: {
+    onLog: (line: string) => void;
+    onError?: (error: string) => void;
+    onDone?: () => void;
+  },
+  tail: number = 100
+): Promise<() => void> {
+  const apiBase = await getApiBase();
+  const controller = new AbortController();
+
+  fetch(`${apiBase}/sandboxes/${encodeURIComponent(id)}/logs/stream?tail=${tail}`, {
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        callbacks.onError?.(`HTTP error: ${response.status}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        callbacks.onError?.('No response body');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          callbacks.onDone?.();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            // Skip event line, data comes next
+          } else if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              callbacks.onLog(data);
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    })
+    .catch((error) => {
+      if (error.name !== 'AbortError') {
+        callbacks.onError?.(error.message);
+      }
+    });
+
+  // Return cleanup function
+  return () => controller.abort();
+}
+
+/**
+ * Download SSH key for a sandbox
+ */
+export async function downloadSandboxSshKey(id: string): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/sandboxes/${encodeURIComponent(id)}/ssh-key`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to download SSH key' }));
+    throw new Error(error.error || 'Failed to download SSH key');
+  }
+  return response.blob();
+}
+
+/**
+ * Get SSH command for a sandbox (creates SSH access for Daytona sandboxes)
+ */
+export async function getSandboxSshCommand(id: string): Promise<string> {
+  const result = await fetchAPI<{ sshCommand: string }>(`/sandboxes/${encodeURIComponent(id)}/ssh-command`);
+  return result.sshCommand;
+}
+
+/**
+ * Upload a file to a sandbox's working directory
+ */
+export interface UploadHandle {
+  promise: Promise<{ success: boolean; path?: string; filesUploaded?: number; destination?: string }>;
+  abort: () => void;
+}
+
+export function uploadFileToSandbox(
+  id: string,
+  file: File,
+  destPath: string = '/home/dev/workspace',
+  onProgress?: (progress: UploadProgress) => void
+): UploadHandle {
+  let xhr: XMLHttpRequest | null = null;
+
+  const promise = (async () => {
+    const apiBase = await getApiBase();
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('destPath', destPath);
+
+    return new Promise<{ success: boolean; path: string }>((resolve, reject) => {
+      xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress({
+            loaded: event.loaded,
+            total: event.total,
+            percent: Math.round((event.loaded / event.total) * 100),
+          });
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr!.status >= 200 && xhr!.status < 300) {
+          try {
+            resolve(JSON.parse(xhr!.responseText));
+          } catch {
+            resolve({ success: true, path: destPath });
+          }
+        } else {
+          try {
+            const error = JSON.parse(xhr!.responseText);
+            reject(new Error(error.error || 'Upload failed'));
+          } catch {
+            reject(new Error(`Upload failed: HTTP ${xhr!.status}`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed: Network error'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload cancelled'));
+      });
+
+      xhr.open('POST', `${apiBase}/sandboxes/${encodeURIComponent(id)}/upload`);
+      xhr.send(formData);
+    });
+  })();
+
+  return {
+    promise,
+    abort: () => xhr?.abort(),
+  };
+}
+
+/**
+ * Upload a directory to a sandbox's working directory (uses tar for efficiency)
+ */
+export function uploadDirectoryToSandbox(
+  id: string,
+  files: Array<{ file: File; relativePath: string }>,
+  destPath: string = '/home/dev/workspace',
+  onProgress?: (progress: UploadProgress) => void
+): UploadHandle {
+  let xhr: XMLHttpRequest | null = null;
+
+  const promise = (async () => {
+    const apiBase = await getApiBase();
+    const formData = new FormData();
+
+    // Append each file with its relative path
+    for (const { file, relativePath } of files) {
+      formData.append('files', file);
+      formData.append('paths', relativePath);
+    }
+    formData.append('destPath', destPath);
+
+    return new Promise<{ success: boolean; filesUploaded: number; destination: string }>((resolve, reject) => {
+      xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress({
+            loaded: event.loaded,
+            total: event.total,
+            percent: Math.round((event.loaded / event.total) * 100),
+          });
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr!.status >= 200 && xhr!.status < 300) {
+          try {
+            resolve(JSON.parse(xhr!.responseText));
+          } catch {
+            resolve({ success: true, filesUploaded: files.length, destination: destPath });
+          }
+        } else {
+          try {
+            const error = JSON.parse(xhr!.responseText);
+            reject(new Error(error.error || 'Upload failed'));
+          } catch {
+            reject(new Error(`Upload failed: HTTP ${xhr!.status}`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed: Network error'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload cancelled'));
+      });
+
+      xhr.open('POST', `${apiBase}/sandboxes/${encodeURIComponent(id)}/upload-directory`);
+      xhr.send(formData);
+    });
+  })();
+
+  return {
+    promise,
+    abort: () => xhr?.abort(),
+  };
+}
+
+// ==================== Unified Volume API ====================
+
+/**
+ * Volume backend types
+ */
+export type UnifiedVolumeBackend = 'docker' | 'vm' | 'daytona';
+
+/**
+ * Volume status types
+ */
+export type UnifiedVolumeStatus = 'creating' | 'ready' | 'attached' | 'error' | 'deleting';
+
+/**
+ * Volume attachment info
+ */
+export interface UnifiedVolumeAttachment {
+  sandboxId: string;
+  sandboxName: string;
+  mountPath: string;
+}
+
+/**
+ * Docker volume metadata
+ */
+export interface UnifiedDockerVolumeMeta {
+  type: 'docker';
+  driver: string;
+  mountpoint: string;
+}
+
+/**
+ * VM volume metadata
+ */
+export interface UnifiedVmVolumeMeta {
+  type: 'vm';
+  format: 'ext4' | 'xfs';
+  devicePath: string;
+  lastAttachedAt?: string;
+}
+
+/**
+ * Daytona volume metadata
+ */
+export interface UnifiedDaytonaVolumeMeta {
+  type: 'daytona';
+  organizationId: string;
+  daytonaState?: string;
+}
+
+/**
+ * Unified Volume type
+ */
+export interface UnifiedVolume {
+  id: string;
+  name: string;
+  backend: UnifiedVolumeBackend;
+  status: UnifiedVolumeStatus;
+  sizeGb?: number;
+  actualSizeMb?: number;
+  mountPath?: string;
+  attachedTo: UnifiedVolumeAttachment[];
+  createdAt: string;
+  error?: string;
+  backendMeta?: UnifiedDockerVolumeMeta | UnifiedVmVolumeMeta | UnifiedDaytonaVolumeMeta;
+}
+
+/**
+ * Response from listing unified volumes
+ */
+export interface UnifiedVolumeListResponse {
+  volumes: UnifiedVolume[];
+  backends: Record<UnifiedVolumeBackend, boolean>;
+}
+
+/**
+ * Filter options for listing unified volumes
+ */
+export interface UnifiedVolumeListFilter {
+  backends?: UnifiedVolumeBackend[];
+  status?: UnifiedVolumeStatus[];
+  search?: string;
+}
+
+/**
+ * Request to create a unified volume
+ */
+export interface CreateUnifiedVolumeRequest {
+  name: string;
+  backend?: UnifiedVolumeBackend;
+  sizeGb?: number;
+  format?: 'ext4' | 'xfs';
+  mountPath?: string;
+}
+
+/**
+ * File info for volume file listing
+ */
+export interface UnifiedVolumeFileInfo {
+  name: string;
+  type: 'file' | 'directory';
+  size: number;
+  modified?: string;
+}
+
+/**
+ * List all unified volumes
+ */
+export async function listUnifiedVolumes(filter?: UnifiedVolumeListFilter): Promise<UnifiedVolumeListResponse> {
+  const params = new URLSearchParams();
+  if (filter?.backends?.length) {
+    params.set('backend', filter.backends.join(','));
+  }
+  if (filter?.status?.length) {
+    params.set('status', filter.status.join(','));
+  }
+  if (filter?.search) {
+    params.set('search', filter.search);
+  }
+
+  const query = params.toString();
+  return fetchAPI(`/unified-volumes${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get unified volume backend availability
+ */
+export async function getUnifiedVolumeBackends(): Promise<Record<UnifiedVolumeBackend, boolean>> {
+  return fetchAPI('/unified-volumes/backends');
+}
+
+/**
+ * Get a specific unified volume
+ */
+export async function getUnifiedVolume(id: string): Promise<UnifiedVolume> {
+  return fetchAPI(`/unified-volumes/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Create a new unified volume
+ */
+export async function createUnifiedVolume(request: CreateUnifiedVolumeRequest): Promise<UnifiedVolume> {
+  return fetchAPI('/unified-volumes', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Delete a unified volume
+ */
+export async function deleteUnifiedVolume(id: string): Promise<void> {
+  await fetchAPI(`/unified-volumes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * List files in a unified volume
+ */
+export async function listUnifiedVolumeFiles(id: string, path: string = '/'): Promise<{ files: UnifiedVolumeFileInfo[]; path: string }> {
+  return fetchAPI(`/unified-volumes/${encodeURIComponent(id)}/files?path=${encodeURIComponent(path)}`);
+}
+
+/**
+ * Upload a file to a unified volume
+ */
+export async function uploadToUnifiedVolume(id: string, file: File, destPath: string = '/'): Promise<{ success: boolean; path: string }> {
+  const apiBase = await getApiBase();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('path', destPath);
+
+  const response = await fetch(`${apiBase}/unified-volumes/${encodeURIComponent(id)}/files`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || 'Upload failed');
+  }
+
+  return response.json();
+}
+
+/**
+ * Download a file from a unified volume
+ */
+export async function downloadFromUnifiedVolume(id: string, filePath: string): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/unified-volumes/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(filePath)}`);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Download failed' }));
+    throw new Error(error.error || 'Download failed');
+  }
+
+  return response.blob();
+}
+
+/**
+ * Delete a file from a unified volume
+ */
+export async function deleteUnifiedVolumeFile(id: string, filePath: string): Promise<void> {
+  await fetchAPI(`/unified-volumes/${encodeURIComponent(id)}/files?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
+}
+
+/**
+ * Attach a volume to a sandbox (VM volumes only)
+ */
+export async function attachUnifiedVolume(volumeId: string, sandboxId: string): Promise<UnifiedVolume> {
+  return fetchAPI(`/unified-volumes/${encodeURIComponent(volumeId)}/attach`, {
+    method: 'POST',
+    body: JSON.stringify({ sandboxId }),
+  });
+}
+
+/**
+ * Detach a volume from its sandbox (VM volumes only)
+ */
+export async function detachUnifiedVolume(volumeId: string): Promise<UnifiedVolume> {
+  return fetchAPI(`/unified-volumes/${encodeURIComponent(volumeId)}/detach`, {
+    method: 'POST',
+  });
+}
+
+// ==================== Daytona Snapshots API ====================
+
+/**
+ * Daytona snapshot state
+ */
+export type DaytonaSnapshotState =
+  | 'building'
+  | 'pending'
+  | 'pulling'
+  | 'active'
+  | 'inactive'
+  | 'error'
+  | 'build_failed'
+  | 'removing';
+
+/**
+ * Daytona snapshot info
+ */
+export interface DaytonaSnapshot {
+  id: string;
+  organizationId?: string;
+  general: boolean;
+  name: string;
+  imageName?: string;
+  state: DaytonaSnapshotState;
+  size: number | null;
+  entrypoint: string[] | null;
+  cpu: number;
+  gpu: number;
+  mem: number;
+  disk: number;
+  errorReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+  regionIds?: string[];
+  ref?: string;
+}
+
+/**
+ * Paginated snapshots response
+ */
+export interface DaytonaPaginatedSnapshots {
+  items: DaytonaSnapshot[];
+  total: number;
+}
+
+/**
+ * List Daytona snapshots
+ */
+export async function listDaytonaSnapshots(options?: {
+  page?: number;
+  limit?: number;
+  name?: string;
+}): Promise<DaytonaPaginatedSnapshots> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set('page', String(options.page));
+  if (options?.limit) params.set('limit', String(options.limit));
+  if (options?.name) params.set('name', options.name);
+  const query = params.toString();
+  return fetchAPI(`/daytona/snapshots${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get a Daytona snapshot by ID or name
+ */
+export async function getDaytonaSnapshot(idOrName: string): Promise<DaytonaSnapshot> {
+  return fetchAPI(`/daytona/snapshots/${encodeURIComponent(idOrName)}`);
+}
+
+/**
+ * Create a Daytona snapshot from a registry image
+ */
+export async function createDaytonaSnapshot(request: {
+  name: string;
+  imageName?: string;
+  entrypoint?: string[];
+  cpu?: number;
+  memory?: number;
+  disk?: number;
+  regionId?: string;
+}): Promise<DaytonaSnapshot> {
+  return fetchAPI('/daytona/snapshots', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Push a local Docker image to Daytona and create a snapshot
+ */
+export async function pushImageToDaytona(
+  request: {
+    localImage: string;
+    snapshotName: string;
+    cpu?: number;
+    memory?: number;
+    disk?: number;
+    entrypoint?: string[];
+    regionId?: string;
+  },
+  onProgress?: (message: string, type: 'info' | 'progress' | 'error' | 'done') => void
+): Promise<DaytonaSnapshot> {
+  const apiBase = await getApiBase();
+
+  const response = await fetch(`${apiBase}/daytona/snapshots/push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  // Check content type - if JSON, it's an error response
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const error = await response.json();
+    throw new Error(error.error || 'Push failed');
+  }
+
+  // Otherwise it's an SSE stream
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let snapshot: DaytonaSnapshot | null = null;
+  let lastError: string | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse SSE events (events are separated by double newlines)
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || ''; // Keep incomplete event in buffer
+
+    for (const event of events) {
+      if (!event.trim()) continue;
+
+      const lines = event.split('\n');
+      let eventType = '';
+      let eventData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          eventData = line.slice(6);
+        }
+      }
+
+      if (!eventType || !eventData) continue;
+
+      // Parse the data (it's JSON-stringified)
+      let parsedData: string;
+      try {
+        parsedData = JSON.parse(eventData);
+      } catch {
+        parsedData = eventData;
+      }
+
+      if (eventType === 'snapshot') {
+        // Snapshot data is double-encoded (JSON string of JSON)
+        try {
+          snapshot = typeof parsedData === 'string' ? JSON.parse(parsedData) : parsedData;
+        } catch {
+          console.error('Failed to parse snapshot:', parsedData);
+        }
+      } else if (eventType === 'error') {
+        lastError = parsedData;
+        if (onProgress) {
+          onProgress(parsedData, 'error');
+        }
+      } else if (onProgress && (eventType === 'info' || eventType === 'progress' || eventType === 'done')) {
+        onProgress(parsedData, eventType as 'info' | 'progress' | 'done');
+      }
+    }
+  }
+
+  if (lastError && !snapshot) {
+    throw new Error(lastError);
+  }
+
+  if (!snapshot) {
+    throw new Error('No snapshot returned from push');
+  }
+
+  return snapshot;
+}
+
+/**
+ * Delete a Daytona snapshot
+ */
+export async function deleteDaytonaSnapshot(id: string): Promise<void> {
+  await fetchAPI(`/daytona/snapshots/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Activate a Daytona snapshot
+ */
+export async function activateDaytonaSnapshot(id: string): Promise<DaytonaSnapshot> {
+  return fetchAPI(`/daytona/snapshots/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+}
+
+/**
+ * Deactivate a Daytona snapshot
+ */
+export async function deactivateDaytonaSnapshot(id: string): Promise<void> {
+  await fetchAPI(`/daytona/snapshots/${encodeURIComponent(id)}/deactivate`, { method: 'POST' });
+}
+
+// ==================== AWS Backend API ====================
+
+/**
+ * AWS size class presets for display
+ */
+export type AwsSizeClass = 'small' | 'medium' | 'large';
+
+export const AWS_SIZE_PRESETS: Record<AwsSizeClass, {
+  instanceType: string;
+  vcpus: number;
+  memoryMb: number;
+  diskGb: number;
+  label: string;
+}> = {
+  small: { instanceType: 't3.micro', vcpus: 2, memoryMb: 1024, diskGb: 8, label: 'Small' },
+  medium: { instanceType: 't3.medium', vcpus: 2, memoryMb: 4096, diskGb: 20, label: 'Medium' },
+  large: { instanceType: 't3.large', vcpus: 2, memoryMb: 8192, diskGb: 30, label: 'Large' },
+};
+
+/**
+ * AWS region info
+ */
+export interface AwsRegion {
+  id: string;
+  name: string;
+}
+
+/**
+ * AWS configuration response
+ */
+export interface AwsConfigResponse {
+  configured: boolean;
+  region: string;
+  enabled: boolean;
+  hasCredentials?: boolean;
+  hasSshKey?: boolean;
+  sshKeyPath?: string;
+  defaultVpcId?: string;
+  defaultSubnetId?: string;
+}
+
+/**
+ * Get AWS backend configuration
+ */
+export async function getAwsConfig(): Promise<AwsConfigResponse> {
+  return fetchAPI('/backends/aws/config');
+}
+
+/**
+ * Configure AWS backend
+ */
+export async function configureAws(config: {
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  region?: string;
+  enabled?: boolean;
+  defaultVpcId?: string;
+  defaultSubnetId?: string;
+}): Promise<{ success: boolean; aws?: AwsConfigResponse }> {
+  return fetchAPI('/backends/aws/configure', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+/**
+ * Test AWS connection
+ */
+export async function testAwsConnection(config?: {
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  region?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/aws/test', {
+    method: 'POST',
+    body: JSON.stringify(config || {}),
+  });
+}
+
+/**
+ * Get list of available AWS regions
+ */
+export async function listAwsRegions(): Promise<AwsRegion[]> {
+  return fetchAPI('/backends/aws/regions');
+}
+
+/**
+ * Get default AMIs per region
+ */
+export async function getAwsAmis(): Promise<Record<string, string>> {
+  return fetchAPI('/backends/aws/amis');
+}
+
+/**
+ * Get AWS size presets from server
+ */
+export async function getAwsSizes(): Promise<Record<AwsSizeClass, {
+  instanceType: string;
+  vcpus: number;
+  memoryMb: number;
+  diskGb: number;
+}>> {
+  return fetchAPI('/backends/aws/sizes');
+}
+
+/**
+ * Refresh AWS instance cache
+ */
+export async function refreshAwsCache(): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/aws/refresh', {
+    method: 'POST',
+  });
+}
+
+/**
+ * Download AWS SSH key
+ */
+export async function downloadAwsSshKey(): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/backends/aws/ssh-key`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to download SSH key' }));
+    throw new Error(error.error || 'Failed to download SSH key');
+  }
+  return response.blob();
+}
+
+/**
+ * List AWS-managed volumes
+ */
+export async function listAwsVolumes(): Promise<Array<{
+  VolumeId: string;
+  Size: number;
+  State: string;
+  AvailabilityZone: string;
+  Tags?: Array<{ Key: string; Value: string }>;
+}>> {
+  return fetchAPI('/backends/aws/volumes');
+}
+
+/**
+ * Create an AWS EBS volume
+ */
+export async function createAwsVolume(request: {
+  name: string;
+  sizeGb: number;
+  availabilityZone?: string;
+}): Promise<{ volumeId: string }> {
+  return fetchAPI('/backends/aws/volumes', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Delete an AWS EBS volume
+ */
+export async function deleteAwsVolume(volumeId: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/backends/aws/volumes/${volumeId}`, { method: 'DELETE' });
 }

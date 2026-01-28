@@ -2134,28 +2134,51 @@ ethernets:
 
   /**
    * List available base images
+   * Includes both root base images and layered images (promoted snapshots)
    */
-  listBaseImages(): { name: string; hasKernel: boolean; hasWarmupSnapshot: boolean }[] {
+  listBaseImages(): { name: string; hasKernel: boolean; hasWarmupSnapshot: boolean; isLayered?: boolean; parent?: string; layerSizeMB?: number }[] {
     const baseImagesDir = this.config.baseImagesDir;
     if (!fs.existsSync(baseImagesDir)) {
       return [];
     }
 
-    const images: { name: string; hasKernel: boolean; hasWarmupSnapshot: boolean }[] = [];
+    const images: { name: string; hasKernel: boolean; hasWarmupSnapshot: boolean; isLayered?: boolean; parent?: string; layerSizeMB?: number }[] = [];
     const entries = fs.readdirSync(baseImagesDir, { withFileTypes: true });
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
 
       const imageDir = path.join(baseImagesDir, entry.name);
-      const hasKernel = fs.existsSync(path.join(imageDir, 'kernel'));
+      const layerJsonPath = path.join(imageDir, 'layer.json');
+
+      // Check for kernel (cloud-hypervisor uses 'kernel', firecracker uses 'vmlinux')
+      const hasKernel = fs.existsSync(path.join(imageDir, 'kernel')) ||
+                        fs.existsSync(path.join(imageDir, 'vmlinux'));
       const hasWarmupSnapshot = this.hasWarmupSnapshot(entry.name);
 
-      images.push({
+      // Check for layered image (promoted snapshot with layer.json)
+      const isLayeredImage = fs.existsSync(layerJsonPath) &&
+                             fs.existsSync(path.join(imageDir, 'layer.ext4'));
+
+      const imageInfo: { name: string; hasKernel: boolean; hasWarmupSnapshot: boolean; isLayered?: boolean; parent?: string; layerSizeMB?: number } = {
         name: entry.name,
         hasKernel,
         hasWarmupSnapshot,
-      });
+      };
+
+      // Add layer info for layered images
+      if (isLayeredImage) {
+        try {
+          const layerMeta = JSON.parse(fs.readFileSync(layerJsonPath, 'utf-8'));
+          imageInfo.isLayered = true;
+          imageInfo.parent = layerMeta.parent;
+          imageInfo.layerSizeMB = layerMeta.layerSizeMB;
+        } catch (e) {
+          console.error(`Failed to parse layer.json for ${entry.name}:`, e);
+        }
+      }
+
+      images.push(imageInfo);
     }
 
     return images;

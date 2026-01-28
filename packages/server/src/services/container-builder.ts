@@ -4,7 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as dockerService from './docker.js';
 import { appendBuildLog } from './build-tracker.js';
-import { findAvailableSshPort, validateHostPorts } from '../utils/port.js';
+import { findAvailableSshPort, resolveAvailablePorts } from '../utils/port.js';
 import type { CreateContainerRequest, ContainerInfo } from '../types/index.js';
 
 const CAISSON_LABEL = 'caisson';
@@ -36,7 +36,7 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
 
   if (dockerfile) {
     // Build from user's dockerfile with SSH key baked in
-    imageName = `acm-${name}:latest`;
+    imageName = `caisson-${name}:latest`;
     const dockerfileWithKey = injectPublicKey(dockerfile, publicKey);
     logCallback?.(`Building image ${imageName} from Dockerfile...`);
     await dockerService.buildImageWithLogs(dockerfileWithKey, imageName, logCallback || (() => {}));
@@ -51,7 +51,7 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
       logCallback?.(`Using existing Caisson image: ${imageName}`);
     } else {
       // Base image needs SSH setup - build a new image with key baked in
-      imageName = `acm-${name}:latest`;
+      imageName = `caisson-${name}:latest`;
       const baseDockerfile = createSshDockerfile(image, publicKey);
       logCallback?.(`Building SSH-enabled image ${imageName} from ${image}...`);
       await dockerService.buildImageWithLogs(baseDockerfile, imageName, logCallback || (() => {}));
@@ -60,9 +60,18 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
     throw new Error('Either image or dockerfile must be provided');
   }
 
-  // Validate that requested host ports are available
-  logCallback?.('Validating port availability...');
-  await validateHostPorts(ports);
+  // Resolve ports - find available alternatives for any in use
+  logCallback?.('Resolving port availability...');
+  const resolvedPorts = await resolveAvailablePorts(ports);
+  if (ports && ports.length > 0) {
+    const portChanges = ports.map((orig, i) => {
+      const resolved = resolvedPorts[i];
+      return orig.host !== resolved.host
+        ? `${orig.host} -> ${resolved.host}`
+        : `${orig.host}`;
+    });
+    logCallback?.(`Ports: ${portChanges.join(', ')}`);
+  }
 
   // Find available SSH port
   const sshPort = await findAvailableSshPort();
@@ -75,7 +84,7 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
     image: imageName,
     sshPort,
     volumes,
-    ports,
+    ports: resolvedPorts,
     env,
   });
 

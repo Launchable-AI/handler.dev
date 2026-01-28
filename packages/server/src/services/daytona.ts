@@ -7,6 +7,7 @@
 
 import { getConfig } from './config.js';
 import type { VmInfo, VmStatus } from '../types/vm.js';
+import { execSync } from 'child_process';
 
 // Daytona sandbox states from API
 export type DaytonaSandboxState =
@@ -85,6 +86,74 @@ export interface DaytonaVolumeMount {
   volumeId: string;
   mountPath: string;
   subpath?: string;
+}
+
+// SSH Access types
+export interface DaytonaSshAccess {
+  id: string;
+  sandboxId: string;
+  token: string;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  sshCommand: string;
+}
+
+// Snapshot types
+export type DaytonaSnapshotState =
+  | 'building'
+  | 'pending'
+  | 'pulling'
+  | 'active'
+  | 'inactive'
+  | 'error'
+  | 'build_failed'
+  | 'removing';
+
+export interface DaytonaSnapshot {
+  id: string;
+  organizationId?: string;
+  general: boolean;
+  name: string;
+  imageName?: string;
+  state: DaytonaSnapshotState;
+  size: number | null;
+  entrypoint: string[] | null;
+  cpu: number;
+  gpu: number;
+  mem: number;
+  disk: number;
+  errorReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+  regionIds?: string[];
+  ref?: string;
+}
+
+export interface DaytonaPaginatedSnapshots {
+  items: DaytonaSnapshot[];
+  total: number;
+}
+
+export interface CreateDaytonaSnapshotRequest {
+  name: string;
+  imageName?: string;
+  entrypoint?: string[];
+  cpu?: number;
+  gpu?: number;
+  memory?: number;
+  disk?: number;
+  regionId?: string;
+}
+
+export interface DaytonaRegistryPushAccess {
+  username: string;
+  secret: string;
+  registryUrl: string;
+  registryId: string;
+  project: string;
+  expiresAt: string;
 }
 
 export interface CreateDaytonaWorkspaceRequest {
@@ -170,7 +239,12 @@ export class DaytonaService {
       throw new Error(`Daytona API error (${response.status}): ${errorText}`);
     }
 
-    return response.json();
+    // Handle empty responses (e.g., DELETE requests return 204 No Content)
+    const text = await response.text();
+    if (!text) {
+      return undefined as T;
+    }
+    return JSON.parse(text);
   }
 
   /**
@@ -478,7 +552,7 @@ export class DaytonaService {
    */
   async listVolumes(): Promise<DaytonaVolume[]> {
     try {
-      const volumes = await this.request<DaytonaVolume[]>('/volume');
+      const volumes = await this.request<DaytonaVolume[]>('/volumes');
       return volumes || [];
     } catch (err) {
       console.error('[DaytonaService] Failed to list volumes:', err);
@@ -491,7 +565,7 @@ export class DaytonaService {
    */
   async getVolume(id: string): Promise<DaytonaVolume | null> {
     try {
-      return await this.request<DaytonaVolume>(`/volume/${id}`);
+      return await this.request<DaytonaVolume>(`/volumes/${encodeURIComponent(id)}`);
     } catch {
       return null;
     }
@@ -502,21 +576,14 @@ export class DaytonaService {
    */
   async getVolumeByName(name: string, create: boolean = false): Promise<DaytonaVolume | null> {
     try {
-      // First try to find the volume by name in the list
-      const volumes = await this.listVolumes();
-      const existing = volumes.find(v => v.name === name);
-      if (existing) {
-        return existing;
-      }
-
+      // Use the by-name endpoint
+      const volume = await this.request<DaytonaVolume>(`/volumes/by-name/${encodeURIComponent(name)}`);
+      return volume;
+    } catch {
       // If not found and create is true, create it
       if (create) {
         return await this.createVolume(name);
       }
-
-      return null;
-    } catch (err) {
-      console.error('[DaytonaService] Failed to get volume by name:', err);
       return null;
     }
   }
@@ -525,7 +592,7 @@ export class DaytonaService {
    * Create a new volume
    */
   async createVolume(name: string): Promise<DaytonaVolume> {
-    const volume = await this.request<DaytonaVolume>('/volume', {
+    const volume = await this.request<DaytonaVolume>('/volumes', {
       method: 'POST',
       body: JSON.stringify({ name }),
     });
@@ -537,10 +604,362 @@ export class DaytonaService {
    * Delete a volume
    */
   async deleteVolume(id: string): Promise<void> {
-    await this.request(`/volume/${id}`, {
+    await this.request(`/volumes/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
     console.log('[DaytonaService] Deleted volume:', id);
+  }
+
+  // ==================== SSH Access ====================
+
+  /**
+   * Create SSH access for a sandbox (returns SSH command)
+   */
+  async createSshAccess(sandboxIdOrName: string, expiresInMinutes: number = 60): Promise<DaytonaSshAccess> {
+    const params = new URLSearchParams();
+    params.set('expiresInMinutes', String(expiresInMinutes));
+
+    return await this.request<DaytonaSshAccess>(
+      `/sandbox/${encodeURIComponent(sandboxIdOrName)}/ssh-access?${params.toString()}`,
+      { method: 'POST' }
+    );
+  }
+
+  /**
+   * Revoke SSH access for a sandbox
+   */
+  async revokeSshAccess(sandboxIdOrName: string, token?: string): Promise<void> {
+    const params = token ? `?token=${encodeURIComponent(token)}` : '';
+    await this.request(`/sandbox/${encodeURIComponent(sandboxIdOrName)}/ssh-access${params}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Get SSH command for a sandbox (creates new access if needed)
+   */
+  async getSshCommand(sandboxIdOrName: string): Promise<string> {
+    const access = await this.createSshAccess(sandboxIdOrName);
+    return access.sshCommand;
+  }
+
+  // ==================== Snapshot Management ====================
+
+  /**
+   * List all snapshots with pagination
+   */
+  async listSnapshots(options?: {
+    page?: number;
+    limit?: number;
+    name?: string;
+    sort?: 'name' | 'state' | 'lastUsedAt' | 'createdAt';
+    order?: 'asc' | 'desc';
+  }): Promise<DaytonaPaginatedSnapshots> {
+    const params = new URLSearchParams();
+    if (options?.page) params.set('page', String(options.page));
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.name) params.set('name', options.name);
+    if (options?.sort) params.set('sort', options.sort);
+    if (options?.order) params.set('order', options.order);
+
+    const queryString = params.toString();
+    const path = queryString ? `/snapshots?${queryString}` : '/snapshots';
+
+    try {
+      return await this.request<DaytonaPaginatedSnapshots>(path);
+    } catch (err) {
+      console.error('[DaytonaService] Failed to list snapshots:', err);
+      return { items: [], total: 0 };
+    }
+  }
+
+  /**
+   * Get a snapshot by ID or name
+   */
+  async getSnapshot(idOrName: string): Promise<DaytonaSnapshot | null> {
+    try {
+      return await this.request<DaytonaSnapshot>(`/snapshots/${encodeURIComponent(idOrName)}`);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Create a snapshot from a public/private registry image
+   */
+  async createSnapshot(request: CreateDaytonaSnapshotRequest): Promise<DaytonaSnapshot> {
+    const payload = {
+      name: request.name,
+      imageName: request.imageName,
+      entrypoint: request.entrypoint,
+      cpu: request.cpu,
+      gpu: request.gpu,
+      memory: request.memory,
+      disk: request.disk,
+      regionId: request.regionId,
+    };
+
+    console.log('[DaytonaService] Creating snapshot:', JSON.stringify(payload));
+    return await this.request<DaytonaSnapshot>('/snapshots', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Delete a snapshot
+   */
+  async deleteSnapshot(id: string): Promise<void> {
+    await this.request(`/snapshots/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    console.log('[DaytonaService] Deleted snapshot:', id);
+  }
+
+  /**
+   * Activate an inactive snapshot
+   */
+  async activateSnapshot(id: string): Promise<DaytonaSnapshot> {
+    return await this.request<DaytonaSnapshot>(`/snapshots/${encodeURIComponent(id)}/activate`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Deactivate an active snapshot
+   */
+  async deactivateSnapshot(id: string): Promise<void> {
+    await this.request(`/snapshots/${encodeURIComponent(id)}/deactivate`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Get snapshot build logs URL
+   */
+  async getSnapshotBuildLogsUrl(id: string): Promise<string | null> {
+    try {
+      const result = await this.request<{ url: string }>(`/snapshots/${encodeURIComponent(id)}/build-logs-url`);
+      return result.url;
+    } catch {
+      return null;
+    }
+  }
+
+  // ==================== Local Image Push ====================
+
+  /**
+   * Get temporary registry access for pushing local images
+   */
+  async getRegistryPushAccess(regionId?: string): Promise<DaytonaRegistryPushAccess> {
+    const params = regionId ? `?regionId=${encodeURIComponent(regionId)}` : '';
+    return await this.request<DaytonaRegistryPushAccess>(`/docker-registry/registry-push-access${params}`);
+  }
+
+  /**
+   * Push a local Docker image to Daytona and create a snapshot
+   *
+   * This method:
+   * 1. Gets temporary registry credentials from Daytona
+   * 2. Logs into the registry with Docker
+   * 3. Tags and pushes the local image
+   * 4. Creates a snapshot from the pushed image
+   *
+   * @param localImage - Local Docker image (e.g., "my-image:1.0")
+   * @param snapshotName - Name for the snapshot in Daytona
+   * @param options - Optional resources and region
+   */
+  async pushLocalImage(
+    localImage: string,
+    snapshotName: string,
+    options?: {
+      cpu?: number;
+      memory?: number;
+      disk?: number;
+      entrypoint?: string[];
+      regionId?: string;
+    }
+  ): Promise<DaytonaSnapshot> {
+    console.log(`[DaytonaService] Pushing local image ${localImage} as snapshot ${snapshotName}`);
+
+    // Step 1: Get temporary registry access
+    const access = await this.getRegistryPushAccess(options?.regionId);
+    console.log(`[DaytonaService] Got registry access: ${access.registryUrl}/${access.project}`);
+
+    // Step 2: Login to registry
+    try {
+      execSync(
+        `echo "${access.secret}" | docker login ${access.registryUrl} -u ${access.username} --password-stdin`,
+        { stdio: 'pipe' }
+      );
+      console.log('[DaytonaService] Docker login successful');
+    } catch (err) {
+      throw new Error(`Failed to login to Daytona registry: ${err}`);
+    }
+
+    // Step 3: Tag and push the image
+    // Daytona doesn't allow :latest tag, so generate a unique version tag
+    const versionTag = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const remoteImage = `${access.registryUrl}/${access.project}/${snapshotName}:${versionTag}`;
+
+    try {
+      console.log(`[DaytonaService] Tagging ${localImage} as ${remoteImage}`);
+      execSync(`docker tag ${localImage} ${remoteImage}`, { stdio: 'pipe' });
+
+      console.log(`[DaytonaService] Pushing ${remoteImage}`);
+      execSync(`docker push ${remoteImage}`, { stdio: 'inherit' });
+    } catch (err) {
+      throw new Error(`Failed to push image to Daytona registry: ${err}`);
+    } finally {
+      // Logout from registry
+      try {
+        execSync(`docker logout ${access.registryUrl}`, { stdio: 'pipe' });
+      } catch {
+        // Ignore logout errors
+      }
+    }
+
+    // Step 4: Create the snapshot
+    const snapshot = await this.createSnapshot({
+      name: snapshotName,
+      imageName: remoteImage,
+      cpu: options?.cpu,
+      memory: options?.memory,
+      disk: options?.disk,
+      entrypoint: options?.entrypoint,
+      regionId: options?.regionId,
+    });
+
+    console.log(`[DaytonaService] Snapshot created: ${snapshot.id} (${snapshot.state})`);
+    return snapshot;
+  }
+
+  /**
+   * Push a local Docker image to Daytona with progress streaming
+   */
+  async pushLocalImageWithProgress(
+    localImage: string,
+    snapshotName: string,
+    onProgress: (message: string, type: 'info' | 'progress' | 'error' | 'done') => void,
+    options?: {
+      cpu?: number;
+      memory?: number;
+      disk?: number;
+      entrypoint?: string[];
+      regionId?: string;
+    }
+  ): Promise<DaytonaSnapshot> {
+    const { spawn } = await import('child_process');
+
+    // Sanitize snapshot name: extract just the image name without registry path or tags
+    let cleanSnapshotName = snapshotName;
+    // Remove any registry path (e.g., "cr.app.daytona.io/sbox-transient/my-image" -> "my-image")
+    if (cleanSnapshotName.includes('/')) {
+      cleanSnapshotName = cleanSnapshotName.split('/').pop() || cleanSnapshotName;
+    }
+    // Remove any tag suffix (e.g., "my-image:latest" -> "my-image")
+    if (cleanSnapshotName.includes(':')) {
+      cleanSnapshotName = cleanSnapshotName.split(':')[0];
+    }
+    // Ensure caisson- prefix for consistency
+    if (!cleanSnapshotName.startsWith('caisson-')) {
+      cleanSnapshotName = `caisson-${cleanSnapshotName}`;
+    }
+
+    onProgress(`Pushing local image ${localImage} as snapshot ${cleanSnapshotName}`, 'info');
+
+    // Step 1: Get temporary registry access
+    onProgress('Getting registry access...', 'info');
+    const access = await this.getRegistryPushAccess(options?.regionId);
+    onProgress(`Registry: ${access.registryUrl}/${access.project}`, 'info');
+
+    // Step 2: Login to registry
+    onProgress('Logging into registry...', 'info');
+    try {
+      execSync(
+        `echo "${access.secret}" | docker login ${access.registryUrl} -u ${access.username} --password-stdin`,
+        { stdio: 'pipe' }
+      );
+      onProgress('Docker login successful', 'info');
+    } catch (err) {
+      onProgress(`Failed to login: ${err}`, 'error');
+      throw new Error(`Failed to login to Daytona registry: ${err}`);
+    }
+
+    // Step 3: Tag and push the image
+    const versionTag = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const remoteImage = `${access.registryUrl}/${access.project}/${cleanSnapshotName}:${versionTag}`;
+
+    try {
+      onProgress(`Tagging ${localImage} as ${remoteImage}`, 'info');
+      execSync(`docker tag ${localImage} ${remoteImage}`, { stdio: 'pipe' });
+
+      onProgress(`Pushing ${remoteImage}...`, 'info');
+
+      // Use spawn for push to get real-time output
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn('docker', ['push', remoteImage], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        proc.stdout?.on('data', (data: Buffer) => {
+          const lines = data.toString().trim().split('\n');
+          for (const line of lines) {
+            if (line.trim()) {
+              onProgress(line, 'progress');
+            }
+          }
+        });
+
+        proc.stderr?.on('data', (data: Buffer) => {
+          const lines = data.toString().trim().split('\n');
+          for (const line of lines) {
+            if (line.trim()) {
+              onProgress(line, 'progress');
+            }
+          }
+        });
+
+        proc.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`docker push exited with code ${code}`));
+          }
+        });
+
+        proc.on('error', (err) => {
+          reject(err);
+        });
+      });
+
+      onProgress('Push complete!', 'info');
+    } catch (err) {
+      onProgress(`Push failed: ${err}`, 'error');
+      throw new Error(`Failed to push image to Daytona registry: ${err}`);
+    } finally {
+      // Logout from registry
+      try {
+        execSync(`docker logout ${access.registryUrl}`, { stdio: 'pipe' });
+      } catch {
+        // Ignore logout errors
+      }
+    }
+
+    // Step 4: Create the snapshot
+    onProgress('Creating snapshot...', 'info');
+    const snapshot = await this.createSnapshot({
+      name: cleanSnapshotName,
+      imageName: remoteImage,
+      cpu: options?.cpu,
+      memory: options?.memory,
+      disk: options?.disk,
+      entrypoint: options?.entrypoint,
+      regionId: options?.regionId,
+    });
+
+    onProgress(`Snapshot created: ${snapshot.id} (${snapshot.state})`, 'done');
+    return snapshot;
   }
 }
 

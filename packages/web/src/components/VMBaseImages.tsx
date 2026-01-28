@@ -27,6 +27,9 @@ interface BaseImageInfo {
   name: string;
   hasKernel: boolean;
   hasWarmupSnapshot: boolean;
+  isLayered?: boolean;
+  parent?: string;
+  layerSizeMB?: number;
 }
 
 function BaseImageCard({
@@ -134,6 +137,22 @@ function BaseImageCard({
             >
               <X className="h-3 w-3" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Layer Info (for promoted snapshots) */}
+      {image.isLayered && (
+        <div className="mb-3 p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--purple)/0.3)] text-[10px]">
+          <div className="flex items-center gap-1 text-[hsl(var(--purple))] mb-1">
+            <Camera className="h-3 w-3" />
+            <span className="font-medium">Layered Image</span>
+          </div>
+          <div className="text-[hsl(var(--text-muted))] space-y-0.5">
+            <div>Parent: <span className="text-[hsl(var(--text-secondary))]">{image.parent}</span></div>
+            {image.layerSizeMB !== undefined && (
+              <div>Layer size: <span className="text-[hsl(var(--text-secondary))]">{image.layerSizeMB} MB</span></div>
+            )}
           </div>
         </div>
       )}

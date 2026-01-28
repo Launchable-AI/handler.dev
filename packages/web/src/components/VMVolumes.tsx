@@ -369,9 +369,14 @@ export function VMVolumes() {
       {/* File Browser Modal */}
       {showFileBrowser && (
         <VolumeFileBrowser
-          volumeId={showFileBrowser.id}
+          volumeId={`vol-vm-${showFileBrowser.id}`}
           volumeName={showFileBrowser.name}
           isAttached={!!showFileBrowser.attachedTo}
+          isVmRunning={
+            showFileBrowser.attachedTo
+              ? vms?.some(vm => vm.id === `fc-${showFileBrowser.attachedTo}` && vm.status === 'running')
+              : false
+          }
           onClose={() => setShowFileBrowser(null)}
         />
       )}

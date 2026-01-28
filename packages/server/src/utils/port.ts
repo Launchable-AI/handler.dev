@@ -121,3 +121,41 @@ export async function validateHostPorts(
     throw new Error(`Host port(s) unavailable: ${portList}`);
   }
 }
+
+/**
+ * Resolves port mappings by finding available ports for any that are in use.
+ * Returns a new array with updated host ports.
+ */
+export async function resolveAvailablePorts(
+  ports: PortMapping[] | undefined,
+  excludeContainerId?: string
+): Promise<PortMapping[]> {
+  if (!ports || ports.length === 0) {
+    return [];
+  }
+
+  const usedPorts = await getUsedContainerPorts(excludeContainerId);
+  const resolvedPorts: PortMapping[] = [];
+  const assignedPorts = new Set<number>();
+
+  for (const mapping of ports) {
+    let hostPort = mapping.host;
+
+    // Check if port is available
+    const isUsedByContainer = usedPorts.has(hostPort) || assignedPorts.has(hostPort);
+    const isAvailableOnHost = await isPortAvailable(hostPort);
+
+    if (isUsedByContainer || !isAvailableOnHost) {
+      // Find an available port starting from the requested one
+      hostPort = await findAvailablePort(mapping.host);
+    }
+
+    assignedPorts.add(hostPort);
+    resolvedPorts.push({
+      container: mapping.container,
+      host: hostPort,
+    });
+  }
+
+  return resolvedPorts;
+}

@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
-import { X, FolderOpen, Loader2, Sparkles, RotateCcw, Box, ChevronDown, Cpu, Search, Maximize2, Server, Key } from 'lucide-react';
-import { useConfig, useUpdateConfig, useImages } from '../hooks/useContainers';
+import { useState, useEffect } from 'react';
+import { X, FolderOpen, Loader2, Sparkles, RotateCcw, ChevronDown, Cpu, Search, Maximize2, Server, Key } from 'lucide-react';
+import { useConfig, useUpdateConfig } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
 import type { ModelOption } from '../api/client';
@@ -11,7 +11,6 @@ interface SettingsModalProps {
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const { data: config, isLoading } = useConfig();
-  const { data: images } = useImages();
   const updateMutation = useUpdateConfig();
 
   const [dataDirectory, setDataDirectory] = useState('');
@@ -19,28 +18,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [sshJumpHost, setSshJumpHost] = useState('');
   const [sshJumpHostKeyPath, setSshJumpHostKeyPath] = useState('');
   const [sshKeysDisplayPath, setSshKeysDisplayPath] = useState('');
-  const [defaultDevNodeImage, setDefaultDevNodeImage] = useState('ubuntu:24.04');
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
-  const [showImageDropdown, setShowImageDropdown] = useState(false);
-
-  // Get list of custom-built images (acm-* tags)
-  const customImages = useMemo(() => {
-    if (!images) return [];
-    const imageList: string[] = [];
-    for (const img of images) {
-      const acmTags = img.repoTags?.filter(tag => tag.startsWith('acm-')) || [];
-      imageList.push(...acmTags);
-    }
-    return imageList.sort();
-  }, [images]);
 
   // AI Prompts state
   const [activeTab, setActiveTab] = useState<'general' | 'ai'>('general');
-  const [composePrompt, setComposePrompt] = useState('');
   const [dockerfilePrompt, setDockerfilePrompt] = useState('');
   const [mcpInstallPrompt, setMcpInstallPrompt] = useState('');
   const [mcpSearchPrompt, setMcpSearchPrompt] = useState('');
-  const [defaultComposePrompt, setDefaultComposePrompt] = useState('');
   const [defaultDockerfilePrompt, setDefaultDockerfilePrompt] = useState('');
   const [defaultMcpInstallPrompt, setDefaultMcpInstallPrompt] = useState('');
   const [defaultMcpSearchPrompt, setDefaultMcpSearchPrompt] = useState('');
@@ -52,7 +36,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [promptsLoading, setPromptsLoading] = useState(false);
   const [promptsSaving, setPromptsSaving] = useState(false);
   const [expandedPrompt, setExpandedPrompt] = useState<{
-    key: 'compose' | 'dockerfile' | 'mcpSearch' | 'mcpInstall';
+    key: 'dockerfile' | 'mcpSearch' | 'mcpInstall';
     label: string;
   } | null>(null);
 
@@ -63,7 +47,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       setSshJumpHost(config.sshJumpHost || '');
       setSshJumpHostKeyPath(config.sshJumpHostKeyPath || '');
       setSshKeysDisplayPath(config.sshKeysDisplayPath || '');
-      setDefaultDevNodeImage(config.defaultDevNodeImage || 'ubuntu:24.04');
     }
   }, [config]);
 
@@ -76,11 +59,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         api.getAIPrompts(),
       ]).then(([status, prompts]) => {
         setAiConfigured(status.configured);
-        setComposePrompt(prompts.compose.current);
         setDockerfilePrompt(prompts.dockerfile.current);
         setMcpInstallPrompt(prompts.mcpInstall.current);
         setMcpSearchPrompt(prompts.mcpSearch.current);
-        setDefaultComposePrompt(prompts.compose.default);
         setDefaultDockerfilePrompt(prompts.dockerfile.default);
         setDefaultMcpInstallPrompt(prompts.mcpInstall.default);
         setDefaultMcpSearchPrompt(prompts.mcpSearch.default);
@@ -99,14 +80,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setPromptsSaving(true);
     try {
       // Only send null if we want to reset to default, otherwise send the current value
-      const composePromptToSave = composePrompt === defaultComposePrompt ? null : composePrompt;
       const dockerfilePromptToSave = dockerfilePrompt === defaultDockerfilePrompt ? null : dockerfilePrompt;
       const mcpInstallPromptToSave = mcpInstallPrompt === defaultMcpInstallPrompt ? null : mcpInstallPrompt;
       const mcpSearchPromptToSave = mcpSearchPrompt === defaultMcpSearchPrompt ? null : mcpSearchPrompt;
       const modelToSave = currentModel === defaultModel ? null : currentModel;
 
       await Promise.all([
-        api.updateComposePrompt(composePromptToSave),
         api.updateDockerfilePrompt(dockerfilePromptToSave),
         api.updateMCPInstallPrompt(mcpInstallPromptToSave),
         api.updateMCPSearchPrompt(mcpSearchPromptToSave),
@@ -115,10 +94,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     } finally {
       setPromptsSaving(false);
     }
-  };
-
-  const handleResetComposePrompt = () => {
-    setComposePrompt(defaultComposePrompt);
   };
 
   const handleResetDockerfilePrompt = () => {
@@ -137,18 +112,16 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setCurrentModel(defaultModel);
   };
 
-  const getPromptValue = (key: 'compose' | 'dockerfile' | 'mcpSearch' | 'mcpInstall') => {
+  const getPromptValue = (key: 'dockerfile' | 'mcpSearch' | 'mcpInstall') => {
     switch (key) {
-      case 'compose': return composePrompt;
       case 'dockerfile': return dockerfilePrompt;
       case 'mcpSearch': return mcpSearchPrompt;
       case 'mcpInstall': return mcpInstallPrompt;
     }
   };
 
-  const setPromptValue = (key: 'compose' | 'dockerfile' | 'mcpSearch' | 'mcpInstall', value: string) => {
+  const setPromptValue = (key: 'dockerfile' | 'mcpSearch' | 'mcpInstall', value: string) => {
     switch (key) {
-      case 'compose': setComposePrompt(value); break;
       case 'dockerfile': setDockerfilePrompt(value); break;
       case 'mcpSearch': setMcpSearchPrompt(value); break;
       case 'mcpInstall': setMcpInstallPrompt(value); break;
@@ -162,7 +135,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       sshJumpHostKeyPath: sshJumpHostKeyPath || '',
       sshKeysDisplayPath: sshKeysDisplayPath || '~/.ssh',
       dataDirectory: dataDirectory || undefined,
-      defaultDevNodeImage: defaultDevNodeImage || 'ubuntu:24.04',
     });
     onClose();
   };
@@ -350,67 +322,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
               </div>
 
-              {/* Default Dev Node Image */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
-                  <Box className="h-3.5 w-3.5" />
-                  Default Dev Node Image
-                </label>
-                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
-                  The default Docker image used for the dev-node service in new compose apps.
-                </p>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setShowImageDropdown(!showImageDropdown)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:border-[hsl(var(--cyan)/0.5)]"
-                  >
-                    <span className={defaultDevNodeImage ? '' : 'text-[hsl(var(--text-muted))]'}>
-                      {defaultDevNodeImage || 'Select an image...'}
-                    </span>
-                    <ChevronDown className={`h-3.5 w-3.5 text-[hsl(var(--text-muted))] transition-transform ${showImageDropdown ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {showImageDropdown && (
-                    <div className="absolute left-0 right-0 top-full mt-1 z-20 max-h-48 overflow-auto bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] shadow-lg">
-                      {customImages.length === 0 ? (
-                        <div className="px-3 py-4 text-center">
-                          <p className="text-xs text-[hsl(var(--text-muted))]">No custom images found</p>
-                          <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">Build an image in the Dockerfile editor first</p>
-                        </div>
-                      ) : (
-                        <>
-                          {customImages.map((image) => (
-                            <button
-                              key={image}
-                              type="button"
-                              onClick={() => {
-                                setDefaultDevNodeImage(image);
-                                setShowImageDropdown(false);
-                              }}
-                              className={`w-full px-3 py-2 text-left text-xs hover:bg-[hsl(var(--bg-overlay))] flex items-center justify-between ${
-                                defaultDevNodeImage === image
-                                  ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]'
-                                  : 'text-[hsl(var(--text-primary))]'
-                              }`}
-                            >
-                              <span>{image}</span>
-                              {defaultDevNodeImage === image && (
-                                <span className="text-[10px] text-[hsl(var(--cyan))]">selected</span>
-                              )}
-                            </button>
-                          ))}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {defaultDevNodeImage && !customImages.includes(defaultDevNodeImage) && (
-                  <p className="mt-2 text-[10px] text-[hsl(var(--amber))]">
-                    Current image "{defaultDevNodeImage}" is not in your built images
-                  </p>
-                )}
-              </div>
             </div>
           )}
 
@@ -484,39 +395,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         </div>
                       )}
                     </div>
-                  </div>
-
-                  {/* Compose Prompt */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-xs font-medium text-[hsl(var(--text-primary))]">
-                        Docker Compose Assistant Prompt
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setExpandedPrompt({ key: 'compose', label: 'Docker Compose Assistant Prompt' })}
-                          className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
-                        >
-                          <Maximize2 className="h-3 w-3" />
-                          Expand
-                        </button>
-                        <button
-                          onClick={handleResetComposePrompt}
-                          disabled={composePrompt === defaultComposePrompt}
-                          className="flex items-center gap-1 text-[10px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] disabled:opacity-50"
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                          Reset
-                        </button>
-                      </div>
-                    </div>
-                    <textarea
-                      value={composePrompt}
-                      onChange={(e) => setComposePrompt(e.target.value)}
-                      rows={6}
-                      className="w-full p-3 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] resize-y"
-                      placeholder="System prompt for Compose AI assistant..."
-                    />
                   </div>
 
                   {/* Dockerfile Prompt */}

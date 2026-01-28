@@ -17,7 +17,7 @@ import '@xterm/xterm/css/xterm.css';
 
 // Types
 export type PanelPosition = 'right' | 'bottom';
-export type TerminalType = 'vm' | 'container';
+export type TerminalType = 'vm' | 'container' | 'daytona' | 'aws';
 
 interface TerminalTab {
   id: string;
@@ -29,8 +29,14 @@ interface TerminalTab {
   // For containers
   containerId?: string;
   isDevNode?: boolean;
-  connectionState: 'connecting' | 'connected' | 'disconnected' | 'error';
+  // For Daytona
+  sandboxId?: string;
+  // For AWS
+  instanceId?: string;
+  publicIp?: string;
+  connectionState: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
   errorMessage?: string;
+  retryCount?: number;
 }
 
 interface TerminalPanelContextType {
@@ -38,8 +44,11 @@ interface TerminalPanelContextType {
   position: PanelPosition;
   tabs: TerminalTab[];
   activeTabId: string | null;
+  size: number;
   openTerminal: (vmId: string, vmName: string, vmIp: string) => void;
   openContainerTerminal: (containerId: string, containerName: string, isDevNode?: boolean) => void;
+  openDaytonaTerminal: (sandboxId: string, sandboxName: string) => void;
+  openAwsTerminal: (instanceId: string, sandboxName: string, publicIp: string) => void;
   closeTerminal: (tabId: string) => void;
   closePanel: () => void;
   setPosition: (position: PanelPosition) => void;
@@ -56,12 +65,35 @@ export function useTerminalPanel() {
   return context;
 }
 
+const TERMINAL_POSITION_KEY = 'caisson-terminal-position';
+
+// Determine default position based on screen size
+function getDefaultPosition(): PanelPosition {
+  // Check localStorage first
+  const stored = localStorage.getItem(TERMINAL_POSITION_KEY);
+  if (stored === 'right' || stored === 'bottom') {
+    return stored;
+  }
+  // Default to right for screens 1920px or wider, otherwise bottom
+  return window.innerWidth >= 1920 ? 'right' : 'bottom';
+}
+
 // Provider component
 export function TerminalPanelProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [position, setPosition] = useState<PanelPosition>('bottom');
+  const [position, setPositionState] = useState<PanelPosition>(getDefaultPosition);
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  // Default size: 700 for right panel, 350 for bottom
+  const [size, setSize] = useState(() => getDefaultPosition() === 'right' ? 700 : 350);
+
+  // Persist position changes to localStorage and adjust size for new position
+  const setPosition = useCallback((newPosition: PanelPosition) => {
+    setPositionState(newPosition);
+    localStorage.setItem(TERMINAL_POSITION_KEY, newPosition);
+    // Adjust size to appropriate default for new position
+    setSize(newPosition === 'right' ? 700 : 350);
+  }, []);
 
   const openTerminal = useCallback((vmId: string, vmName: string, vmIp: string) => {
     // Check if terminal for this VM already exists
@@ -109,6 +141,51 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
     setIsOpen(true);
   }, [tabs]);
 
+  const openDaytonaTerminal = useCallback((sandboxId: string, sandboxName: string) => {
+    // Check if terminal for this Daytona sandbox already exists
+    const existingTab = tabs.find(t => t.type === 'daytona' && t.sandboxId === sandboxId);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      setIsOpen(true);
+      return;
+    }
+
+    const newTab: TerminalTab = {
+      id: `term-daytona-${sandboxId}-${Date.now()}`,
+      name: sandboxName,
+      type: 'daytona',
+      sandboxId,
+      connectionState: 'connecting',
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+    setIsOpen(true);
+  }, [tabs]);
+
+  const openAwsTerminal = useCallback((instanceId: string, sandboxName: string, publicIp: string) => {
+    // Check if terminal for this AWS instance already exists
+    const existingTab = tabs.find(t => t.type === 'aws' && t.instanceId === instanceId);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      setIsOpen(true);
+      return;
+    }
+
+    const newTab: TerminalTab = {
+      id: `term-aws-${instanceId}-${Date.now()}`,
+      name: sandboxName,
+      type: 'aws',
+      instanceId,
+      publicIp,
+      connectionState: 'connecting',
+    };
+
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+    setIsOpen(true);
+  }, [tabs]);
+
   const closeTerminal = useCallback((tabId: string) => {
     setTabs(prev => {
       const newTabs = prev.filter(t => t.id !== tabId);
@@ -136,8 +213,11 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
       position,
       tabs,
       activeTabId,
+      size,
       openTerminal,
       openContainerTerminal,
+      openDaytonaTerminal,
+      openAwsTerminal,
       closeTerminal,
       closePanel,
       setPosition,
@@ -149,6 +229,8 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
           tabs={tabs}
           activeTabId={activeTabId}
           position={position}
+          size={size}
+          onSizeChange={setSize}
           onTabClose={closeTerminal}
           onTabSelect={setActiveTabId}
           onClose={closePanel}
@@ -165,6 +247,8 @@ interface TerminalPanelUIProps {
   tabs: TerminalTab[];
   activeTabId: string | null;
   position: PanelPosition;
+  size: number;
+  onSizeChange: (size: number) => void;
   onTabClose: (tabId: string) => void;
   onTabSelect: (tabId: string) => void;
   onClose: () => void;
@@ -176,13 +260,14 @@ function TerminalPanelUI({
   tabs,
   activeTabId,
   position,
+  size,
+  onSizeChange,
   onTabClose,
   onTabSelect,
   onClose,
   onPositionChange,
   onTabStateChange,
 }: TerminalPanelUIProps) {
-  const [size, setSize] = useState(position === 'bottom' ? 350 : 500);
   const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -198,10 +283,10 @@ function TerminalPanelUI({
     const handleMouseMove = (e: MouseEvent) => {
       if (position === 'bottom') {
         const newSize = window.innerHeight - e.clientY;
-        setSize(Math.max(200, Math.min(newSize, window.innerHeight - 100)));
+        onSizeChange(Math.max(200, Math.min(newSize, window.innerHeight - 100)));
       } else {
         const newSize = window.innerWidth - e.clientX;
-        setSize(Math.max(300, Math.min(newSize, window.innerWidth - 300)));
+        onSizeChange(Math.max(300, Math.min(newSize, window.innerWidth - 300)));
       }
     };
 
@@ -216,117 +301,126 @@ function TerminalPanelUI({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, position]);
+  }, [isResizing, position, onSizeChange]);
 
   const panelClasses = position === 'bottom'
     ? 'fixed bottom-0 left-52 right-0 border-t'
     : 'fixed top-0 right-0 bottom-0 border-l';
 
-  const resizeHandleClasses = position === 'bottom'
-    ? 'absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-[hsl(var(--cyan)/0.3)] transition-colors flex items-center justify-center'
-    : 'absolute top-0 left-0 bottom-0 w-2 cursor-ew-resize hover:bg-[hsl(var(--cyan)/0.3)] transition-colors flex items-center justify-center';
-
   return (
     <div
       ref={panelRef}
-      className={`${panelClasses} z-40 flex flex-col bg-[hsl(var(--bg-base))] border-[hsl(var(--border))]`}
+      className={`${panelClasses} z-40 bg-[hsl(var(--bg-base))] border-[hsl(var(--border))] ${
+        position === 'bottom' ? 'flex flex-col' : 'flex flex-row'
+      }`}
       style={position === 'bottom' ? { height: size } : { width: size }}
     >
-      {/* Resize handle */}
-      <div
-        className={resizeHandleClasses}
-        onMouseDown={handleMouseDown}
-      >
-        {position === 'bottom' ? (
-          <GripHorizontal className="h-3 w-3 text-[hsl(var(--text-muted))] opacity-0 hover:opacity-100" />
-        ) : (
-          <GripVertical className="h-3 w-3 text-[hsl(var(--text-muted))] opacity-0 hover:opacity-100" />
-        )}
-      </div>
+      {/* Resize handle - full edge with visual separation */}
+      {position === 'right' && (
+        <div
+          className="w-2 h-full flex-shrink-0 cursor-ew-resize hover:bg-[hsl(var(--cyan)/0.3)] bg-[hsl(var(--bg-elevated))] border-l border-[hsl(var(--border))] transition-colors group flex items-center justify-center"
+          onMouseDown={handleMouseDown}
+        >
+          <GripVertical className="h-6 w-3 text-[hsl(var(--text-muted))] opacity-30 group-hover:opacity-100 transition-opacity" />
+        </div>
+      )}
 
-      {/* Header with tabs */}
-      <div className="flex items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
-        {/* Tabs */}
-        <div className="flex items-center overflow-x-auto flex-1 min-w-0">
+      {/* Main content wrapper */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Resize handle for bottom position */}
+        {position === 'bottom' && (
+          <div
+            className="h-1.5 w-full flex-shrink-0 cursor-ns-resize hover:bg-[hsl(var(--cyan)/0.5)] bg-[hsl(var(--border))] transition-colors group flex items-center justify-center"
+            onMouseDown={handleMouseDown}
+          >
+            <GripHorizontal className="h-3 w-6 text-[hsl(var(--text-muted))] opacity-30 group-hover:opacity-100 transition-opacity" />
+          </div>
+        )}
+
+        {/* Header with tabs */}
+        <div className="flex items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
+          {/* Tabs */}
+          <div className="flex items-center overflow-x-auto flex-1 min-w-0">
+            {tabs.map(tab => (
+              <div
+                key={tab.id}
+                className={`group flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border-r border-[hsl(var(--border))] whitespace-nowrap ${
+                  tab.id === activeTabId
+                    ? 'bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))]'
+                    : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
+                }`}
+                onClick={() => onTabSelect(tab.id)}
+              >
+                <TerminalSquare className={`h-3.5 w-3.5 ${
+                  tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
+                  tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting' ? 'text-[hsl(var(--amber))]' :
+                  'text-[hsl(var(--red))]'
+                }`} />
+                <span className="max-w-[120px] truncate">{tab.name}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTabClose(tab.id);
+                  }}
+                  className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-[hsl(var(--bg-overlay))] rounded"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1 px-2">
+            <button
+              onClick={() => onPositionChange(position === 'bottom' ? 'right' : 'bottom')}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
+              title={position === 'bottom' ? 'Move to right' : 'Move to bottom'}
+            >
+              {position === 'bottom' ? (
+                <PanelRight className="h-3.5 w-3.5" />
+              ) : (
+                <PanelBottom className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <button
+              onClick={() => onSizeChange(Math.min(size + 100, position === 'bottom' ? 600 : 800))}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
+              title="Expand"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => onSizeChange(Math.max(size - 100, position === 'bottom' ? 200 : 300))}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
+              title="Shrink"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
+              title="Close panel"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Terminal content */}
+        <div className="flex-1 overflow-hidden relative">
           {tabs.map(tab => (
             <div
               key={tab.id}
-              className={`group flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border-r border-[hsl(var(--border))] whitespace-nowrap ${
-                tab.id === activeTabId
-                  ? 'bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))]'
-                  : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
-              }`}
-              onClick={() => onTabSelect(tab.id)}
+              className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
             >
-              <TerminalSquare className={`h-3.5 w-3.5 ${
-                tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
-                tab.connectionState === 'connecting' ? 'text-[hsl(var(--amber))]' :
-                'text-[hsl(var(--red))]'
-              }`} />
-              <span className="max-w-[120px] truncate">{tab.name}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTabClose(tab.id);
-                }}
-                className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-[hsl(var(--bg-overlay))] rounded"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              <TerminalInstance
+                tab={tab}
+                onStateChange={(state) => onTabStateChange(tab.id, state)}
+              />
             </div>
           ))}
         </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1 px-2">
-          <button
-            onClick={() => onPositionChange(position === 'bottom' ? 'right' : 'bottom')}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
-            title={position === 'bottom' ? 'Move to right' : 'Move to bottom'}
-          >
-            {position === 'bottom' ? (
-              <PanelRight className="h-3.5 w-3.5" />
-            ) : (
-              <PanelBottom className="h-3.5 w-3.5" />
-            )}
-          </button>
-          <button
-            onClick={() => setSize(s => Math.min(s + 100, position === 'bottom' ? 600 : 800))}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
-            title="Expand"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => setSize(s => Math.max(s - 100, position === 'bottom' ? 200 : 300))}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
-            title="Shrink"
-          >
-            <Minus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
-            title="Close panel"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Terminal content */}
-      <div className="flex-1 overflow-hidden relative">
-        {tabs.map(tab => (
-          <div
-            key={tab.id}
-            className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
-          >
-            <TerminalInstance
-              tab={tab}
-              onStateChange={(state) => onTabStateChange(tab.id, state)}
-            />
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -338,12 +432,20 @@ interface TerminalInstanceProps {
   onStateChange: (state: Partial<TerminalTab>) => void;
 }
 
+// Retry configuration
+const MAX_RETRY_COUNT = 5;
+const INITIAL_RETRY_DELAY = 1000; // 1 second
+const MAX_RETRY_DELAY = 30000; // 30 seconds
+
 function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const isDisposedRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wasConnectedRef = useRef(false); // Track if we ever successfully connected
 
   const getWsUrl = useCallback(() => {
     const apiPort = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
@@ -361,6 +463,8 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
     if (!terminalRef.current) return;
 
     isDisposedRef.current = false;
+    retryCountRef.current = 0;
+    wasConnectedRef.current = false;
 
     // Create terminal instance with theme matching the UI
     const term = new XTerm({
@@ -409,14 +513,14 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
     term.open(terminalRef.current);
     xtermRef.current = term;
 
-    // Initial fit - multiple attempts to handle CSS layout timing
-    // The first fit may happen before flex layout is complete
+    // Fit helper that uses current wsRef
     const fitAndResize = () => {
       if (isDisposedRef.current) return;
       try {
         fitAddon.fit();
         // Send resize to server so shell redraws with correct dimensions
-        if (ws.readyState === WebSocket.OPEN) {
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'resize',
             cols: term.cols,
@@ -428,9 +532,149 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       }
     };
 
-    // Connect WebSocket first
-    const ws = new WebSocket(getWsUrl());
-    wsRef.current = ws;
+    // Calculate retry delay with exponential backoff
+    const getRetryDelay = (retryCount: number): number => {
+      const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
+      return Math.min(delay, MAX_RETRY_DELAY);
+    };
+
+    // Function to create and connect WebSocket
+    const connectWebSocket = () => {
+      if (isDisposedRef.current) return;
+
+      // Close existing connection if any
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {
+          // Ignore close errors
+        }
+      }
+
+      const ws = new WebSocket(getWsUrl());
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (isDisposedRef.current) return;
+        // Reset retry count on successful connection
+        retryCountRef.current = 0;
+
+        // Do an initial fit before sending start message
+        try {
+          fitAddon.fit();
+        } catch (e) {
+          // Ignore fit errors on startup
+        }
+
+        // Send appropriate start message based on terminal type
+        if (tab.type === 'container') {
+          // Container terminal - uses docker exec
+          ws.send(JSON.stringify({
+            type: 'start',
+            containerId: tab.containerId,
+            shell: '/bin/bash',
+            cols: term.cols,
+            rows: term.rows,
+            isDevNode: tab.isDevNode,
+          }));
+        } else if (tab.type === 'daytona') {
+          // Daytona terminal - uses Daytona SSH access API
+          ws.send(JSON.stringify({
+            type: 'start-daytona',
+            sandboxId: tab.sandboxId,
+            cols: term.cols,
+            rows: term.rows,
+          }));
+        } else if (tab.type === 'aws') {
+          // AWS terminal - uses SSH with stored private key
+          ws.send(JSON.stringify({
+            type: 'start-aws',
+            instanceId: tab.instanceId,
+            publicIp: tab.publicIp,
+            cols: term.cols,
+            rows: term.rows,
+          }));
+        } else {
+          // VM terminal - uses SSH
+          ws.send(JSON.stringify({
+            type: 'start-vm',
+            vmId: tab.vmId,
+            vmIp: tab.vmIp,
+            shell: '/bin/bash',
+            cols: term.cols,
+            rows: term.rows,
+          }));
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (isDisposedRef.current) return;
+        try {
+          const msg = JSON.parse(event.data);
+          switch (msg.type) {
+            case 'connected':
+              wasConnectedRef.current = true;
+              onStateChangeRef.current({ connectionState: 'connected', retryCount: 0 });
+              term.focus();
+              // Fit again after connection and send resize to ensure shell has correct size
+              setTimeout(fitAndResize, 50);
+              setTimeout(fitAndResize, 200);
+              break;
+            case 'output':
+              term.write(msg.data);
+              break;
+            case 'exit':
+              onStateChangeRef.current({ connectionState: 'disconnected' });
+              term.write('\r\n\x1b[33m[Session ended]\x1b[0m\r\n');
+              break;
+            case 'error':
+              onStateChangeRef.current({ connectionState: 'error', errorMessage: msg.message });
+              term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
+              break;
+          }
+        } catch {
+          // Handle non-JSON messages
+        }
+      };
+
+      ws.onclose = () => {
+        if (isDisposedRef.current) return;
+
+        // Only retry if we had a successful connection before (server restart scenario)
+        if (wasConnectedRef.current && retryCountRef.current < MAX_RETRY_COUNT) {
+          retryCountRef.current++;
+          const delay = getRetryDelay(retryCountRef.current - 1);
+          onStateChangeRef.current({
+            connectionState: 'reconnecting',
+            retryCount: retryCountRef.current,
+          });
+          term.write(`\r\n\x1b[33m[Connection lost. Reconnecting in ${delay / 1000}s... (attempt ${retryCountRef.current}/${MAX_RETRY_COUNT})]\x1b[0m\r\n`);
+
+          retryTimeoutRef.current = setTimeout(() => {
+            if (!isDisposedRef.current) {
+              connectWebSocket();
+            }
+          }, delay);
+        } else if (wasConnectedRef.current) {
+          onStateChangeRef.current({ connectionState: 'disconnected' });
+          term.write('\r\n\x1b[31m[Connection lost. Max retries exceeded.]\x1b[0m\r\n');
+        } else {
+          onStateChangeRef.current({ connectionState: 'disconnected' });
+        }
+      };
+
+      ws.onerror = () => {
+        if (isDisposedRef.current) return;
+        // Error will be followed by close, so we handle retry in onclose
+        // Only show error state if we haven't connected yet
+        if (!wasConnectedRef.current && retryCountRef.current === 0) {
+          onStateChangeRef.current({ connectionState: 'error', errorMessage: 'Connection failed' });
+        }
+      };
+    };
+
+    // Initial connection
+    connectWebSocket();
 
     // Schedule multiple fit attempts - these will also send resize messages
     const fitTimeout1 = setTimeout(fitAndResize, 100);
@@ -442,81 +686,10 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       requestAnimationFrame(fitAndResize);
     });
 
-    ws.onopen = () => {
-      if (isDisposedRef.current) return;
-      // Do an initial fit before sending start message
-      try {
-        fitAddon.fit();
-      } catch (e) {
-        // Ignore fit errors on startup
-      }
-
-      // Send appropriate start message based on terminal type
-      if (tab.type === 'container') {
-        // Container terminal - uses docker exec
-        ws.send(JSON.stringify({
-          type: 'start',
-          containerId: tab.containerId,
-          shell: '/bin/bash',
-          cols: term.cols,
-          rows: term.rows,
-          isDevNode: tab.isDevNode,
-        }));
-      } else {
-        // VM terminal - uses SSH
-        ws.send(JSON.stringify({
-          type: 'start-vm',
-          vmId: tab.vmId,
-          vmIp: tab.vmIp,
-          shell: '/bin/bash',
-          cols: term.cols,
-          rows: term.rows,
-        }));
-      }
-    };
-
-    ws.onmessage = (event) => {
-      if (isDisposedRef.current) return;
-      try {
-        const msg = JSON.parse(event.data);
-        switch (msg.type) {
-          case 'connected':
-            onStateChangeRef.current({ connectionState: 'connected' });
-            term.focus();
-            // Fit again after connection and send resize to ensure shell has correct size
-            setTimeout(fitAndResize, 50);
-            setTimeout(fitAndResize, 200);
-            break;
-          case 'output':
-            term.write(msg.data);
-            break;
-          case 'exit':
-            onStateChangeRef.current({ connectionState: 'disconnected' });
-            term.write('\r\n\x1b[33m[Session ended]\x1b[0m\r\n');
-            break;
-          case 'error':
-            onStateChangeRef.current({ connectionState: 'error', errorMessage: msg.message });
-            term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
-            break;
-        }
-      } catch {
-        // Handle non-JSON messages
-      }
-    };
-
-    ws.onclose = () => {
-      if (isDisposedRef.current) return;
-      onStateChangeRef.current({ connectionState: 'disconnected' });
-    };
-
-    ws.onerror = () => {
-      if (isDisposedRef.current) return;
-      onStateChangeRef.current({ connectionState: 'error', errorMessage: 'Connection failed' });
-    };
-
     // Handle terminal input
     const dataDisposable = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }));
       }
     });
@@ -530,7 +703,8 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
         if (isDisposedRef.current) return;
         try {
           fitAddon.fit();
-          if (ws.readyState === WebSocket.OPEN) {
+          const ws = wsRef.current;
+          if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
               type: 'resize',
               cols: term.cols,
@@ -555,9 +729,11 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       clearTimeout(fitTimeout3);
       cancelAnimationFrame(rafId);
       if (resizeTimeout) clearTimeout(resizeTimeout);
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
       resizeObserver.disconnect();
       dataDisposable.dispose();
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      const ws = wsRef.current;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close();
       }
       term.dispose();
@@ -565,7 +741,7 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       fitAddonRef.current = null;
       wsRef.current = null;
     };
-  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.isDevNode, getWsUrl]);
+  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.isDevNode, tab.sandboxId, tab.instanceId, tab.publicIp, getWsUrl]);
 
   return (
     <div className="h-full flex flex-col">
@@ -573,15 +749,18 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[hsl(var(--bg-surface))] border-b border-[hsl(var(--border))] text-[10px]">
         <span className={`flex items-center gap-1.5 ${
           tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
-          tab.connectionState === 'connecting' ? 'text-[hsl(var(--amber))]' :
+          tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting' ? 'text-[hsl(var(--amber))]' :
           'text-[hsl(var(--red))]'
         }`}>
-          {tab.connectionState === 'connecting' && <Loader2 className="h-3 w-3 animate-spin" />}
-          <span className="uppercase tracking-wider">{tab.connectionState}</span>
+          {(tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting') && <Loader2 className="h-3 w-3 animate-spin" />}
+          <span className="uppercase tracking-wider">
+            {tab.connectionState}
+            {tab.connectionState === 'reconnecting' && tab.retryCount && ` (${tab.retryCount}/${MAX_RETRY_COUNT})`}
+          </span>
         </span>
         <span className="text-[hsl(var(--text-muted))]">|</span>
         <span className="text-[hsl(var(--text-secondary))]">
-          {tab.type === 'container' ? `dev@${tab.name}` : `agent@${tab.vmIp}`}
+          {tab.type === 'container' ? `dev@${tab.name}` : tab.type === 'daytona' ? `daytona@${tab.name}` : tab.type === 'aws' ? `ubuntu@${tab.publicIp}` : `agent@${tab.vmIp}`}
         </span>
       </div>
 

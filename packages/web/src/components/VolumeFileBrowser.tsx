@@ -1,24 +1,30 @@
 import { useState, useRef } from 'react';
-import { Folder, File, Upload, Download, Trash2, ChevronRight, Home, RefreshCw, Loader2, AlertTriangle, X } from 'lucide-react';
-import { useVmVolumeFiles, useUploadFileToVmVolume, useDeleteVmVolumeFile } from '../hooks/useContainers';
-import { downloadFileFromVmVolume, VmVolumeFileInfo } from '../api/client';
+import { Folder, File, Upload, Download, Trash2, ChevronRight, Home, RefreshCw, Loader2, AlertTriangle, X, FolderUp } from 'lucide-react';
+import { useUnifiedVolumeFiles, useUploadToUnifiedVolume, useDeleteUnifiedVolumeFile } from '../hooks/useVolumes';
+import { downloadFromUnifiedVolume, UnifiedVolumeFileInfo } from '../api/client';
 import { useConfirm } from './ConfirmModal';
 
 interface VolumeFileBrowserProps {
   volumeId: string;
   volumeName: string;
   isAttached: boolean;
+  isVmRunning?: boolean;
   onClose: () => void;
 }
 
-export function VolumeFileBrowser({ volumeId, volumeName, isAttached, onClose }: VolumeFileBrowserProps) {
+export function VolumeFileBrowser({ volumeId, volumeName, isAttached, isVmRunning = false, onClose }: VolumeFileBrowserProps) {
   const [currentPath, setCurrentPath] = useState('/');
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const confirm = useConfirm();
 
-  const { data, isLoading, error, refetch } = useVmVolumeFiles(volumeId, currentPath);
-  const uploadFile = useUploadFileToVmVolume();
-  const deleteFile = useDeleteVmVolumeFile();
+  // Can upload if not attached OR if attached and VM is running (SSH upload)
+  const canUpload = !isAttached || isVmRunning;
+
+  const { data, isLoading, error, refetch } = useUnifiedVolumeFiles(volumeId, currentPath);
+  const uploadFile = useUploadToUnifiedVolume();
+  const deleteFile = useDeleteUnifiedVolumeFile();
 
   const navigateTo = (path: string) => {
     setCurrentPath(path);
@@ -32,35 +38,56 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, onClose }:
     }
   };
 
-  const handleFileClick = (file: VmVolumeFileInfo) => {
+  const handleFileClick = (file: UnifiedVolumeFileInfo) => {
     if (file.type === 'directory') {
       const newPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
       navigateTo(newPath);
     }
   };
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>, isFolder = false) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    for (const file of Array.from(files)) {
+    const fileList = Array.from(files);
+    let uploadedCount = 0;
+
+    for (const file of fileList) {
       try {
-        await uploadFile.mutateAsync({ volumeId, file, destPath: currentPath });
+        // For folder uploads, preserve the relative path structure
+        let destPath = currentPath;
+        if (isFolder && file.webkitRelativePath) {
+          // Get the path without the file name
+          const parts = file.webkitRelativePath.split('/');
+          parts.pop(); // Remove filename
+          if (parts.length > 0) {
+            const subPath = parts.join('/');
+            destPath = currentPath === '/' ? `/${subPath}` : `${currentPath}/${subPath}`;
+          }
+        }
+
+        setUploadProgress(`Uploading ${++uploadedCount}/${fileList.length}: ${file.name}`);
+        await uploadFile.mutateAsync({ volumeId, file, destPath });
       } catch (err) {
         console.error('Upload failed:', err);
       }
     }
 
-    // Clear the input
+    setUploadProgress(null);
+
+    // Clear the inputs
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+    }
   };
 
-  const handleDownload = async (file: VmVolumeFileInfo) => {
+  const handleDownload = async (file: UnifiedVolumeFileInfo) => {
     try {
       const filePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-      const blob = await downloadFileFromVmVolume(volumeId, filePath);
+      const blob = await downloadFromUnifiedVolume(volumeId, filePath);
 
       // Create download link
       const url = URL.createObjectURL(blob);
@@ -76,7 +103,7 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, onClose }:
     }
   };
 
-  const handleDelete = async (file: VmVolumeFileInfo) => {
+  const handleDelete = async (file: UnifiedVolumeFileInfo) => {
     const confirmed = await confirm({
       title: 'Delete File',
       message: `Are you sure you want to delete "${file.name}"?`,
@@ -120,12 +147,19 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, onClose }:
           </button>
         </div>
 
-        {/* Warning if attached */}
+        {/* Info/warning if attached */}
         {isAttached && (
-          <div className="mx-4 mt-4 p-3 bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] rounded-lg flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-[hsl(var(--amber))]" />
-            <span className="text-sm text-[hsl(var(--amber))]">
-              Volume is attached to a VM. Uploads/deletes are disabled. Detach the volume first.
+          <div className={`mx-4 mt-4 p-3 border rounded-lg flex items-center gap-2 ${
+            isVmRunning
+              ? 'bg-[hsl(var(--cyan)/0.1)] border-[hsl(var(--cyan)/0.3)]'
+              : 'bg-[hsl(var(--amber)/0.1)] border-[hsl(var(--amber)/0.3)]'
+          }`}>
+            <AlertTriangle className={`w-4 h-4 ${isVmRunning ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--amber))]'}`} />
+            <span className={`text-sm ${isVmRunning ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--amber))]'}`}>
+              {isVmRunning
+                ? 'Volume is attached to a running VM. File operations work via SSH.'
+                : 'Volume is attached to a stopped VM. Start the VM or detach to manage files.'
+              }
             </span>
           </div>
         )}
@@ -169,20 +203,36 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, onClose }:
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
-          {!isAttached && (
-            <label className="cursor-pointer">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                onChange={handleUpload}
-                className="hidden"
-              />
-              <span className="flex items-center gap-1 px-2 py-1 bg-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.8)] text-white rounded text-sm">
-                <Upload className="w-4 h-4" />
-                Upload
-              </span>
-            </label>
+          {canUpload && (
+            <>
+              <label className="cursor-pointer">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={(e) => handleUpload(e, false)}
+                  className="hidden"
+                />
+                <span className="flex items-center gap-1 px-2 py-1 bg-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.8)] text-white rounded text-sm">
+                  <Upload className="w-4 h-4" />
+                  Files
+                </span>
+              </label>
+              <label className="cursor-pointer">
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  // @ts-expect-error webkitdirectory is not in the standard types
+                  webkitdirectory="true"
+                  onChange={(e) => handleUpload(e, true)}
+                  className="hidden"
+                />
+                <span className="flex items-center gap-1 px-2 py-1 bg-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.8)] text-white rounded text-sm">
+                  <FolderUp className="w-4 h-4" />
+                  Folder
+                </span>
+              </label>
+            </>
           )}
         </div>
 
@@ -254,7 +304,7 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, onClose }:
                             <Download className="w-4 h-4 text-[hsl(var(--text-secondary))]" />
                           </button>
                         )}
-                        {!isAttached && (
+                        {canUpload && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -283,11 +333,11 @@ export function VolumeFileBrowser({ volumeId, volumeName, isAttached, onClose }:
         </div>
 
         {/* Upload progress */}
-        {uploadFile.isPending && (
+        {(uploadFile.isPending || uploadProgress) && (
           <div className="p-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
             <div className="flex items-center gap-2 text-sm text-[hsl(var(--text-secondary))]">
               <Loader2 className="w-4 h-4 animate-spin" />
-              Uploading...
+              {uploadProgress || 'Uploading...'}
             </div>
           </div>
         )}

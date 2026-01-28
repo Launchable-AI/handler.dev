@@ -12,8 +12,20 @@ export interface DaytonaConfig {
   enabled: boolean;
 }
 
+export interface AwsConfig {
+  accessKeyId: string;        // AWS Access Key ID
+  secretAccessKey: string;    // AWS Secret Access Key
+  region: string;             // e.g., "us-east-1"
+  enabled: boolean;
+  defaultVpcId?: string;      // Optional: use default VPC if not specified
+  defaultSubnetId?: string;   // Optional: use default subnet if not specified
+  sshKeyName?: string;        // AWS key pair name (auto-created if not specified)
+  sshPrivateKey?: string;     // Private key content (stored when auto-created)
+}
+
 export interface CloudBackendsConfig {
   daytona?: DaytonaConfig;
+  aws?: AwsConfig;
 }
 
 export interface AppConfig {
@@ -22,7 +34,6 @@ export interface AppConfig {
   sshJumpHost: string; // Jump host for ProxyJump (e.g., user@bastion.example.com)
   sshJumpHostKeyPath: string; // Path to SSH key for jump host (e.g., ~/.ssh/jump_key.pem)
   dataDirectory: string; // Base directory for all data (volumes, ssh-keys, etc.)
-  defaultDevNodeImage: string; // Default image for dev-node containers
   cloudBackends?: CloudBackendsConfig; // Cloud backend configurations
 }
 
@@ -32,7 +43,6 @@ const DEFAULT_CONFIG: AppConfig = {
   sshJumpHost: '', // Empty means no jump host
   sshJumpHostKeyPath: '', // Empty means use default key
   dataDirectory: join(PROJECT_ROOT, 'data'),
-  defaultDevNodeImage: 'ubuntu:24.04',
   cloudBackends: undefined, // No cloud backends configured by default
 };
 

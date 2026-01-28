@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Search,
   RefreshCw,
@@ -18,6 +18,7 @@ import {
   Plus,
   Github,
   Trash2,
+  GripVertical,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,6 +30,10 @@ type ViewMode = 'all' | 'favorites';
 type DetailTab = 'info' | 'readme' | 'install';
 
 const PAGE_SIZE = 50;
+const PANEL_WIDTH_KEY = 'caisson-mcp-panel-width';
+const MIN_PANEL_WIDTH = 300;
+const MAX_PANEL_WIDTH = 800;
+const DEFAULT_PANEL_WIDTH = 450;
 
 export function MCPRegistry() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,6 +63,56 @@ export function MCPRegistry() {
   const [manualUrl, setManualUrl] = useState('');
   const [isAddingManual, setIsAddingManual] = useState(false);
   const [addManualError, setAddManualError] = useState<string | null>(null);
+
+  // Resizable panel state
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const stored = localStorage.getItem(PANEL_WIDTH_KEY);
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      if (!isNaN(parsed) && parsed >= MIN_PANEL_WIDTH && parsed <= MAX_PANEL_WIDTH) {
+        return parsed;
+      }
+    }
+    return DEFAULT_PANEL_WIDTH;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<HTMLDivElement>(null);
+
+  // Persist panel width
+  useEffect(() => {
+    localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth));
+  }, [panelWidth]);
+
+  // Handle resize
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const containerRect = resizeRef.current.parentElement?.getBoundingClientRect();
+      if (!containerRect) return;
+
+      const newWidth = containerRect.right - e.clientX;
+      setPanelWidth(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   // Check AI status on mount
   useEffect(() => {
@@ -638,7 +693,22 @@ export function MCPRegistry() {
       </div>
 
       {/* Server Detail Panel */}
-      <div className="w-[450px] flex flex-col bg-[hsl(var(--bg-surface))]">
+      <div
+        ref={resizeRef}
+        className="flex flex-col bg-[hsl(var(--bg-surface))] relative"
+        style={{ width: panelWidth }}
+      >
+        {/* Resize Handle */}
+        <div
+          onMouseDown={handleMouseDown}
+          className={`absolute left-0 top-0 bottom-0 w-1 cursor-col-resize group hover:bg-[hsl(var(--cyan)/0.3)] transition-colors z-10 ${
+            isResizing ? 'bg-[hsl(var(--cyan)/0.5)]' : ''
+          }`}
+        >
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <GripVertical className="h-6 w-6 text-[hsl(var(--text-muted))]" />
+          </div>
+        </div>
         {isLoadingDetails ? (
           <div className="h-full flex items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--text-muted))]" />
