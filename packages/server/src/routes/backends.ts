@@ -222,10 +222,10 @@ backends.post('/:backend/enable', async (c) => {
       // Docker doesn't really have an "enable" concept through our app
       // It's either running or not via systemd
       try {
-        await execAsync('sudo systemctl start docker');
+        await execAsync('sudo -n systemctl start docker');
         return c.json({ success: true, message: 'Docker service started' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to start Docker service' }, 500);
+        return c.json({ success: false, message: 'Run: sudo systemctl start docker' }, 500);
       }
 
     case 'cloud-hypervisor':
@@ -269,10 +269,10 @@ backends.post('/:backend/disable', async (c) => {
   switch (backend) {
     case 'docker':
       try {
-        await execAsync('sudo systemctl stop docker');
+        await execAsync('sudo -n systemctl stop docker');
         return c.json({ success: true, message: 'Docker service stopped' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to stop Docker service' }, 500);
+        return c.json({ success: false, message: 'Run: sudo systemctl stop docker' }, 500);
       }
 
     case 'cloud-hypervisor':
@@ -314,10 +314,10 @@ backends.post('/:backend/install', async (c) => {
       try {
         // Install Docker using official script
         await execAsync('curl -fsSL https://get.docker.com | sh', { timeout: 300000 });
-        await execAsync('sudo usermod -aG docker $USER');
+        await execAsync('sudo -n usermod -aG docker $USER');
         return c.json({ success: true, message: 'Docker installed. You may need to log out and back in for group changes.' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to install Docker' }, 500);
+        return c.json({ success: false, message: 'Failed to install Docker. See https://docs.docker.com/engine/install/' }, 500);
       }
 
     case 'cloud-hypervisor':
@@ -332,12 +332,12 @@ backends.post('/:backend/install', async (c) => {
           await execAsync(`
             curl -sL https://github.com/cloud-hypervisor/cloud-hypervisor/releases/latest/download/cloud-hypervisor-static-${arch} -o /tmp/cloud-hypervisor &&
             chmod +x /tmp/cloud-hypervisor &&
-            sudo mv /tmp/cloud-hypervisor /usr/local/bin/
+            sudo -n mv /tmp/cloud-hypervisor /usr/local/bin/
           `, { timeout: 120000 });
         }
         return c.json({ success: true, message: 'Cloud-Hypervisor installed' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to install Cloud-Hypervisor' }, 500);
+        return c.json({ success: false, message: 'Run: sudo ./scripts/install-cloud-hypervisor.sh' }, 500);
       }
 
     case 'firecracker':
@@ -353,13 +353,13 @@ backends.post('/:backend/install', async (c) => {
             LATEST=$(curl -s https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest | grep '"tag_name"' | cut -d'"' -f4) &&
             curl -sL "https://github.com/firecracker-microvm/firecracker/releases/download/\${LATEST}/firecracker-\${LATEST}-${arch}.tgz" -o /tmp/firecracker.tgz &&
             tar -xzf /tmp/firecracker.tgz -C /tmp &&
-            sudo mv /tmp/release-\${LATEST}-${arch}/firecracker-\${LATEST}-${arch} /usr/local/bin/firecracker &&
+            sudo -n mv /tmp/release-\${LATEST}-${arch}/firecracker-\${LATEST}-${arch} /usr/local/bin/firecracker &&
             rm -rf /tmp/firecracker.tgz /tmp/release-*
           `, { timeout: 120000 });
         }
         return c.json({ success: true, message: 'Firecracker installed' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to install Firecracker' }, 500);
+        return c.json({ success: false, message: 'Run: sudo ./scripts/install-firecracker.sh' }, 500);
       }
 
     case 'daytona':
@@ -381,27 +381,27 @@ backends.post('/:backend/uninstall', async (c) => {
   switch (backend) {
     case 'docker':
       try {
-        await execAsync('sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin');
-        await execAsync('sudo rm -rf /var/lib/docker /var/lib/containerd');
+        await execAsync('sudo -n apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin');
+        await execAsync('sudo -n rm -rf /var/lib/docker /var/lib/containerd');
         return c.json({ success: true, message: 'Docker uninstalled' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to uninstall Docker' }, 500);
+        return c.json({ success: false, message: 'Failed to uninstall Docker. See https://docs.docker.com/engine/install/' }, 500);
       }
 
     case 'cloud-hypervisor':
       try {
-        await execAsync('sudo rm -f /usr/local/bin/cloud-hypervisor');
+        await execAsync('sudo -n rm -f /usr/local/bin/cloud-hypervisor');
         return c.json({ success: true, message: 'Cloud-Hypervisor uninstalled' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to uninstall Cloud-Hypervisor' }, 500);
+        return c.json({ success: false, message: 'Run: sudo rm -f /usr/local/bin/cloud-hypervisor' }, 500);
       }
 
     case 'firecracker':
       try {
-        await execAsync('sudo rm -f /usr/local/bin/firecracker');
+        await execAsync('sudo -n rm -f /usr/local/bin/firecracker');
         return c.json({ success: true, message: 'Firecracker uninstalled' });
       } catch (err) {
-        return c.json({ success: false, message: 'Failed to uninstall Firecracker' }, 500);
+        return c.json({ success: false, message: 'Run: sudo rm -f /usr/local/bin/firecracker' }, 500);
       }
 
     case 'daytona':
