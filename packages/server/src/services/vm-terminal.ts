@@ -7,6 +7,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { WebSocket } from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
+import { injectShellInit } from './shell-init.js';
 
 interface VmTerminalSession {
   process: ChildProcess;
@@ -106,6 +107,9 @@ export function createVmTerminalSession(
 
   // Send connected message
   ws.send(JSON.stringify({ type: 'connected', sessionId }));
+
+  // Inject shell init (PROMPT_COMMAND for real-time cwd/branch tracking)
+  injectShellInit(sshProcess);
 
   return sessionId;
 }
@@ -229,6 +233,9 @@ export function createDaytonaTerminalSession(
   // Send connected message
   ws.send(JSON.stringify({ type: 'connected', sessionId }));
 
+  // Inject shell init (PROMPT_COMMAND for real-time cwd/branch tracking)
+  injectShellInit(sshProcess);
+
   return sessionId;
 }
 
@@ -327,6 +334,9 @@ export function createAwsTerminalSession(
   // Send connected message
   ws.send(JSON.stringify({ type: 'connected', sessionId }));
 
+  // Inject shell init (PROMPT_COMMAND for real-time cwd/branch tracking)
+  injectShellInit(sshProcess);
+
   return sessionId;
 }
 
@@ -403,6 +413,9 @@ export function createCloudTerminalSession(
 
   sessions.set(sessionId, { process: sshProcess, ws, vmId: instanceId });
   ws.send(JSON.stringify({ type: 'connected', sessionId }));
+
+  // Inject shell init (PROMPT_COMMAND for real-time cwd/branch tracking)
+  injectShellInit(sshProcess);
 
   return sessionId;
 }

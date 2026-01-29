@@ -7,7 +7,7 @@ const worktrees = new Hono();
 worktrees.post('/fork', async (c) => {
   try {
     const body = await c.req.json();
-    const { sandboxId, branchName, baseBranch } = body;
+    const { sandboxId, branchName, baseBranch, cwd } = body;
 
     if (!sandboxId || !branchName) {
       return c.json({ error: 'sandboxId and branchName are required' }, 400);
@@ -17,6 +17,7 @@ worktrees.post('/fork', async (c) => {
       sandboxId,
       branchName,
       baseBranch,
+      cwd,
     });
 
     return c.json({

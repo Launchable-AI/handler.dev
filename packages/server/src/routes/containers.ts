@@ -345,4 +345,66 @@ containers.get('/:id/logs/stream', async (c) => {
   });
 });
 
+// Get git branch inside container
+containers.get('/:id/branch', async (c) => {
+  const id = c.req.param('id');
+  const workdir = c.req.query('cwd') || '/home/dev/workspace';
+
+  try {
+    const branch = await dockerService.execInContainer(id, [
+      'sh', '-c', 'git rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""',
+    ], workdir);
+    return c.json({ branch: branch || '' });
+  } catch {
+    return c.json({ branch: '' });
+  }
+});
+
+// Get git log inside container
+containers.get('/:id/git-log', async (c) => {
+  const id = c.req.param('id');
+  const limit = parseInt(c.req.query('limit') || '50', 10);
+  const workdir = c.req.query('cwd') || '/home/dev/workspace';
+
+  try {
+    const [logOutput, branch] = await Promise.all([
+      dockerService.execInContainer(id, [
+        'sh', '-c',
+        `git log --pretty=format:'%H|%h|%s|%an|%ae|%aI' -n ${limit} 2>/dev/null || echo ""`,
+      ], workdir),
+      dockerService.execInContainer(id, [
+        'sh', '-c', 'git rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""',
+      ], workdir),
+    ]);
+
+    const commits = logOutput
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [hash, shortHash, subject, author, email, date] = line.split('|');
+        return { hash, shortHash, subject, author, email, date };
+      });
+
+    return c.json({ commits, branch: branch || '' });
+  } catch {
+    return c.json({ commits: [], branch: '' });
+  }
+});
+
+// Get git show for a specific commit
+containers.get('/:id/git-show/:hash', async (c) => {
+  const id = c.req.param('id');
+  const hash = c.req.param('hash');
+  const workdir = c.req.query('cwd') || '/home/dev/workspace';
+
+  try {
+    const output = await dockerService.execInContainer(id, [
+      'sh', '-c', `git show ${hash} --stat 2>/dev/null || echo ""`,
+    ], workdir);
+    return c.json({ output });
+  } catch {
+    return c.json({ output: '' });
+  }
+});
+
 export default containers;

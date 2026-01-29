@@ -16,9 +16,15 @@ export interface TerminalTarget {
   isDevNode?: boolean;
 }
 
+export interface ShellState {
+  cwd: string;
+  branch: string;
+}
+
 export interface TerminalInstanceProps {
   target: TerminalTarget;
   onStateChange?: (state: ConnectionState, errorMessage?: string) => void;
+  onShellState?: (state: ShellState) => void;
   showStatusBar?: boolean;
   className?: string;
   fontSize?: number;
@@ -27,6 +33,7 @@ export interface TerminalInstanceProps {
 export function TerminalInstance({
   target,
   onStateChange,
+  onShellState,
   showStatusBar = true,
   className = '',
   fontSize = 13,
@@ -48,9 +55,11 @@ export function TerminalInstance({
     return `${protocol}//${hostname}:${apiPort}/ws/terminal`;
   }, []);
 
-  // Stable callback ref to avoid re-running effect
+  // Stable callback refs to avoid re-running effect
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
+  const onShellStateRef = useRef(onShellState);
+  onShellStateRef.current = onShellState;
 
   const updateState = useCallback((state: ConnectionState, error?: string) => {
     setConnectionState(state);
@@ -118,6 +127,17 @@ export function TerminalInstance({
     // Open terminal
     term.open(containerEl);
     xtermRef.current = term;
+
+    // Register OSC 7337 handler for real-time cwd/branch tracking from shell
+    const oscDisposable = term.parser.registerOscHandler(7337, (data) => {
+      try {
+        const state = JSON.parse(data) as ShellState;
+        onShellStateRef.current?.(state);
+      } catch {
+        // Ignore malformed OSC data
+      }
+      return true; // Suppress display
+    });
 
     // Connect WebSocket first
     const ws = new WebSocket(getWsUrl());
@@ -259,6 +279,7 @@ export function TerminalInstance({
       if (resizeTimeout) clearTimeout(resizeTimeout);
       resizeObserver.disconnect();
       dataDisposable.dispose();
+      oscDisposable.dispose();
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close();
       }

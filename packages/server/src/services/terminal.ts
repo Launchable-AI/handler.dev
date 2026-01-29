@@ -5,6 +5,7 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import { WebSocket } from 'ws';
+import { injectShellInit } from './shell-init.js';
 
 interface TerminalSession {
   process: ChildProcess;
@@ -85,6 +86,9 @@ export function createTerminalSession(
 
   // Send connected message
   ws.send(JSON.stringify({ type: 'connected', sessionId }));
+
+  // Inject shell init (PROMPT_COMMAND for real-time cwd/branch tracking)
+  injectShellInit(process);
 
   return sessionId;
 }

@@ -46,7 +46,14 @@ const ACTIVE_WS_KEY = 'caisson-canvas-active-workspace';
 function loadPersistedNodes(): WorktreeNode[] {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    const nodes: WorktreeNode[] = JSON.parse(saved);
+    // Migrate old nodes missing the size field
+    return nodes.map(n => ({
+      ...n,
+      size: n.size || { width: 500, height: 350 },
+      position: n.position || { x: 100, y: 100 },
+    }));
   } catch {
     return [];
   }

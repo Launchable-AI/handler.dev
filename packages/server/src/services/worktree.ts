@@ -1,4 +1,5 @@
 import Docker from 'dockerode';
+import { PassThrough } from 'stream';
 import { findAvailablePort, findAvailableSshPort } from '../utils/port.js';
 
 const docker = new Docker();
@@ -9,6 +10,7 @@ interface WorktreeRecord {
   childContainerId?: string;
   branch: string;
   worktreePath: string;
+  gitRoot: string;
   ports: Array<{ container: number; host: number }>;
   status: 'creating' | 'ready' | 'merging' | 'merged' | 'error';
 }
@@ -19,25 +21,36 @@ const worktrees = new Map<string, WorktreeRecord>();
 /**
  * Execute a command inside a running container and return stdout.
  */
-async function execInContainer(containerId: string, cmd: string[]): Promise<string> {
+async function execInContainer(containerId: string, cmd: string[], workdir?: string): Promise<string> {
   const container = docker.getContainer(containerId);
   const exec = await container.exec({
     Cmd: cmd,
     AttachStdout: true,
     AttachStderr: true,
+    ...(workdir ? { WorkingDir: workdir } : {}),
   });
 
   const stream = await exec.start({ hijack: true, stdin: false });
 
   return new Promise<string>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+
+    stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+    stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+
+    docker.modem.demuxStream(stream, stdout, stderr);
+
     stream.on('end', async () => {
-      const output = Buffer.concat(chunks).toString('utf-8');
+      const output = Buffer.concat(stdoutChunks).toString('utf-8');
+      const errOutput = Buffer.concat(stderrChunks).toString('utf-8');
       // Check exit code
       const inspect = await exec.inspect();
       if (inspect.ExitCode !== 0) {
-        reject(new Error(`Command failed (exit ${inspect.ExitCode}): ${output}`));
+        reject(new Error(`Command failed (exit ${inspect.ExitCode}): ${errOutput || output}`));
       } else {
         resolve(output);
       }
@@ -53,30 +66,44 @@ export async function forkWorktree(options: {
   sandboxId: string;
   branchName: string;
   baseBranch?: string;
+  cwd?: string;
 }): Promise<WorktreeRecord> {
-  const { sandboxId, branchName, baseBranch } = options;
+  const { sandboxId, branchName, baseBranch, cwd } = options;
   const id = `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const worktreePath = `/worktrees/${branchName}`;
+
+  // Resolve the git toplevel from the provided cwd (or default workspace)
+  const startDir = cwd || '/home/dev/workspace';
+  let gitRoot: string;
+  try {
+    gitRoot = (await execInContainer(sandboxId, [
+      'git', 'rev-parse', '--show-toplevel',
+    ], startDir)).trim();
+  } catch {
+    throw new Error(`No git repository found at ${startDir}`);
+  }
 
   const record: WorktreeRecord = {
     id,
     parentContainerId: sandboxId,
     branch: branchName,
     worktreePath,
+    gitRoot,
     ports: [],
     status: 'creating',
   };
   worktrees.set(id, record);
 
   try {
+
     // Ensure /worktrees directory exists
     await execInContainer(sandboxId, ['mkdir', '-p', '/worktrees']);
 
-    // Create the worktree
+    // Create the worktree (run from the git root)
     const base = baseBranch || 'HEAD';
     await execInContainer(sandboxId, [
       'git', 'worktree', 'add', '-b', branchName, worktreePath, base,
-    ]);
+    ], gitRoot);
 
     // Get parent container info for image and port configuration
     const parentContainer = docker.getContainer(sandboxId);
@@ -214,19 +241,21 @@ export async function mergeWorktree(options: {
   record.status = 'merging';
   worktrees.set(worktreeId, record);
 
+  const gitRoot = record.gitRoot;
+
   try {
     // Get the current branch of the parent (main workspace)
     const currentBranch = (await execInContainer(sandboxId, [
       'git', 'rev-parse', '--abbrev-ref', 'HEAD',
-    ])).trim();
+    ], gitRoot)).trim();
 
     // Perform merge
     if (strategy === 'rebase') {
-      await execInContainer(sandboxId, ['git', 'rebase', record.branch]);
+      await execInContainer(sandboxId, ['git', 'rebase', record.branch], gitRoot);
     } else {
       await execInContainer(sandboxId, [
         'git', 'merge', record.branch, '--no-ff', '-m', `Merge worktree branch '${record.branch}'`,
-      ]);
+      ], gitRoot);
     }
 
     record.status = 'merged';
@@ -235,11 +264,11 @@ export async function mergeWorktree(options: {
   } catch (err) {
     // Check for merge conflicts
     try {
-      const statusOutput = await execInContainer(sandboxId, ['git', 'diff', '--name-only', '--diff-filter=U']);
+      const statusOutput = await execInContainer(sandboxId, ['git', 'diff', '--name-only', '--diff-filter=U'], gitRoot);
       const conflicts = statusOutput.trim().split('\n').filter(Boolean);
       if (conflicts.length > 0) {
         // Abort the merge
-        await execInContainer(sandboxId, ['git', 'merge', '--abort']).catch(() => {});
+        await execInContainer(sandboxId, ['git', 'merge', '--abort'], gitRoot).catch(() => {});
         record.status = 'error';
         worktrees.set(worktreeId, record);
         return { success: false, conflicts };
@@ -278,7 +307,7 @@ export async function deleteWorktree(worktreeId: string): Promise<void> {
   try {
     await execInContainer(record.parentContainerId, [
       'git', 'worktree', 'remove', record.worktreePath, '--force',
-    ]);
+    ], record.gitRoot);
   } catch {
     // Worktree may already be removed
   }
@@ -287,7 +316,7 @@ export async function deleteWorktree(worktreeId: string): Promise<void> {
   try {
     await execInContainer(record.parentContainerId, [
       'git', 'branch', '-D', record.branch,
-    ]);
+    ], record.gitRoot);
   } catch {
     // Branch may already be deleted
   }

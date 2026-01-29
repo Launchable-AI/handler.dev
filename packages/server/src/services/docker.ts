@@ -1,4 +1,5 @@
 import Docker from 'dockerode';
+import { PassThrough } from 'stream';
 import type { ContainerInfo, VolumeInfo, ImageInfo } from '../types/index.js';
 import { getConfig } from './config.js';
 
@@ -725,6 +726,47 @@ export async function streamContainerLogs(
       readable.destroy();
     }
   };
+}
+
+/**
+ * Execute a command inside a running container and return stdout.
+ * Uses Docker's demuxStream to properly strip multiplexed stream headers.
+ */
+export async function execInContainer(containerId: string, cmd: string[], workDir?: string): Promise<string> {
+  const container = docker.getContainer(containerId);
+  const exec = await container.exec({
+    Cmd: cmd,
+    AttachStdout: true,
+    AttachStderr: true,
+    ...(workDir ? { WorkingDir: workDir } : {}),
+  });
+
+  const stream = await exec.start({ hijack: true, stdin: false });
+
+  return new Promise<string>((resolve, reject) => {
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+
+    stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+    stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+
+    docker.modem.demuxStream(stream, stdout, stderr);
+
+    stream.on('end', async () => {
+      const output = Buffer.concat(stdoutChunks).toString('utf-8');
+      const errOutput = Buffer.concat(stderrChunks).toString('utf-8');
+      const inspect = await exec.inspect();
+      if (inspect.ExitCode !== 0) {
+        reject(new Error(`Command failed (exit ${inspect.ExitCode}): ${errOutput || output}`));
+      } else {
+        resolve(output.trim());
+      }
+    });
+    stream.on('error', reject);
+  });
 }
 
 export { docker };
