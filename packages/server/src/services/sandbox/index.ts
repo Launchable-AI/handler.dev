@@ -17,10 +17,18 @@ import { DockerAdapter } from './docker-adapter.js';
 import { CloudHypervisorAdapter, FirecrackerAdapter } from './vm-adapter.js';
 import { DaytonaAdapter } from './daytona-adapter.js';
 import { AwsAdapter } from './aws-adapter.js';
+import { AzureAdapter } from './azure-adapter.js';
+import { GcpAdapter } from './gcp-adapter.js';
+import { DigitalOceanAdapter } from './digitalocean-adapter.js';
+import { LinodeAdapter } from './linode-adapter.js';
 import { CloudHypervisorService } from '../hypervisor.js';
 import { FirecrackerService } from '../firecracker.js';
 import { DaytonaService } from '../daytona.js';
 import { AwsService } from '../aws.js';
+import { AzureService } from '../azure.js';
+import { GcpService } from '../gcp.js';
+import { DigitalOceanService } from '../digitalocean.js';
+import { LinodeService } from '../linode.js';
 
 export class SandboxService {
   private adapters: Map<SandboxBackend, SandboxAdapter> = new Map();
@@ -31,6 +39,10 @@ export class SandboxService {
   private firecrackerService: FirecrackerService | null = null;
   private daytonaService: DaytonaService | null = null;
   private awsService: AwsService | null = null;
+  private azureService: AzureService | null = null;
+  private gcpService: GcpService | null = null;
+  private digitaloceanService: DigitalOceanService | null = null;
+  private linodeService: LinodeService | null = null;
 
   /**
    * Initialize the sandbox service with all available adapters
@@ -40,6 +52,10 @@ export class SandboxService {
     firecracker?: FirecrackerService;
     daytona?: DaytonaService;
     aws?: AwsService;
+    azure?: AzureService;
+    gcp?: GcpService;
+    digitalocean?: DigitalOceanService;
+    linode?: LinodeService;
   }): Promise<void> {
     if (this.initialized) return;
 
@@ -92,6 +108,46 @@ export class SandboxService {
       }
     }
 
+    // Register Azure adapter
+    if (options?.azure) {
+      this.azureService = options.azure;
+      const azureAdapter = new AzureAdapter(options.azure);
+      if (await azureAdapter.isAvailable()) {
+        this.adapters.set('azure', azureAdapter);
+        console.log('[SandboxService] Azure adapter registered');
+      }
+    }
+
+    // Register GCP adapter
+    if (options?.gcp) {
+      this.gcpService = options.gcp;
+      const gcpAdapter = new GcpAdapter(options.gcp);
+      if (await gcpAdapter.isAvailable()) {
+        this.adapters.set('gcp', gcpAdapter);
+        console.log('[SandboxService] GCP adapter registered');
+      }
+    }
+
+    // Register DigitalOcean adapter
+    if (options?.digitalocean) {
+      this.digitaloceanService = options.digitalocean;
+      const doAdapter = new DigitalOceanAdapter(options.digitalocean);
+      if (await doAdapter.isAvailable()) {
+        this.adapters.set('digitalocean', doAdapter);
+        console.log('[SandboxService] DigitalOcean adapter registered');
+      }
+    }
+
+    // Register Linode adapter
+    if (options?.linode) {
+      this.linodeService = options.linode;
+      const linodeAdapter = new LinodeAdapter(options.linode);
+      if (await linodeAdapter.isAvailable()) {
+        this.adapters.set('linode', linodeAdapter);
+        console.log('[SandboxService] Linode adapter registered');
+      }
+    }
+
     this.initialized = true;
     console.log(`[SandboxService] Initialized with ${this.adapters.size} adapters`);
   }
@@ -106,6 +162,10 @@ export class SandboxService {
       firecracker: false,
       daytona: false,
       aws: false,
+      azure: false,
+      gcp: false,
+      digitalocean: false,
+      linode: false,
     };
 
     for (const [backend, adapter] of this.adapters) {
@@ -300,6 +360,18 @@ export class SandboxService {
     if (id.startsWith('aws-')) {
       return 'aws';
     }
+    if (id.startsWith('azure-')) {
+      return 'azure';
+    }
+    if (id.startsWith('gcp-')) {
+      return 'gcp';
+    }
+    if (id.startsWith('do-')) {
+      return 'digitalocean';
+    }
+    if (id.startsWith('linode-')) {
+      return 'linode';
+    }
     // Default to cloud-hypervisor for 'vm-' prefix or unknown
     return 'cloud-hypervisor';
   }
@@ -346,6 +418,22 @@ export class SandboxService {
     return this.awsService;
   }
 
+  getAzureService(): AzureService | null {
+    return this.azureService;
+  }
+
+  getGcpService(): GcpService | null {
+    return this.gcpService;
+  }
+
+  getDigitalOceanService(): DigitalOceanService | null {
+    return this.digitaloceanService;
+  }
+
+  getLinodeService(): LinodeService | null {
+    return this.linodeService;
+  }
+
   /**
    * Reset the service so it can be reinitialized with new adapters
    */
@@ -355,6 +443,10 @@ export class SandboxService {
     this.firecrackerService = null;
     this.daytonaService = null;
     this.awsService = null;
+    this.azureService = null;
+    this.gcpService = null;
+    this.digitaloceanService = null;
+    this.linodeService = null;
     this.initialized = false;
     console.log('[SandboxService] Reset - will reinitialize on next use');
   }
@@ -381,6 +473,10 @@ export async function initializeSandboxService(options?: {
   firecracker?: FirecrackerService;
   daytona?: DaytonaService;
   aws?: AwsService;
+  azure?: AzureService;
+  gcp?: GcpService;
+  digitalocean?: DigitalOceanService;
+  linode?: LinodeService;
 }): Promise<SandboxService> {
   const service = getSandboxService();
   await service.initialize(options);
@@ -403,3 +499,7 @@ export { DockerAdapter } from './docker-adapter.js';
 export { CloudHypervisorAdapter, FirecrackerAdapter } from './vm-adapter.js';
 export { DaytonaAdapter } from './daytona-adapter.js';
 export { AwsAdapter } from './aws-adapter.js';
+export { AzureAdapter } from './azure-adapter.js';
+export { GcpAdapter } from './gcp-adapter.js';
+export { DigitalOceanAdapter } from './digitalocean-adapter.js';
+export { LinodeAdapter } from './linode-adapter.js';

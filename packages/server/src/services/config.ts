@@ -23,9 +23,52 @@ export interface AwsConfig {
   sshPrivateKey?: string;     // Private key content (stored when auto-created)
 }
 
+export interface AzureConfig {
+  clientId: string;
+  clientSecret: string;
+  tenantId: string;
+  subscriptionId: string;
+  region: string;             // e.g., "eastus"
+  resourceGroup: string;      // Resource group for VMs
+  enabled: boolean;
+  sshPrivateKey?: string;     // Private key content
+  sshPublicKey?: string;      // Public key content
+}
+
+export interface GcpConfig {
+  projectId: string;
+  keyFileJson: string;        // Service account JSON key content
+  zone: string;               // e.g., "us-central1-a"
+  enabled: boolean;
+  sshPrivateKey?: string;
+  sshPublicKey?: string;
+}
+
+export interface DigitalOceanConfig {
+  apiToken: string;
+  region: string;             // e.g., "nyc1"
+  enabled: boolean;
+  sshKeyId?: number;          // DO SSH key ID
+  sshPrivateKey?: string;
+  sshPublicKey?: string;
+}
+
+export interface LinodeConfig {
+  apiToken: string;
+  region: string;             // e.g., "us-east"
+  enabled: boolean;
+  sshPrivateKey?: string;
+  sshPublicKey?: string;
+  rootPassword?: string;      // Generated root password
+}
+
 export interface CloudBackendsConfig {
   daytona?: DaytonaConfig;
   aws?: AwsConfig;
+  azure?: AzureConfig;
+  gcp?: GcpConfig;
+  digitalocean?: DigitalOceanConfig;
+  linode?: LinodeConfig;
 }
 
 export interface AppConfig {
