@@ -7,7 +7,7 @@ import { getCloudHypervisorService, initializeCloudHypervisorService } from '../
 import { getFirecrackerService, initializeFirecrackerService } from '../services/firecracker.js';
 import { getDaytonaService, initializeDaytonaService } from '../services/daytona.js';
 import { getAwsService, initializeAwsService } from '../services/aws.js';
-import type { SkillFrontmatter, SubagentConfig } from '../types/agent-config.js';
+import type { SkillFrontmatter, SubagentConfig, PluginRef, PluginMarketplace } from '../types/agent-config.js';
 
 const agentConfig = new Hono();
 
@@ -89,6 +89,18 @@ const SubagentSchema = z.object({
   systemPrompt: z.string(),
 });
 
+const PluginRefSchema = z.object({
+  name: z.string().min(1),
+  marketplace: z.string().min(1),
+  enabled: z.boolean(),
+});
+
+const PluginMarketplaceSchema = z.object({
+  type: z.literal('github'),
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+});
+
 const CreateSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -101,6 +113,8 @@ const CreateSchema = z.object({
   env: z.record(z.string()).optional(),
   model: z.string().optional(),
   subagents: z.array(SubagentSchema).optional(),
+  plugins: z.array(PluginRefSchema).optional(),
+  marketplaces: z.array(PluginMarketplaceSchema).optional(),
 });
 
 const UpdateSchema = z.object({
@@ -115,6 +129,8 @@ const UpdateSchema = z.object({
   env: z.record(z.string()).optional(),
   model: z.string().optional(),
   subagents: z.array(SubagentSchema).optional(),
+  plugins: z.array(PluginRefSchema).optional(),
+  marketplaces: z.array(PluginMarketplaceSchema).optional(),
 });
 
 // Serialize frontmatter fields to YAML string
@@ -143,10 +159,111 @@ function serializeFrontmatter(fm: Record<string, unknown>): string {
   return lines.join('\n');
 }
 
+// ============ Plugin Marketplace Proxy ============
+
+interface MarketplacePlugin {
+  name: string;
+  description: string;
+  version?: string;
+  homepage?: string;
+  category?: string;
+  tags?: string[];
+  source?: { type: string; url?: string; path?: string };
+}
+
+interface MarketplaceData {
+  name: string;
+  slug: string;
+  description?: string;
+  plugins: MarketplacePlugin[];
+}
+
+const KNOWN_MARKETPLACES: Array<{ owner: string; repo: string; branch: string; path: string }> = [
+  { owner: 'anthropics', repo: 'claude-plugins-official', branch: 'main', path: '.claude-plugin/marketplace.json' },
+  { owner: 'anthropics', repo: 'claude-code', branch: 'main', path: 'plugins/.claude-plugin/marketplace.json' },
+  { owner: 'kivilaid', repo: 'plugin-marketplace', branch: 'main', path: '.claude-plugin/marketplace.json' },
+];
+
+const marketplaceCache = new Map<string, { data: MarketplaceData; fetchedAt: number }>();
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+async function fetchMarketplace(owner: string, repo: string): Promise<MarketplaceData | null> {
+  const key = `${owner}/${repo}`;
+  const cached = marketplaceCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+    return cached.data;
+  }
+
+  const known = KNOWN_MARKETPLACES.find(m => m.owner === owner && m.repo === repo);
+  const branch = known?.branch || 'main';
+  const path = known?.path || '.claude-plugin/marketplace.json';
+
+  const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json() as MarketplaceData;
+    if (!data.slug) {
+      data.slug = `${owner}-${repo}`.replace(/[^a-zA-Z0-9-]/g, '-');
+    }
+    marketplaceCache.set(key, { data, fetchedAt: Date.now() });
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 // List all presets
 agentConfig.get('/', async (c) => {
   const configs = await agentConfigService.getAgentConfigs();
   return c.json({ configs });
+});
+
+// Browse all known marketplaces (must be before /:id to avoid matching)
+agentConfig.get('/plugins/marketplaces', async (c) => {
+  const results: MarketplaceData[] = [];
+  const fetches = KNOWN_MARKETPLACES.map(async (m) => {
+    const data = await fetchMarketplace(m.owner, m.repo);
+    if (data) results.push(data);
+  });
+  await Promise.all(fetches);
+  return c.json({ marketplaces: results });
+});
+
+agentConfig.get('/plugins/marketplace/:owner/:repo', async (c) => {
+  const { owner, repo } = c.req.param();
+  const data = await fetchMarketplace(owner, repo);
+  if (!data) {
+    return c.json({ error: 'Marketplace not found or unavailable' }, 404);
+  }
+  return c.json(data);
+});
+
+agentConfig.get('/plugins/search', async (c) => {
+  const query = (c.req.query('q') || '').toLowerCase();
+  const results: Array<MarketplacePlugin & { marketplace: string; marketplaceOwner: string; marketplaceRepo: string }> = [];
+
+  const fetches = KNOWN_MARKETPLACES.map(async (m) => {
+    const data = await fetchMarketplace(m.owner, m.repo);
+    if (!data) return;
+    for (const plugin of data.plugins) {
+      if (!query ||
+          plugin.name.toLowerCase().includes(query) ||
+          plugin.description?.toLowerCase().includes(query) ||
+          plugin.category?.toLowerCase().includes(query) ||
+          plugin.tags?.some(t => t.toLowerCase().includes(query))) {
+        results.push({
+          ...plugin,
+          marketplace: data.slug,
+          marketplaceOwner: m.owner,
+          marketplaceRepo: m.repo,
+        });
+      }
+    }
+  });
+
+  await Promise.all(fetches);
+  return c.json({ plugins: results });
 });
 
 // Get a single preset
@@ -256,7 +373,7 @@ agentConfig.post('/:id/inject/:sandboxId', async (c) => {
     });
   }
 
-  // 3. ~/.claude/settings.json (permissions + hooks + env + model)
+  // 3. ~/.claude/settings.json (permissions + hooks + env + model + plugins)
   const settingsJson: Record<string, unknown> = {};
   if (config.permissions.allow?.length || config.permissions.deny?.length) {
     settingsJson.permissions = config.permissions;
@@ -269,6 +386,19 @@ agentConfig.post('/:id/inject/:sandboxId', async (c) => {
   }
   if (config.model) {
     settingsJson.model = config.model;
+  }
+  // Add plugin marketplaces and enabled plugins
+  if (config.marketplaces && config.marketplaces.length > 0) {
+    settingsJson.extraKnownMarketplaces = config.marketplaces.map(m => ({
+      type: m.type,
+      owner: m.owner,
+      repo: m.repo,
+    }));
+  }
+  if (config.plugins && config.plugins.length > 0) {
+    settingsJson.enabledPlugins = config.plugins
+      .filter(p => p.enabled)
+      .map(p => `${p.name}@${p.marketplace}`);
   }
   if (Object.keys(settingsJson).length > 0) {
     filesToInject.push({

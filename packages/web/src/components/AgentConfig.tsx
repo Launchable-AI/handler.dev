@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Save, Loader2, X, Play, ChevronDown, Settings2, Server, FileText, Sparkles, Users, BookOpen, Zap, Shield } from 'lucide-react';
+import { Plus, Trash2, Save, Loader2, X, Play, ChevronDown, Settings2, Server, FileText, Sparkles, Users, BookOpen, Zap, Shield, Puzzle, Search, ExternalLink, Check } from 'lucide-react';
 import { useAgentConfigs, useCreateAgentConfig, useUpdateAgentConfig, useDeleteAgentConfig, useInjectAgentConfig } from '../hooks/useAgentConfigs';
 import { useSandboxes } from '../hooks/useSandboxes';
-import type { MCPServerConfig, MCPServerStdioConfig, MCPServerHttpConfig, MCPServerSseConfig, AgentPermissions, SkillConfig, SkillFrontmatter, SubagentConfig, SubagentPermissionMode, RuleConfig, HookMatcher, HookEvent } from '../api/client';
+import type { MCPServerConfig, MCPServerStdioConfig, MCPServerHttpConfig, MCPServerSseConfig, AgentPermissions, SkillConfig, SkillFrontmatter, SubagentConfig, SubagentPermissionMode, RuleConfig, HookMatcher, HookEvent, PluginRef, PluginMarketplace, MarketplacePlugin, MarketplaceData } from '../api/client';
+import { getPluginMarketplaces, searchPlugins } from '../api/client';
 
-type TabId = 'general' | 'mcp' | 'instructions' | 'skills' | 'subagents' | 'rules' | 'hooks' | 'permissions';
+type TabId = 'general' | 'mcp' | 'instructions' | 'skills' | 'subagents' | 'rules' | 'hooks' | 'permissions' | 'plugins';
 
 const ALL_HOOK_EVENTS: HookEvent[] = [
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'UserPromptSubmit',
@@ -60,6 +61,8 @@ export function AgentConfig() {
   const [editEnv, setEditEnv] = useState<Record<string, string>>({});
   const [editModel, setEditModel] = useState('');
   const [editSubagents, setEditSubagents] = useState<SubagentConfig[]>([]);
+  const [editPlugins, setEditPlugins] = useState<PluginRef[]>([]);
+  const [editMarketplaces, setEditMarketplaces] = useState<PluginMarketplace[]>([]);
   const [isDirty, setIsDirty] = useState(false);
 
   const configs = data?.configs || [];
@@ -79,6 +82,8 @@ export function AgentConfig() {
       setEditEnv(JSON.parse(JSON.stringify(selected.env || {})));
       setEditModel(selected.model || '');
       setEditSubagents(JSON.parse(JSON.stringify(selected.subagents || [])));
+      setEditPlugins(JSON.parse(JSON.stringify(selected.plugins || [])));
+      setEditMarketplaces(JSON.parse(JSON.stringify(selected.marketplaces || [])));
       setIsDirty(false);
     }
   }, [selected?.id, selected?.updatedAt]);
@@ -110,6 +115,8 @@ export function AgentConfig() {
         env: editEnv,
         model: editModel,
         subagents: editSubagents,
+        plugins: editPlugins,
+        marketplaces: editMarketplaces,
       });
       setIsDirty(false);
     } catch (err) {
@@ -144,6 +151,7 @@ export function AgentConfig() {
   const hookCount = Object.values(editHooks).reduce((sum, arr) => sum + (arr?.length || 0), 0);
   const permCount = (editPermissions.allow?.length || 0) + (editPermissions.deny?.length || 0);
   const envCount = Object.keys(editEnv).length;
+  const pluginCount = editPlugins.length;
 
   const tabs: { id: TabId; label: string; icon: typeof Settings2; count?: number }[] = [
     { id: 'general', label: 'General', icon: Settings2, count: envCount || undefined },
@@ -151,6 +159,7 @@ export function AgentConfig() {
     { id: 'instructions', label: 'Instructions', icon: FileText },
     { id: 'skills', label: 'Skills', icon: Sparkles, count: skillCount || undefined },
     { id: 'subagents', label: 'Subagents', icon: Users, count: subagentCount || undefined },
+    { id: 'plugins', label: 'Plugins', icon: Puzzle, count: pluginCount || undefined },
     { id: 'rules', label: 'Rules', icon: BookOpen, count: ruleCount || undefined },
     { id: 'hooks', label: 'Hooks', icon: Zap, count: hookCount || undefined },
     { id: 'permissions', label: 'Permissions', icon: Shield, count: permCount || undefined },
@@ -353,6 +362,14 @@ export function AgentConfig() {
                   setHooks={v => { setEditHooks(v); markDirty(); }}
                 />
               )}
+              {activeTab === 'plugins' && (
+                <PluginsTab
+                  plugins={editPlugins}
+                  setPlugins={v => { setEditPlugins(v); markDirty(); }}
+                  marketplaces={editMarketplaces}
+                  setMarketplaces={v => { setEditMarketplaces(v); markDirty(); }}
+                />
+              )}
               {activeTab === 'permissions' && (
                 <PermissionsTab
                   permissions={editPermissions}
@@ -363,6 +380,252 @@ export function AgentConfig() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Plugins Tab ────────────────────────────────────────────────
+
+function PluginsTab({ plugins, setPlugins, marketplaces, setMarketplaces }: {
+  plugins: PluginRef[]; setPlugins: (v: PluginRef[]) => void;
+  marketplaces: PluginMarketplace[]; setMarketplaces: (v: PluginMarketplace[]) => void;
+}) {
+  const [showBrowser, setShowBrowser] = useState(false);
+  const [marketplaceData, setMarketplaceData] = useState<MarketplaceData[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<MarketplacePlugin[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  const loadMarketplaces = async () => {
+    setLoading(true);
+    try {
+      const res = await getPluginMarketplaces();
+      setMarketplaceData(res.marketplaces);
+    } catch (err) {
+      console.error('Failed to load marketplaces:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = async (q: string) => {
+    setSearchQuery(q);
+    if (!q.trim()) {
+      setSearchResults(null);
+      return;
+    }
+    try {
+      const res = await searchPlugins(q);
+      setSearchResults(res.plugins);
+    } catch (err) {
+      console.error('Search failed:', err);
+    }
+  };
+
+  const isInstalled = (name: string, marketplace: string) => {
+    return plugins.some(p => p.name === name && p.marketplace === marketplace);
+  };
+
+  const togglePlugin = (name: string, mSlug: string, plugin: MarketplacePlugin) => {
+    const idx = plugins.findIndex(p => p.name === name && p.marketplace === mSlug);
+    if (idx >= 0) {
+      const updated = [...plugins];
+      updated.splice(idx, 1);
+      setPlugins(updated);
+    } else {
+      setPlugins([...plugins, { name, marketplace: mSlug, enabled: true }]);
+      // Auto-add marketplace if not already present
+      if (plugin.marketplaceOwner && plugin.marketplaceRepo) {
+        const hasMarketplace = marketplaces.some(m => m.owner === plugin.marketplaceOwner && m.repo === plugin.marketplaceRepo);
+        if (!hasMarketplace) {
+          setMarketplaces([...marketplaces, { type: 'github', owner: plugin.marketplaceOwner, repo: plugin.marketplaceRepo }]);
+        }
+      }
+    }
+  };
+
+  const toggleEnabled = (index: number) => {
+    const updated = [...plugins];
+    updated[index] = { ...updated[index], enabled: !updated[index].enabled };
+    setPlugins(updated);
+  };
+
+  const removePlugin = (index: number) => {
+    const updated = [...plugins];
+    updated.splice(index, 1);
+    setPlugins(updated);
+  };
+
+  // Get all unique categories from marketplace data
+  const allPlugins = marketplaceData.flatMap(m =>
+    m.plugins.map(p => ({ ...p, marketplace: m.slug, marketplaceOwner: '', marketplaceRepo: '' }))
+  );
+  const categories = [...new Set(allPlugins.map(p => p.category).filter(Boolean))] as string[];
+
+  const displayPlugins = searchResults !== null
+    ? searchResults
+    : selectedCategory
+      ? allPlugins.filter(p => p.category === selectedCategory)
+      : allPlugins;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-[10px] text-[hsl(var(--text-muted))]">
+        Browse and install plugins from Claude Code marketplaces. Plugins add skills, agents, hooks, and MCP servers.
+      </p>
+
+      {/* Installed plugins */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className={labelClass}>Installed Plugins</label>
+          <button
+            onClick={() => { setShowBrowser(!showBrowser); if (!showBrowser && marketplaceData.length === 0) loadMarketplaces(); }}
+            className={addBtnClass}
+          >
+            <Search className="h-3 w-3" /> {showBrowser ? 'Hide Browser' : 'Browse Marketplace'}
+          </button>
+        </div>
+        {plugins.length === 0 ? (
+          <div className={emptyClass}>No plugins installed. Browse the marketplace to add plugins.</div>
+        ) : (
+          <div className="space-y-1">
+            {plugins.map((plugin, i) => (
+              <div key={`${plugin.name}@${plugin.marketplace}`} className={`${cardClass} flex items-center justify-between py-2`}>
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <button
+                    onClick={() => toggleEnabled(i)}
+                    className={`w-8 h-4 rounded-full transition-colors relative ${plugin.enabled ? 'bg-[hsl(var(--cyan))]' : 'bg-[hsl(var(--border))]'}`}
+                  >
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${plugin.enabled ? 'left-4' : 'left-0.5'}`} />
+                  </button>
+                  <span className="text-xs font-medium text-[hsl(var(--text-primary))] truncate">{plugin.name}</span>
+                  <span className="text-[10px] text-[hsl(var(--text-muted))]">@{plugin.marketplace}</span>
+                </div>
+                <button onClick={() => removePlugin(i)} className={removeBtnClass}><X className="h-3 w-3" /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Marketplace browser */}
+      {showBrowser && (
+        <div className="border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+          <div className="p-3 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
+            <div className="flex items-center gap-2">
+              <Search className="h-3.5 w-3.5 text-[hsl(var(--text-muted))]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => handleSearch(e.target.value)}
+                placeholder="Search plugins across all marketplaces..."
+                className={`flex-1 ${inputClass} border-0 bg-transparent focus:ring-0`}
+              />
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="p-6 flex items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--text-muted))]" />
+            </div>
+          ) : (
+            <div className="flex">
+              {/* Category sidebar */}
+              {!searchResults && categories.length > 0 && (
+                <div className="w-36 border-r border-[hsl(var(--border))] p-2 space-y-0.5 max-h-96 overflow-y-auto">
+                  <button
+                    onClick={() => setSelectedCategory(null)}
+                    className={`w-full text-left px-2 py-1 text-[10px] transition-colors ${!selectedCategory ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]' : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'}`}
+                  >
+                    All ({allPlugins.length})
+                  </button>
+                  {categories.sort().map(cat => {
+                    const count = allPlugins.filter(p => p.category === cat).length;
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`w-full text-left px-2 py-1 text-[10px] transition-colors ${selectedCategory === cat ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]' : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'}`}
+                      >
+                        {cat} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Plugin list */}
+              <div className="flex-1 max-h-96 overflow-y-auto">
+                {displayPlugins.length === 0 ? (
+                  <div className="p-4 text-xs text-[hsl(var(--text-muted))] text-center">
+                    {searchQuery ? 'No plugins found.' : 'No plugins available.'}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-[hsl(var(--border))]">
+                    {displayPlugins.map(plugin => {
+                      const mSlug = plugin.marketplace || '';
+                      const installed = isInstalled(plugin.name, mSlug);
+                      return (
+                        <div key={`${plugin.name}@${mSlug}`} className="p-2.5 hover:bg-[hsl(var(--bg-elevated))] transition-colors">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-medium text-[hsl(var(--text-primary))]">{plugin.name}</span>
+                                {plugin.version && <span className="text-[9px] text-[hsl(var(--text-muted))]">v{plugin.version}</span>}
+                                {plugin.category && (
+                                  <span className="text-[9px] px-1.5 py-0.5 bg-[hsl(var(--bg-elevated))] text-[hsl(var(--text-muted))] border border-[hsl(var(--border))]">
+                                    {plugin.category}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-[hsl(var(--text-secondary))] mt-0.5 line-clamp-2">{plugin.description}</p>
+                              {plugin.tags && plugin.tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {plugin.tags.slice(0, 4).map(tag => (
+                                    <span key={tag} className="text-[8px] px-1 py-0.5 bg-[hsl(var(--bg-surface))] text-[hsl(var(--text-muted))]">{tag}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {plugin.homepage && (
+                                <a href={plugin.homepage} target="_blank" rel="noreferrer" className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]">
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                              <button
+                                onClick={() => togglePlugin(plugin.name, mSlug, plugin)}
+                                className={`px-2 py-1 text-[10px] font-medium transition-colors ${
+                                  installed
+                                    ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] border border-[hsl(var(--cyan)/0.3)]'
+                                    : 'bg-[hsl(var(--bg-elevated))] text-[hsl(var(--text-secondary))] border border-[hsl(var(--border))] hover:border-[hsl(var(--cyan-dim))] hover:text-[hsl(var(--cyan))]'
+                                }`}
+                              >
+                                {installed ? <><Check className="h-3 w-3 inline mr-1" />Added</> : 'Add'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Marketplace sources */}
+          <div className="p-2 border-t border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
+            <div className="flex items-center gap-2 text-[9px] text-[hsl(var(--text-muted))]">
+              <span>Sources:</span>
+              {marketplaceData.map(m => (
+                <span key={m.slug} className="px-1.5 py-0.5 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">{m.name || m.slug}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { AgentConfigPreset, MCPServerConfig, SkillConfig, RuleConfig, HookMatcher, HookEvent, SubagentConfig } from '../types/agent-config.js';
+import type { AgentConfigPreset, MCPServerConfig, SkillConfig, RuleConfig, HookMatcher, HookEvent, SubagentConfig, PluginRef, PluginMarketplace } from '../types/agent-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
@@ -63,6 +63,8 @@ export async function createAgentConfig(input: {
   env?: Record<string, string>;
   model?: string;
   subagents?: SubagentConfig[];
+  plugins?: PluginRef[];
+  marketplaces?: PluginMarketplace[];
 }): Promise<AgentConfigPreset> {
   const data = await loadConfigs();
   const now = new Date().toISOString();
@@ -80,6 +82,8 @@ export async function createAgentConfig(input: {
     env: input.env || {},
     model: input.model || '',
     subagents: input.subagents || [],
+    plugins: input.plugins || [],
+    marketplaces: input.marketplaces || [],
     createdAt: now,
     updatedAt: now,
   };
@@ -101,6 +105,8 @@ export async function updateAgentConfig(id: string, input: {
   env?: Record<string, string>;
   model?: string;
   subagents?: SubagentConfig[];
+  plugins?: PluginRef[];
+  marketplaces?: PluginMarketplace[];
 }): Promise<AgentConfigPreset | null> {
   const data = await loadConfigs();
   const index = data.configs.findIndex(c => c.id === id);
@@ -123,6 +129,8 @@ export async function updateAgentConfig(id: string, input: {
     ...(input.env !== undefined && { env: input.env }),
     ...(input.model !== undefined && { model: input.model }),
     ...(input.subagents !== undefined && { subagents: input.subagents }),
+    ...(input.plugins !== undefined && { plugins: input.plugins }),
+    ...(input.marketplaces !== undefined && { marketplaces: input.marketplaces }),
     updatedAt: new Date().toISOString(),
   };
 
