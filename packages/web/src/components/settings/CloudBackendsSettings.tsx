@@ -74,6 +74,8 @@ export function CloudBackendsSettings() {
   // Loading state
   const [isLoading, setIsLoading] = useState(true);
 
+  // Filter: show all or only enabled
+  const [showOnlyEnabled, setShowOnlyEnabled] = useState(false);
 
 
   // Load cloud config on mount
@@ -362,18 +364,29 @@ export function CloudBackendsSettings() {
 
   return (
     <>
-      <div>
-        <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Cloud Backends</h3>
-        <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
-          Configure cloud-based compute backends for running workspaces remotely
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Cloud Backends</h3>
+          <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
+            Configure cloud-based compute backends for running workspaces remotely
+          </p>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer shrink-0">
+          <input
+            type="checkbox"
+            checked={showOnlyEnabled}
+            onChange={(e) => setShowOnlyEnabled(e.target.checked)}
+            className="w-3.5 h-3.5 accent-[hsl(var(--amber))]"
+          />
+          <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled only</span>
+        </label>
       </div>
 
       {/* All backend cards in a horizontal wrapping grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 
         {/* Daytona */}
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        {(!showOnlyEnabled || daytonaEnabled) && <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
               <img src="/backends/daytona.ico" alt="Daytona" className="h-5 w-5" />
@@ -386,7 +399,7 @@ export function CloudBackendsSettings() {
                 )}
               </div>
               <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">Standardized development environments powered by Daytona.io</p>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-4 mt-1">
                 <a href="https://www.daytona.io/docs/installation/installation/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--amber))] hover:underline">Sign up</a>
                 <a href="https://app.daytona.io" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--amber))] hover:underline">Login</a>
                 <a href="https://www.daytona.io" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
@@ -419,16 +432,16 @@ export function CloudBackendsSettings() {
             )}
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestDaytona} disabled={!daytonaApiKey || daytonnaSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
-              <button onClick={handleSaveDaytona} disabled={daytonnaSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--amber))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--amber)/0.9)] disabled:opacity-50">
+              <button onClick={handleSaveDaytona} disabled={daytonnaSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--amber))] text-white hover:bg-[hsl(var(--amber)/0.9)] disabled:opacity-50">
                 {daytonnaSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                 Save
               </button>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* AWS EC2 */}
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        {(!showOnlyEnabled || awsEnabled) && <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
               <img src="/backends/aws.ico" alt="AWS" className="h-5 w-5" />
@@ -441,7 +454,7 @@ export function CloudBackendsSettings() {
                 )}
               </div>
               <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">EC2 Spot instances with persistent EBS volumes.</p>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-4 mt-1">
                 <a href="https://aws.amazon.com/premiumsupport/knowledge-center/create-and-activate-aws-account/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--orange))] hover:underline">Sign up</a>
                 <a href="https://console.aws.amazon.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--orange))] hover:underline">Login</a>
                 <a href="https://aws.amazon.com/ec2/spot/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
@@ -480,16 +493,16 @@ export function CloudBackendsSettings() {
             )}
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestAws} disabled={(!awsAccessKeyId || !awsSecretAccessKey) || awsSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
-              <button onClick={handleSaveAws} disabled={awsSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--orange))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--orange)/0.9)] disabled:opacity-50">
+              <button onClick={handleSaveAws} disabled={awsSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--orange))] text-white hover:bg-[hsl(var(--orange)/0.9)] disabled:opacity-50">
                 {awsSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                 Save
               </button>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* Azure VM */}
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        {(!showOnlyEnabled || azureEnabled) && <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
               <img src="/backends/microsoft.ico" alt="Azure" className="h-5 w-5" />
@@ -502,7 +515,7 @@ export function CloudBackendsSettings() {
                 )}
               </div>
               <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">Azure Virtual Machines with managed disks and VNet isolation.</p>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-4 mt-1">
                 <a href="https://azure.microsoft.com/en-us/free/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--cyan))] hover:underline">Sign up</a>
                 <a href="https://portal.azure.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--cyan))] hover:underline">Login</a>
                 <a href="https://azure.microsoft.com/en-us/products/virtual-machines" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
@@ -551,16 +564,16 @@ export function CloudBackendsSettings() {
             )}
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestAzure} disabled={(!azureClientId || !azureClientSecret || !azureTenantId || !azureSubscriptionId) || azureSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
-              <button onClick={handleSaveAzure} disabled={azureSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--cyan))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50">
+              <button onClick={handleSaveAzure} disabled={azureSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--cyan))] text-white hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50">
                 {azureSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                 Save
               </button>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* Google Cloud */}
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        {(!showOnlyEnabled || gcpEnabled) && <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
               <img src="/backends/gcp.ico" alt="Google Cloud" className="h-5 w-5" />
@@ -573,7 +586,7 @@ export function CloudBackendsSettings() {
                 )}
               </div>
               <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">GCP Compute Engine instances with persistent disk storage.</p>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-4 mt-1">
                 <a href="https://cloud.google.com/free" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--green))] hover:underline">Sign up</a>
                 <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--green))] hover:underline">Login</a>
                 <a href="https://cloud.google.com/compute" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
@@ -610,16 +623,16 @@ export function CloudBackendsSettings() {
             )}
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestGcp} disabled={(!gcpProjectId || !gcpKeyFileJson) || gcpSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
-              <button onClick={handleSaveGcp} disabled={gcpSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50">
+              <button onClick={handleSaveGcp} disabled={gcpSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-white hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50">
                 {gcpSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                 Save
               </button>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* DigitalOcean */}
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        {(!showOnlyEnabled || doEnabled) && <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
               <img src="/backends/digital_ocean.ico" alt="DigitalOcean" className="h-5 w-5" />
@@ -632,7 +645,7 @@ export function CloudBackendsSettings() {
                 )}
               </div>
               <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">DigitalOcean Droplets with block storage volumes.</p>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-4 mt-1">
                 <a href="https://cloud.digitalocean.com/registrations/new" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--purple))] hover:underline">Sign up</a>
                 <a href="https://cloud.digitalocean.com/login" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--purple))] hover:underline">Login</a>
                 <a href="https://www.digitalocean.com/products/droplets" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
@@ -665,16 +678,16 @@ export function CloudBackendsSettings() {
             )}
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestDigitalOcean} disabled={!doApiToken || doSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
-              <button onClick={handleSaveDigitalOcean} disabled={doSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--purple))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--purple)/0.9)] disabled:opacity-50">
+              <button onClick={handleSaveDigitalOcean} disabled={doSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--purple))] text-white hover:bg-[hsl(var(--purple)/0.9)] disabled:opacity-50">
                 {doSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                 Save
               </button>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* Linode */}
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        {(!showOnlyEnabled || linodeEnabled) && <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
               <img src="/backends/linode.ico" alt="Linode" className="h-5 w-5" />
@@ -687,7 +700,7 @@ export function CloudBackendsSettings() {
                 )}
               </div>
               <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">Linode instances with dedicated CPU and SSD storage.</p>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-4 mt-1">
                 <a href="https://login.linode.com/signup" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--green))] hover:underline">Sign up</a>
                 <a href="https://cloud.linode.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--green))] hover:underline">Login</a>
                 <a href="https://www.linode.com/products/dedicated-cpu/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
@@ -720,13 +733,13 @@ export function CloudBackendsSettings() {
             )}
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestLinode} disabled={!linodeApiToken || linodeSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
-              <button onClick={handleSaveLinode} disabled={linodeSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50">
+              <button onClick={handleSaveLinode} disabled={linodeSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-white hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50">
                 {linodeSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                 Save
               </button>
             </div>
           </div>
-        </div>
+        </div>}
 
       </div>
     </>
