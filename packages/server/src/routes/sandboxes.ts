@@ -171,6 +171,9 @@ const CreateSandboxSchema = z.object({
     securityGroupIds: z.array(z.string()).optional(),
     subnetId: z.string().optional(),
   }).optional(),
+
+  // Agent config preset to inject after creation
+  agentConfigId: z.string().optional(),
 });
 
 /**
@@ -264,6 +267,45 @@ sandboxes.post('/', zValidator('json', CreateSandboxSchema), async (c) => {
 
   try {
     const sandbox = await service.create(body);
+
+    // If agentConfigId is provided, schedule injection after sandbox is running
+    if (body.agentConfigId) {
+      const configId = body.agentConfigId;
+      // Fire-and-forget: poll for running state and inject
+      (async () => {
+        try {
+          const { getAgentConfig } = await import('../services/agent-config.js');
+          const config = await getAgentConfig(configId);
+          if (!config) {
+            console.warn(`[SandboxRoutes] Agent config ${configId} not found for injection`);
+            return;
+          }
+
+          // Poll for sandbox to be running (max 120 seconds)
+          for (let i = 0; i < 60; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const current = await service.get(sandbox.id);
+            if (!current || current.status === 'error') break;
+            if (current.status === 'running') {
+              // Inject via internal API call
+              const apiBase = `http://localhost:${process.env.SERVER_PORT || '4001'}/api`;
+              const res = await fetch(`${apiBase}/agent-configs/${configId}/inject/${sandbox.id}`, {
+                method: 'POST',
+              });
+              if (res.ok) {
+                console.log(`[SandboxRoutes] Agent config ${configId} injected into sandbox ${sandbox.id}`);
+              } else {
+                console.warn(`[SandboxRoutes] Failed to inject agent config: ${await res.text()}`);
+              }
+              break;
+            }
+          }
+        } catch (err) {
+          console.error('[SandboxRoutes] Agent config injection error:', err);
+        }
+      })();
+    }
+
     return c.json(sandbox, 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create sandbox';

@@ -6,6 +6,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Loader2, Plus, Check, HardDrive, Box, Server, Cloud, Eye, EyeOff, RefreshCw, Settings } from 'lucide-react';
 import { useCreateSandbox, useSandboxBackends, useSandboxes } from '../../hooks/useSandboxes';
 import { useVolumes, useImages, useCreateVolume, useVmBaseImages } from '../../hooks/useContainers';
+import { useAgentConfigs } from '../../hooks/useAgentConfigs';
 import type { SandboxBackend, DaytonaSnapshot } from '../../api/client';
 import * as api from '../../api/client';
 
@@ -112,6 +113,10 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
   // AWS state
   const [awsSizeClass, setAwsSizeClass] = useState<'small' | 'medium' | 'large'>('small');
   const [awsPurchaseType, setAwsPurchaseType] = useState<'spot' | 'on-demand'>('spot');
+
+  // Agent config preset
+  const { data: agentConfigData } = useAgentConfigs();
+  const [agentConfigId, setAgentConfigId] = useState<string>('');
 
   // Calculate ports already in use
   const usedHostPorts = useMemo(() => {
@@ -234,6 +239,7 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
           sizeClass: awsSizeClass,
           purchaseType: awsPurchaseType,
         } : undefined,
+        agentConfigId: agentConfigId || undefined,
       });
       onClose();
     } catch (error) {
@@ -791,6 +797,30 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
                 {backend === 'docker' ? 'SSH port (22) is automatically mapped.' : 'SSH is available via the guest IP.'}
               </p>
             </div>
+
+            {/* Agent Config Preset */}
+            {agentConfigData && agentConfigData.configs.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
+                  Agent Config (optional)
+                </label>
+                <select
+                  value={agentConfigId}
+                  onChange={(e) => setAgentConfigId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--cyan-dim)/0.3)]"
+                >
+                  <option value="">None</option>
+                  {agentConfigData.configs.map((config) => (
+                    <option key={config.id} value={config.id}>
+                      {config.name}{config.description ? ` - ${config.description}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
+                  Injects MCP servers, CLAUDE.md, and permissions into the sandbox after it starts.
+                </p>
+              </div>
+            )}
 
             {/* Error message */}
             {createMutation.error && (

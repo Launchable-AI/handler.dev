@@ -928,6 +928,76 @@ export async function deleteNote(id: string): Promise<{ success: boolean }> {
   });
 }
 
+// ============ Agent Config Presets ============
+
+export interface MCPServerConfig {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+export interface AgentPermissions {
+  allow?: string[];
+  deny?: string[];
+}
+
+export interface AgentConfigPreset {
+  id: string;
+  name: string;
+  description?: string;
+  mcpServers: Record<string, MCPServerConfig>;
+  claudeMd: string;
+  permissions: AgentPermissions;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getAgentConfigs(): Promise<{ configs: AgentConfigPreset[] }> {
+  return fetchAPI('/agent-configs');
+}
+
+export async function getAgentConfig(id: string): Promise<AgentConfigPreset> {
+  return fetchAPI(`/agent-configs/${encodeURIComponent(id)}`);
+}
+
+export async function createAgentConfig(input: {
+  name: string;
+  description?: string;
+  mcpServers?: Record<string, MCPServerConfig>;
+  claudeMd?: string;
+  permissions?: AgentPermissions;
+}): Promise<AgentConfigPreset> {
+  return fetchAPI('/agent-configs', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateAgentConfig(id: string, input: {
+  name?: string;
+  description?: string;
+  mcpServers?: Record<string, MCPServerConfig>;
+  claudeMd?: string;
+  permissions?: AgentPermissions;
+}): Promise<AgentConfigPreset> {
+  return fetchAPI(`/agent-configs/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteAgentConfig(id: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/agent-configs/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function injectAgentConfig(configId: string, sandboxId: string): Promise<{ success: boolean; filesInjected: number }> {
+  return fetchAPI(`/agent-configs/${encodeURIComponent(configId)}/inject/${encodeURIComponent(sandboxId)}`, {
+    method: 'POST',
+  });
+}
+
 // ============ Virtual Machines ============
 
 export type VmStatus = 'creating' | 'booting' | 'running' | 'paused' | 'stopped' | 'error';
@@ -1773,6 +1843,8 @@ export interface CreateSandboxRequest {
     securityGroupIds?: string[];
     subnetId?: string;
   };
+
+  agentConfigId?: string;
 }
 
 /**

@@ -182,6 +182,7 @@ import unifiedVolumes from './routes/unified-volumes.js';
 import templateRoutes from './routes/templates.js';
 import daytonaRoutes from './routes/daytona.js';
 import awsRoutes from './routes/aws.js';
+import agentConfigRoutes from './routes/agent-config.js';
 
 const app = new Hono();
 
@@ -240,6 +241,7 @@ app.route('/api/unified-volumes', unifiedVolumes);
 app.route('/api/templates', templateRoutes);
 app.route('/api/daytona', daytonaRoutes);
 app.route('/api/backends/aws', awsRoutes);
+app.route('/api/agent-configs', agentConfigRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {

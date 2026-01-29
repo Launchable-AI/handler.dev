@@ -201,6 +201,8 @@ export interface CreateSandboxRequest {
   daytonaOptions?: DaytonaCreateOptions;
   /** AWS-specific options */
   awsOptions?: AwsCreateOptions;
+  /** Agent config preset to inject after sandbox is running */
+  agentConfigId?: string;
 }
 
 export interface DockerCreateOptions {

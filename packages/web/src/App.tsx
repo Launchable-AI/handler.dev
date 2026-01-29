@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image } from 'lucide-react';
+import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog } from 'lucide-react';
 import { Settings } from './components/Settings';
 import { MCPRegistry } from './components/MCPRegistry';
 import { Notes } from './components/Notes';
@@ -9,6 +9,7 @@ import { VMSnapshots } from './components/VMSnapshots';
 import { CommandCentre } from './components/CommandCentre';
 import { DockerfileEditor } from './components/DockerfileEditor';
 import { ImageManager } from './components/ImageManager';
+import { AgentConfig } from './components/AgentConfig';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
@@ -16,7 +17,7 @@ import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPa
 import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
 // All possible tabs - simplified to unified abstractions
-type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'settings';
+type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'settings';
 
 interface NavItem {
   id: Tab;
@@ -26,7 +27,7 @@ interface NavItem {
 }
 
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'settings'];
+const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'settings'];
 
 // Content area that adjusts for terminal panel
 function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; onCreateClick: () => void }) {
@@ -52,6 +53,7 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
       {activeTab === 'snapshots' && <VMSnapshots />}
       {activeTab === 'mcp' && <MCPRegistry />}
       {activeTab === 'notes' && <Notes />}
+      {activeTab === 'agent-config' && <AgentConfig />}
       {activeTab === 'settings' && <Settings />}
     </div>
   );
@@ -133,6 +135,7 @@ function App() {
     { id: 'images', label: 'Images', icon: Image, standalone: true },
     { id: 'mcp', label: 'MCP Servers', icon: Package, standalone: true },
     { id: 'notes', label: 'Notes', icon: StickyNote, standalone: true },
+    { id: 'agent-config', label: 'Agent Config', icon: Cog, standalone: true },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, standalone: true },
   ];
 
