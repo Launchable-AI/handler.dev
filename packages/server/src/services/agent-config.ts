@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { AgentConfigPreset, SkillConfig, RuleConfig, HookMatcher, HookEvent } from '../types/agent-config.js';
+import type { AgentConfigPreset, MCPServerConfig, SkillConfig, RuleConfig, HookMatcher, HookEvent, SubagentConfig } from '../types/agent-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
@@ -54,7 +54,7 @@ export async function getAgentConfig(id: string): Promise<AgentConfigPreset | nu
 export async function createAgentConfig(input: {
   name: string;
   description?: string;
-  mcpServers?: Record<string, { command: string; args: string[]; env?: Record<string, string> }>;
+  mcpServers?: Record<string, MCPServerConfig>;
   claudeMd?: string;
   permissions?: { allow?: string[]; deny?: string[] };
   skills?: SkillConfig[];
@@ -62,6 +62,7 @@ export async function createAgentConfig(input: {
   hooks?: Partial<Record<HookEvent, HookMatcher[]>>;
   env?: Record<string, string>;
   model?: string;
+  subagents?: SubagentConfig[];
 }): Promise<AgentConfigPreset> {
   const data = await loadConfigs();
   const now = new Date().toISOString();
@@ -78,6 +79,7 @@ export async function createAgentConfig(input: {
     hooks: input.hooks || {},
     env: input.env || {},
     model: input.model || '',
+    subagents: input.subagents || [],
     createdAt: now,
     updatedAt: now,
   };
@@ -90,7 +92,7 @@ export async function createAgentConfig(input: {
 export async function updateAgentConfig(id: string, input: {
   name?: string;
   description?: string;
-  mcpServers?: Record<string, { command: string; args: string[]; env?: Record<string, string> }>;
+  mcpServers?: Record<string, MCPServerConfig>;
   claudeMd?: string;
   permissions?: { allow?: string[]; deny?: string[] };
   skills?: SkillConfig[];
@@ -98,6 +100,7 @@ export async function updateAgentConfig(id: string, input: {
   hooks?: Partial<Record<HookEvent, HookMatcher[]>>;
   env?: Record<string, string>;
   model?: string;
+  subagents?: SubagentConfig[];
 }): Promise<AgentConfigPreset | null> {
   const data = await loadConfigs();
   const index = data.configs.findIndex(c => c.id === id);
@@ -119,6 +122,7 @@ export async function updateAgentConfig(id: string, input: {
     ...(input.hooks !== undefined && { hooks: input.hooks }),
     ...(input.env !== undefined && { env: input.env }),
     ...(input.model !== undefined && { model: input.model }),
+    ...(input.subagents !== undefined && { subagents: input.subagents }),
     updatedAt: new Date().toISOString(),
   };
 

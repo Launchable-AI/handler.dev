@@ -7,23 +7,51 @@ import { getCloudHypervisorService, initializeCloudHypervisorService } from '../
 import { getFirecrackerService, initializeFirecrackerService } from '../services/firecracker.js';
 import { getDaytonaService, initializeDaytonaService } from '../services/daytona.js';
 import { getAwsService, initializeAwsService } from '../services/aws.js';
+import type { SkillFrontmatter, SubagentConfig } from '../types/agent-config.js';
 
 const agentConfig = new Hono();
 
-const MCPServerSchema = z.object({
+const MCPServerStdioSchema = z.object({
+  type: z.literal('stdio').optional(),
   command: z.string().min(1),
   args: z.array(z.string()),
   env: z.record(z.string()).optional(),
 });
+
+const MCPServerHttpSchema = z.object({
+  type: z.literal('http'),
+  url: z.string().min(1),
+  headers: z.record(z.string()).optional(),
+});
+
+const MCPServerSseSchema = z.object({
+  type: z.literal('sse'),
+  url: z.string().min(1),
+  headers: z.record(z.string()).optional(),
+});
+
+const MCPServerSchema = z.union([MCPServerStdioSchema, MCPServerHttpSchema, MCPServerSseSchema]);
 
 const PermissionsSchema = z.object({
   allow: z.array(z.string()).optional(),
   deny: z.array(z.string()).optional(),
 });
 
+const SkillFrontmatterSchema = z.object({
+  description: z.string().optional(),
+  'disable-model-invocation': z.boolean().optional(),
+  'user-invocable': z.boolean().optional(),
+  'allowed-tools': z.string().optional(),
+  model: z.string().optional(),
+  context: z.string().optional(),
+  agent: z.string().optional(),
+  'argument-hint': z.string().optional(),
+}).optional();
+
 const SkillSchema = z.object({
   name: z.string().min(1),
   content: z.string(),
+  frontmatter: SkillFrontmatterSchema,
 });
 
 const RuleSchema = z.object({
@@ -45,9 +73,21 @@ const HookMatcherSchema = z.object({
 const HookEventEnum = z.enum([
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'UserPromptSubmit',
   'Stop', 'Notification', 'SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop',
+  'PermissionRequest', 'PreCompact', 'Setup',
 ]);
 
 const HooksSchema = z.record(HookEventEnum, z.array(HookMatcherSchema));
+
+const SubagentSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  tools: z.array(z.string()).optional(),
+  disallowedTools: z.array(z.string()).optional(),
+  model: z.string().optional(),
+  permissionMode: z.enum(['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan']).optional(),
+  skills: z.array(z.string()).optional(),
+  systemPrompt: z.string(),
+});
 
 const CreateSchema = z.object({
   name: z.string().min(1),
@@ -60,6 +100,7 @@ const CreateSchema = z.object({
   hooks: HooksSchema.optional(),
   env: z.record(z.string()).optional(),
   model: z.string().optional(),
+  subagents: z.array(SubagentSchema).optional(),
 });
 
 const UpdateSchema = z.object({
@@ -73,7 +114,34 @@ const UpdateSchema = z.object({
   hooks: HooksSchema.optional(),
   env: z.record(z.string()).optional(),
   model: z.string().optional(),
+  subagents: z.array(SubagentSchema).optional(),
 });
+
+// Serialize frontmatter fields to YAML string
+function serializeFrontmatter(fm: Record<string, unknown>): string {
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(fm)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'boolean') {
+      lines.push(`${key}: ${value}`);
+    } else if (typeof value === 'string') {
+      // Quote strings that contain special YAML characters
+      if (value.includes(':') || value.includes('#') || value.includes('"') || value.includes("'")) {
+        lines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
+      } else {
+        lines.push(`${key}: ${value}`);
+      }
+    } else if (Array.isArray(value)) {
+      lines.push(`${key}:`);
+      for (const item of value) {
+        lines.push(`  - ${item}`);
+      }
+    } else {
+      lines.push(`${key}: ${value}`);
+    }
+  }
+  return lines.join('\n');
+}
 
 // List all presets
 agentConfig.get('/', async (c) => {
@@ -210,11 +278,18 @@ agentConfig.post('/:id/inject/:sandboxId', async (c) => {
     });
   }
 
-  // 4. ~/.claude/skills/<name>/SKILL.md
+  // 4. ~/.claude/skills/<name>/SKILL.md (with YAML frontmatter if present)
   if (config.skills && config.skills.length > 0) {
     for (const skill of config.skills) {
+      let fileContent = '';
+      if (skill.frontmatter && Object.keys(skill.frontmatter).length > 0) {
+        const yaml = serializeFrontmatter(skill.frontmatter as Record<string, unknown>);
+        fileContent = `---\n${yaml}\n---\n\n${skill.content}`;
+      } else {
+        fileContent = skill.content;
+      }
       filesToInject.push({
-        content: skill.content,
+        content: fileContent,
         destPath: `/home/dev/.claude/skills/${skill.name}`,
         filename: 'SKILL.md',
       });
@@ -228,6 +303,29 @@ agentConfig.post('/:id/inject/:sandboxId', async (c) => {
         content: rule.content,
         destPath: '/home/dev/.claude/rules',
         filename: rule.filename,
+      });
+    }
+  }
+
+  // 6. ~/.claude/agents/<name>.md (subagents with YAML frontmatter)
+  if (config.subagents && config.subagents.length > 0) {
+    for (const agent of config.subagents) {
+      const fmFields: Record<string, unknown> = {
+        description: agent.description,
+      };
+      if (agent.tools?.length) fmFields.tools = agent.tools;
+      if (agent.disallowedTools?.length) fmFields.disallowedTools = agent.disallowedTools;
+      if (agent.model) fmFields.model = agent.model;
+      if (agent.permissionMode) fmFields.permissionMode = agent.permissionMode;
+      if (agent.skills?.length) fmFields.skills = agent.skills;
+
+      const yaml = serializeFrontmatter(fmFields);
+      const fileContent = `---\n${yaml}\n---\n\n${agent.systemPrompt}`;
+
+      filesToInject.push({
+        content: fileContent,
+        destPath: '/home/dev/.claude/agents',
+        filename: `${agent.name}.md`,
       });
     }
   }
