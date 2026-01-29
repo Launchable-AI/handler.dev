@@ -209,6 +209,12 @@ export class DockerAdapter implements SandboxAdapter {
       throw new Error('Building from dockerfile not yet supported via sandbox API');
     }
 
+    // Auto-pull the image if it doesn't exist locally
+    if (!(await docker.imageExists(request.image))) {
+      console.log(`[DockerAdapter] Image '${request.image}' not found locally, pulling...`);
+      await docker.pullImage(request.image);
+    }
+
     // Find an available SSH port
     const sshPort = await findAvailableSshPort();
 
