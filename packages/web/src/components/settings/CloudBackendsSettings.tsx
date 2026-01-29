@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, Cloud, ExternalLink, Eye, EyeOff, CheckCircle, XCircle, ChevronDown } from 'lucide-react';
+import { Loader2, Cloud, ExternalLink, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import * as api from '../../api/client';
 
 export function CloudBackendsSettings() {
@@ -74,8 +74,7 @@ export function CloudBackendsSettings() {
   // Loading state
   const [isLoading, setIsLoading] = useState(true);
 
-  // Which backend's config panel is expanded (null = none)
-  const [expandedBackend, setExpandedBackend] = useState<string | null>(null);
+
 
   // Load cloud config on mount
   useEffect(() => {
@@ -361,69 +360,6 @@ export function CloudBackendsSettings() {
     );
   }
 
-  const backends = [
-    {
-      id: 'daytona',
-      name: 'Daytona',
-      color: 'amber',
-      configured: daytonaConfigured,
-      description: 'Standardized dev environments',
-      setupUrl: 'https://www.daytona.io/docs/installation/installation/',
-      loginUrl: 'https://app.daytona.io',
-      learnMoreUrl: 'https://www.daytona.io',
-    },
-    {
-      id: 'aws',
-      name: 'AWS EC2',
-      color: 'orange',
-      configured: awsConfigured,
-      description: 'EC2 Spot instances with EBS',
-      setupUrl: 'https://aws.amazon.com/premiumsupport/knowledge-center/create-and-activate-aws-account/',
-      loginUrl: 'https://console.aws.amazon.com',
-      learnMoreUrl: 'https://aws.amazon.com/ec2/spot/',
-    },
-    {
-      id: 'azure',
-      name: 'Azure VM',
-      color: 'cyan',
-      configured: azureConfigured,
-      description: 'VMs with managed disks',
-      setupUrl: 'https://azure.microsoft.com/en-us/free/',
-      loginUrl: 'https://portal.azure.com',
-      learnMoreUrl: 'https://azure.microsoft.com/en-us/products/virtual-machines',
-    },
-    {
-      id: 'gcp',
-      name: 'Google Cloud',
-      color: 'green',
-      configured: gcpConfigured,
-      description: 'Compute Engine instances',
-      setupUrl: 'https://cloud.google.com/free',
-      loginUrl: 'https://console.cloud.google.com',
-      learnMoreUrl: 'https://cloud.google.com/compute',
-    },
-    {
-      id: 'digitalocean',
-      name: 'DigitalOcean',
-      color: 'purple',
-      configured: doConfigured,
-      description: 'Droplets with block storage',
-      setupUrl: 'https://cloud.digitalocean.com/registrations/new',
-      loginUrl: 'https://cloud.digitalocean.com/login',
-      learnMoreUrl: 'https://www.digitalocean.com/products/droplets',
-    },
-    {
-      id: 'linode',
-      name: 'Linode',
-      color: 'green',
-      configured: linodeConfigured,
-      description: 'Dedicated CPU with SSD',
-      setupUrl: 'https://login.linode.com/signup',
-      loginUrl: 'https://cloud.linode.com',
-      learnMoreUrl: 'https://www.linode.com/products/dedicated-cpu/',
-    },
-  ];
-
   return (
     <>
       <div>
@@ -433,105 +369,43 @@ export function CloudBackendsSettings() {
         </p>
       </div>
 
-      {/* Backend summary cards - horizontal wrap layout */}
-      <div className="flex flex-wrap gap-3">
-        {backends.map((backend) => (
-          <button
-            key={backend.id}
-            onClick={() => setExpandedBackend(expandedBackend === backend.id ? null : backend.id)}
-            className={`flex items-center gap-2.5 p-3 bg-[hsl(var(--bg-surface))] border text-left transition-colors min-w-[180px] flex-1 ${
-              expandedBackend === backend.id
-                ? `border-[hsl(var(--${backend.color}))] bg-[hsl(var(--${backend.color})/0.05)]`
-                : 'border-[hsl(var(--border))] hover:border-[hsl(var(--text-muted))]'
-            }`}
-          >
-            <div className="p-1.5 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-              <Cloud className={`h-4 w-4 text-[hsl(var(--${backend.color}))]`} />
+      {/* All backend cards in a horizontal wrapping grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+        {/* Daytona */}
+        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <Cloud className="h-5 w-5 text-[hsl(var(--amber))]" />
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-[hsl(var(--text-primary))] truncate">{backend.name}</span>
-                {backend.configured && (
-                  <span className="text-[9px] px-1 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)] shrink-0">
-                    OK
-                  </span>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Daytona</h4>
+                {daytonaConfigured && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">Configured</span>
                 )}
               </div>
-              <p className="text-[10px] text-[hsl(var(--text-muted))] truncate">{backend.description}</p>
+              <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">Standardized development environments powered by Daytona.io</p>
               <div className="flex items-center gap-2 mt-1">
-                <a
-                  href={backend.setupUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className={`text-[9px] text-[hsl(var(--${backend.color}))] hover:underline`}
-                >
-                  Sign up
-                </a>
-                <a
-                  href={backend.loginUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className={`text-[9px] text-[hsl(var(--${backend.color}))] hover:underline`}
-                >
-                  Login
-                </a>
-                <a
-                  href={backend.learnMoreUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-0.5 text-[9px] text-[hsl(var(--text-muted))] hover:underline"
-                >
-                  Docs <ExternalLink className="h-2.5 w-2.5" />
-                </a>
+                <a href="https://www.daytona.io/docs/installation/installation/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--amber))] hover:underline">Sign up</a>
+                <a href="https://app.daytona.io" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--amber))] hover:underline">Login</a>
+                <a href="https://www.daytona.io" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
               </div>
             </div>
-            <ChevronDown className={`h-3.5 w-3.5 text-[hsl(var(--text-muted))] shrink-0 transition-transform ${
-              expandedBackend === backend.id ? 'rotate-180' : ''
-            }`} />
-          </button>
-        ))}
-      </div>
-
-      {/* Expanded config panel for selected backend */}
-      {expandedBackend === 'daytona' && (
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--amber)/0.3)] space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Daytona Configuration</h4>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={daytonaEnabled}
-                onChange={(e) => setDaytonaEnabled(e.target.checked)}
-                disabled={!daytonaConfigured}
-                className="w-4 h-4 accent-[hsl(var(--amber))]"
-              />
+              <input type="checkbox" checked={daytonaEnabled} onChange={(e) => setDaytonaEnabled(e.target.checked)} disabled={!daytonaConfigured} className="w-4 h-4 accent-[hsl(var(--amber))]" />
               <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
             </label>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
             <div>
               <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">API URL</label>
-              <input
-                type="text"
-                value={daytonaApiUrl}
-                onChange={(e) => setDaytonaApiUrl(e.target.value)}
-                placeholder="https://app.daytona.io/api"
-                className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
-              />
+              <input type="text" value={daytonaApiUrl} onChange={(e) => setDaytonaApiUrl(e.target.value)} placeholder="https://app.daytona.io/api" className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]" />
             </div>
             <div>
               <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">API Key</label>
               <div className="relative">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={daytonaApiKey}
-                  onChange={(e) => setDaytonaApiKey(e.target.value)}
-                  placeholder={daytonaConfigured ? '••••••••••••••••' : 'Enter your Daytona API key'}
-                  className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
-                />
+                <input type={showApiKey ? 'text' : 'password'} value={daytonaApiKey} onChange={(e) => setDaytonaApiKey(e.target.value)} placeholder={daytonaConfigured ? '••••••••••••••••' : 'Enter your Daytona API key'} className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]" />
                 <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]">
                   {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -546,23 +420,39 @@ export function CloudBackendsSettings() {
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestDaytona} disabled={!daytonaApiKey || daytonnaSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
               <button onClick={handleSaveDaytona} disabled={daytonnaSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--amber))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--amber)/0.9)] disabled:opacity-50">
-                {daytonnaSaving && <Loader2 className="h-3 w-3 animate-spin" />}Save
+                {daytonnaSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
               </button>
             </div>
           </div>
         </div>
-      )}
 
-      {expandedBackend === 'aws' && (
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--orange)/0.3)] space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">AWS EC2 Configuration</h4>
+        {/* AWS EC2 */}
+        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <Cloud className="h-5 w-5 text-[hsl(var(--orange))]" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">AWS EC2</h4>
+                {awsConfigured && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">Configured</span>
+                )}
+              </div>
+              <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">EC2 Spot instances with persistent EBS volumes.</p>
+              <div className="flex items-center gap-2 mt-1">
+                <a href="https://aws.amazon.com/premiumsupport/knowledge-center/create-and-activate-aws-account/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--orange))] hover:underline">Sign up</a>
+                <a href="https://console.aws.amazon.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--orange))] hover:underline">Login</a>
+                <a href="https://aws.amazon.com/ec2/spot/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
+              </div>
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={awsEnabled} onChange={(e) => setAwsEnabled(e.target.checked)} disabled={!awsConfigured} className="w-4 h-4 accent-[hsl(var(--orange))]" />
               <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
             </label>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
             <div>
               <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">Region</label>
               <select value={awsRegion} onChange={(e) => setAwsRegion(e.target.value)} className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]">
@@ -591,23 +481,39 @@ export function CloudBackendsSettings() {
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestAws} disabled={(!awsAccessKeyId || !awsSecretAccessKey) || awsSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
               <button onClick={handleSaveAws} disabled={awsSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--orange))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--orange)/0.9)] disabled:opacity-50">
-                {awsSaving && <Loader2 className="h-3 w-3 animate-spin" />}Save
+                {awsSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
               </button>
             </div>
           </div>
         </div>
-      )}
 
-      {expandedBackend === 'azure' && (
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--cyan)/0.3)] space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Azure VM Configuration</h4>
+        {/* Azure VM */}
+        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <Cloud className="h-5 w-5 text-[hsl(var(--cyan))]" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Azure VM</h4>
+                {azureConfigured && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">Configured</span>
+                )}
+              </div>
+              <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">Azure Virtual Machines with managed disks and VNet isolation.</p>
+              <div className="flex items-center gap-2 mt-1">
+                <a href="https://azure.microsoft.com/en-us/free/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--cyan))] hover:underline">Sign up</a>
+                <a href="https://portal.azure.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--cyan))] hover:underline">Login</a>
+                <a href="https://azure.microsoft.com/en-us/products/virtual-machines" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
+              </div>
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={azureEnabled} onChange={(e) => setAzureEnabled(e.target.checked)} disabled={!azureConfigured} className="w-4 h-4 accent-[hsl(var(--cyan))]" />
               <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
             </label>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
             <div>
               <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">Tenant ID</label>
               <input type="text" value={azureTenantId} onChange={(e) => setAzureTenantId(e.target.value)} placeholder={azureConfigured ? '••••••••••••••••' : 'Enter your Azure Tenant ID'} className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]" />
@@ -646,23 +552,39 @@ export function CloudBackendsSettings() {
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestAzure} disabled={(!azureClientId || !azureClientSecret || !azureTenantId || !azureSubscriptionId) || azureSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
               <button onClick={handleSaveAzure} disabled={azureSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--cyan))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50">
-                {azureSaving && <Loader2 className="h-3 w-3 animate-spin" />}Save
+                {azureSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
               </button>
             </div>
           </div>
         </div>
-      )}
 
-      {expandedBackend === 'gcp' && (
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--green)/0.3)] space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Google Cloud Configuration</h4>
+        {/* Google Cloud */}
+        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <Cloud className="h-5 w-5 text-[hsl(var(--green))]" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Google Cloud</h4>
+                {gcpConfigured && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">Configured</span>
+                )}
+              </div>
+              <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">GCP Compute Engine instances with persistent disk storage.</p>
+              <div className="flex items-center gap-2 mt-1">
+                <a href="https://cloud.google.com/free" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--green))] hover:underline">Sign up</a>
+                <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--green))] hover:underline">Login</a>
+                <a href="https://cloud.google.com/compute" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
+              </div>
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={gcpEnabled} onChange={(e) => setGcpEnabled(e.target.checked)} disabled={!gcpConfigured} className="w-4 h-4 accent-[hsl(var(--green))]" />
               <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
             </label>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
             <div>
               <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">Project ID</label>
               <input type="text" value={gcpProjectId} onChange={(e) => setGcpProjectId(e.target.value)} placeholder="my-gcp-project" className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]" />
@@ -674,14 +596,7 @@ export function CloudBackendsSettings() {
             <div>
               <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">Service Account Key (JSON)</label>
               <div className="relative">
-                <textarea
-                  value={gcpKeyFileJson}
-                  onChange={(e) => setGcpKeyFileJson(e.target.value)}
-                  placeholder={gcpConfigured ? '••••••••••••••••' : 'Paste your service account JSON key content'}
-                  rows={4}
-                  className={`w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] font-mono resize-y ${!showGcpKeyFile && gcpKeyFileJson ? 'text-transparent' : ''}`}
-                  style={!showGcpKeyFile && gcpKeyFileJson ? { caretColor: 'hsl(var(--text-primary))' } : undefined}
-                />
+                <textarea value={gcpKeyFileJson} onChange={(e) => setGcpKeyFileJson(e.target.value)} placeholder={gcpConfigured ? '••••••••••••••••' : 'Paste your service account JSON key content'} rows={4} className={`w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] font-mono resize-y ${!showGcpKeyFile && gcpKeyFileJson ? 'text-transparent' : ''}`} style={!showGcpKeyFile && gcpKeyFileJson ? { caretColor: 'hsl(var(--text-primary))' } : undefined} />
                 <button type="button" onClick={() => setShowGcpKeyFile(!showGcpKeyFile)} className="absolute right-2 top-2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]">
                   {showGcpKeyFile ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -696,23 +611,39 @@ export function CloudBackendsSettings() {
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestGcp} disabled={(!gcpProjectId || !gcpKeyFileJson) || gcpSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
               <button onClick={handleSaveGcp} disabled={gcpSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50">
-                {gcpSaving && <Loader2 className="h-3 w-3 animate-spin" />}Save
+                {gcpSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
               </button>
             </div>
           </div>
         </div>
-      )}
 
-      {expandedBackend === 'digitalocean' && (
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--purple)/0.3)] space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">DigitalOcean Configuration</h4>
+        {/* DigitalOcean */}
+        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <Cloud className="h-5 w-5 text-[hsl(var(--purple))]" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">DigitalOcean</h4>
+                {doConfigured && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">Configured</span>
+                )}
+              </div>
+              <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">DigitalOcean Droplets with block storage volumes.</p>
+              <div className="flex items-center gap-2 mt-1">
+                <a href="https://cloud.digitalocean.com/registrations/new" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--purple))] hover:underline">Sign up</a>
+                <a href="https://cloud.digitalocean.com/login" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--purple))] hover:underline">Login</a>
+                <a href="https://www.digitalocean.com/products/droplets" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
+              </div>
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={doEnabled} onChange={(e) => setDoEnabled(e.target.checked)} disabled={!doConfigured} className="w-4 h-4 accent-[hsl(var(--purple))]" />
               <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
             </label>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
             <div>
               <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">Region</label>
               <input type="text" value={doRegion} onChange={(e) => setDoRegion(e.target.value)} placeholder="nyc1" className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]" />
@@ -735,23 +666,39 @@ export function CloudBackendsSettings() {
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestDigitalOcean} disabled={!doApiToken || doSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
               <button onClick={handleSaveDigitalOcean} disabled={doSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--purple))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--purple)/0.9)] disabled:opacity-50">
-                {doSaving && <Loader2 className="h-3 w-3 animate-spin" />}Save
+                {doSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
               </button>
             </div>
           </div>
         </div>
-      )}
 
-      {expandedBackend === 'linode' && (
-        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--green)/0.3)] space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Linode Configuration</h4>
+        {/* Linode */}
+        <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <Cloud className="h-5 w-5 text-[hsl(var(--green))]" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Linode</h4>
+                {linodeConfigured && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">Configured</span>
+                )}
+              </div>
+              <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">Linode instances with dedicated CPU and SSD storage.</p>
+              <div className="flex items-center gap-2 mt-1">
+                <a href="https://login.linode.com/signup" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--green))] hover:underline">Sign up</a>
+                <a href="https://cloud.linode.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--green))] hover:underline">Login</a>
+                <a href="https://www.linode.com/products/dedicated-cpu/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
+              </div>
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={linodeEnabled} onChange={(e) => setLinodeEnabled(e.target.checked)} disabled={!linodeConfigured} className="w-4 h-4 accent-[hsl(var(--green))]" />
               <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
             </label>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
             <div>
               <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">Region</label>
               <input type="text" value={linodeRegion} onChange={(e) => setLinodeRegion(e.target.value)} placeholder="us-east" className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]" />
@@ -774,12 +721,14 @@ export function CloudBackendsSettings() {
             <div className="flex items-center gap-2 pt-2">
               <button onClick={handleTestLinode} disabled={!linodeApiToken || linodeSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
               <button onClick={handleSaveLinode} disabled={linodeSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50">
-                {linodeSaving && <Loader2 className="h-3 w-3 animate-spin" />}Save
+                {linodeSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
               </button>
             </div>
           </div>
         </div>
-      )}
+
+      </div>
     </>
   );
 }
