@@ -1764,6 +1764,7 @@ export interface CreateSandboxRequest {
 
   awsOptions?: {
     sizeClass?: 'small' | 'medium' | 'large';
+    purchaseType?: 'spot' | 'on-demand';
     instanceType?: string;
     amiId?: string;
     volumeId?: string;

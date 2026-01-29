@@ -120,6 +120,7 @@ export interface AwsInstance {
 export interface CreateAwsInstanceRequest {
   name: string;
   sizeClass?: AwsSizeClass;
+  purchaseType?: 'spot' | 'on-demand';
   instanceType?: string;
   amiId?: string;
   volumeId?: string;
@@ -508,9 +509,9 @@ export class AwsService {
   }
 
   /**
-   * Create a new spot instance
+   * Create a new EC2 instance (spot or on-demand)
    */
-  async createSpotInstance(request: CreateAwsInstanceRequest): Promise<AwsInstance> {
+  async createInstance(request: CreateAwsInstanceRequest): Promise<AwsInstance> {
     const client = await this.getClient();
     const config = await getConfig();
     const aws = config.cloudBackends?.aws;
@@ -544,13 +545,15 @@ export class AwsService {
       SecurityGroupIds: request.securityGroupIds || [securityGroupId],
       SubnetId: request.subnetId || aws?.defaultSubnetId,
       UserData: userData,
-      InstanceMarketOptions: {
-        MarketType: 'spot',
-        SpotOptions: {
-          SpotInstanceType: 'persistent',
-          InstanceInterruptionBehavior: 'stop',
+      ...(request.purchaseType !== 'on-demand' ? {
+        InstanceMarketOptions: {
+          MarketType: 'spot' as const,
+          SpotOptions: {
+            SpotInstanceType: 'persistent' as const,
+            InstanceInterruptionBehavior: 'stop' as const,
+          },
         },
-      },
+      } : {}),
       BlockDeviceMappings: [
         {
           DeviceName: '/dev/sda1',

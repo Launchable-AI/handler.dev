@@ -148,9 +148,10 @@ export class AwsAdapter implements SandboxAdapter {
       }
     }
 
-    const instance = await this.aws.createSpotInstance({
+    const instance = await this.aws.createInstance({
       name: request.name,
       sizeClass,
+      purchaseType: request.awsOptions?.purchaseType || 'spot',
       instanceType: request.awsOptions?.instanceType,
       amiId: request.awsOptions?.amiId,
       volumeId: request.awsOptions?.volumeId,

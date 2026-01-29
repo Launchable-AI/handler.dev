@@ -111,6 +111,7 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
 
   // AWS state
   const [awsSizeClass, setAwsSizeClass] = useState<'small' | 'medium' | 'large'>('small');
+  const [awsPurchaseType, setAwsPurchaseType] = useState<'spot' | 'on-demand'>('spot');
 
   // Calculate ports already in use
   const usedHostPorts = useMemo(() => {
@@ -231,6 +232,7 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
         } : undefined,
         awsOptions: backend === 'aws' ? {
           sizeClass: awsSizeClass,
+          purchaseType: awsPurchaseType,
         } : undefined,
       });
       onClose();
@@ -589,7 +591,7 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
             )}
 
             {/* AWS size class */}
-            {backend === 'aws' && (
+            {backend === 'aws' && (<>
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
                   Instance Size
@@ -603,11 +605,27 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
                   <option value="medium">Medium - t3.medium (2 vCPU, 4GB RAM, 20GB disk)</option>
                   <option value="large">Large - t3.large (2 vCPU, 8GB RAM, 30GB disk)</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
+                  Purchase Type
+                </label>
+                <select
+                  value={awsPurchaseType}
+                  onChange={(e) => setAwsPurchaseType(e.target.value as 'spot' | 'on-demand')}
+                  className="w-full px-3 py-2 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none"
+                >
+                  <option value="spot">Spot Instance (cheaper, may be interrupted)</option>
+                  <option value="on-demand">On-Demand Instance (reliable, higher cost)</option>
+                </select>
                 <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
-                  Uses EC2 Spot instances for cost savings. Ubuntu 24.04 LTS with persistent EBS storage.
+                  {awsPurchaseType === 'spot'
+                    ? 'Spot instances offer significant cost savings but may be interrupted by AWS.'
+                    : 'On-demand instances run reliably without interruption.'}
+                  {' '}Ubuntu 24.04 LTS with persistent EBS storage.
                 </p>
               </div>
-            )}
+            </>)}
 
             {/* Volumes (Docker only) */}
             {backend === 'docker' && (

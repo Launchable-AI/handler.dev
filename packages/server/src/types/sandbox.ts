@@ -245,6 +245,8 @@ export interface DaytonaCreateOptions {
 export interface AwsCreateOptions {
   /** Size class preset (uses predefined instance types) */
   sizeClass?: 'small' | 'medium' | 'large';
+  /** Use spot instances for cost savings, or on-demand for reliability (default: 'spot') */
+  purchaseType?: 'spot' | 'on-demand';
   /** Override instance type (e.g., t3.large) */
   instanceType?: string;
   /** Custom AMI ID (uses region default if not specified) */
