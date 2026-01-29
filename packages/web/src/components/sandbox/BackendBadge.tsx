@@ -2,7 +2,7 @@
  * BackendBadge - Shows the backend type for a sandbox
  */
 
-import { Container, Cloud, Flame, Globe } from 'lucide-react';
+import { Container, Cloud, Flame } from 'lucide-react';
 import type { SandboxBackend } from '../../api/client';
 
 interface BackendBadgeProps {
@@ -11,12 +11,15 @@ interface BackendBadgeProps {
   showLabel?: boolean;
 }
 
-const BACKEND_CONFIG: Record<SandboxBackend, {
-  icon: React.ComponentType<{ className?: string }>;
+interface BackendConfigEntry {
+  icon?: React.ComponentType<{ className?: string }>;
+  iconSrc?: string;
   label: string;
   color: string;
   bgColor: string;
-}> = {
+}
+
+const BACKEND_CONFIG: Record<SandboxBackend, BackendConfigEntry> = {
   docker: {
     icon: Container,
     label: 'Docker',
@@ -36,37 +39,37 @@ const BACKEND_CONFIG: Record<SandboxBackend, {
     bgColor: 'bg-[hsl(var(--purple)/0.1)]',
   },
   daytona: {
-    icon: Globe,
+    iconSrc: '/backends/daytona.ico',
     label: 'Daytona',
     color: 'text-[hsl(var(--amber))]',
     bgColor: 'bg-[hsl(var(--amber)/0.1)]',
   },
   aws: {
-    icon: Cloud,
+    iconSrc: '/backends/aws.ico',
     label: 'AWS',
     color: 'text-[hsl(var(--orange))]',
     bgColor: 'bg-[hsl(var(--orange)/0.1)]',
   },
   azure: {
-    icon: Cloud,
+    iconSrc: '/backends/microsoft.ico',
     label: 'Azure',
     color: 'text-[hsl(var(--blue))]',
     bgColor: 'bg-[hsl(var(--blue)/0.1)]',
   },
   gcp: {
-    icon: Cloud,
+    iconSrc: '/backends/gcp.ico',
     label: 'GCP',
     color: 'text-[hsl(var(--green))]',
     bgColor: 'bg-[hsl(var(--green)/0.1)]',
   },
   digitalocean: {
-    icon: Cloud,
+    iconSrc: '/backends/digital_ocean.ico',
     label: 'DigitalOcean',
     color: 'text-[hsl(var(--cyan))]',
     bgColor: 'bg-[hsl(var(--cyan)/0.1)]',
   },
   linode: {
-    icon: Cloud,
+    iconSrc: '/backends/linode.ico',
     label: 'Linode',
     color: 'text-[hsl(var(--green))]',
     bgColor: 'bg-[hsl(var(--green)/0.1)]',
@@ -75,7 +78,6 @@ const BACKEND_CONFIG: Record<SandboxBackend, {
 
 export function BackendBadge({ backend, size = 'sm', showLabel = false }: BackendBadgeProps) {
   const config = BACKEND_CONFIG[backend];
-  const Icon = config.icon;
 
   const sizeClasses = size === 'sm'
     ? 'h-3 w-3'
@@ -90,7 +92,11 @@ export function BackendBadge({ backend, size = 'sm', showLabel = false }: Backen
       className={`inline-flex items-center ${paddingClasses} ${config.color} ${config.bgColor}`}
       title={config.label}
     >
-      <Icon className={sizeClasses} />
+      {config.iconSrc ? (
+        <img src={config.iconSrc} alt={config.label} className={sizeClasses} />
+      ) : config.icon ? (
+        <config.icon className={sizeClasses} />
+      ) : null}
       {showLabel && (
         <span className="text-[10px] uppercase tracking-wider">{config.label}</span>
       )}

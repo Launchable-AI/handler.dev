@@ -3,7 +3,7 @@
  */
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Loader2, Plus, Check, HardDrive, Box, Server, Cloud, Eye, EyeOff, RefreshCw, Settings } from 'lucide-react';
+import { X, Loader2, Plus, Check, HardDrive, Box, Server, Eye, EyeOff, RefreshCw, Settings } from 'lucide-react';
 import { useCreateSandbox, useSandboxBackends, useSandboxes } from '../../hooks/useSandboxes';
 import { useVolumes, useImages, useCreateVolume, useVmBaseImages } from '../../hooks/useContainers';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs';
@@ -48,7 +48,7 @@ function isDaytonaManaged(snapshot: DaytonaSnapshot): boolean {
 }
 
 // Backend display info
-const BACKEND_INFO: Record<SandboxBackend, { label: string; icon: typeof Box; description: string }> = {
+const BACKEND_INFO: Record<SandboxBackend, { label: string; icon?: typeof Box; iconSrc?: string; description: string }> = {
   docker: {
     label: 'Docker',
     icon: Box,
@@ -66,32 +66,32 @@ const BACKEND_INFO: Record<SandboxBackend, { label: string; icon: typeof Box; de
   },
   daytona: {
     label: 'Daytona',
-    icon: Cloud,
+    iconSrc: '/backends/daytona.ico',
     description: 'Cloud-hosted workspace. Accessible anywhere, no local resources.',
   },
   aws: {
     label: 'AWS EC2',
-    icon: Cloud,
+    iconSrc: '/backends/aws.ico',
     description: 'Cost-effective Spot instances with persistent EBS volumes.',
   },
   azure: {
     label: 'Azure VM',
-    icon: Cloud,
+    iconSrc: '/backends/microsoft.ico',
     description: 'Azure Virtual Machines with managed disks and VNet isolation.',
   },
   gcp: {
     label: 'Google Cloud',
-    icon: Cloud,
+    iconSrc: '/backends/gcp.ico',
     description: 'GCP Compute Engine instances with persistent disk storage.',
   },
   digitalocean: {
     label: 'DigitalOcean',
-    icon: Cloud,
+    iconSrc: '/backends/digital_ocean.ico',
     description: 'DigitalOcean Droplets with block storage volumes.',
   },
   linode: {
     label: 'Linode',
-    icon: Cloud,
+    iconSrc: '/backends/linode.ico',
     description: 'Linode instances with dedicated CPU and SSD storage.',
   },
 };
@@ -359,7 +359,11 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
                     className="p-4 text-left border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))] hover:border-[hsl(var(--cyan)/0.5)] hover:bg-[hsl(var(--cyan)/0.05)] transition-colors"
                   >
                     <div className="flex items-center gap-2 mb-2">
-                      <Icon className="h-5 w-5 text-[hsl(var(--cyan))]" />
+                      {info.iconSrc ? (
+                        <img src={info.iconSrc} alt={info.label} className="h-5 w-5" />
+                      ) : Icon ? (
+                        <Icon className="h-5 w-5 text-[hsl(var(--cyan))]" />
+                      ) : null}
                       <span className="text-sm font-medium text-[hsl(var(--text-primary))]">{info.label}</span>
                     </div>
                     <p className="text-[10px] text-[hsl(var(--text-muted))]">{info.description}</p>
