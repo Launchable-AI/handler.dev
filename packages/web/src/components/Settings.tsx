@@ -381,7 +381,7 @@ export function Settings() {
                     onClick={() => setBackendsView('cloud')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
                       backendsView === 'cloud'
-                        ? 'bg-[hsl(var(--amber)/0.2)] text-[#06B6D4] border border-[hsl(var(--amber)/0.3)]'
+                        ? 'bg-[hsl(var(--amber)/0.2)] text-[hsl(var(--amber))] border border-[hsl(var(--amber)/0.3)]'
                         : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
                     }`}
                   >
