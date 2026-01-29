@@ -24,8 +24,8 @@ export function DeployModal({ serverName, serverTitle, onClose, onDeployed }: De
 
   useEffect(() => {
     // Load available backends
-    api.fetchAPI<{ backends: Record<string, boolean> }>('/sandboxes/backends').then((result) => {
-      const backends = Object.entries(result.backends)
+    api.fetchAPI<Record<string, boolean>>('/sandboxes/backends').then((result) => {
+      const backends = Object.entries(result)
         .map(([name, available]) => ({ name, available }))
         .filter(b => b.available);
       setAvailableBackends(backends);

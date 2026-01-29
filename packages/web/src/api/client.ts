@@ -1178,6 +1178,7 @@ export interface MarketplaceData {
   owner?: string;
   repo?: string;
   plugins: MarketplacePlugin[];
+  isCustom?: boolean;
 }
 
 export interface AgentConfigPreset {
@@ -1268,6 +1269,19 @@ export async function getPluginMarketplaces(): Promise<{ marketplaces: Marketpla
 
 export async function searchPlugins(query: string): Promise<{ plugins: MarketplacePlugin[] }> {
   return fetchAPI(`/agent-configs/plugins/search?q=${encodeURIComponent(query)}`);
+}
+
+export async function addPluginMarketplace(owner: string, repo: string, branch?: string, path?: string): Promise<MarketplaceData> {
+  return fetchAPI('/agent-configs/plugins/marketplaces', {
+    method: 'POST',
+    body: JSON.stringify({ owner, repo, branch, path }),
+  });
+}
+
+export async function removePluginMarketplace(owner: string, repo: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/agent-configs/plugins/marketplaces/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
+    method: 'DELETE',
+  });
 }
 
 // ============ Virtual Machines ============
