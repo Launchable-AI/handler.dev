@@ -1,0 +1,189 @@
+import { TabItem, Tabs } from '@astrojs/starlight/components'
+import ExploreMore from '@components/ExploreMore.astro'
+
+Daytona is an open-source, secure and elastic infrastructure for running AI-generated code.
+
+Daytona provides isolated sandbox environments that you can manage programmatically using the Daytona SDK to run and control code execution.
+
+Daytona SDK is available for [Python](/docs/en/python-sdk) and [TypeScript](/docs/en/typescript-sdk) interfaces.
+
+## Create an account
+
+Open the [Daytona Dashboard ↗](https://app.daytona.io/) and create your account. Daytona supports account creation using an email and password, or by connecting your Google or GitHub account.
+
+## Obtain an API key
+
+Generate an [API key](/docs/en/api-keys) from the [Daytona Dashboard ↗](https://app.daytona.io/dashboard/keys) to authenticate SDK requests and access Daytona services. Save the API key securely, as it won't be shown again.
+
+:::tip
+Daytona supports multiple options to configure your environment: [in code](/docs/en/configuration#configuration-in-code), [environment variables](/docs/en/configuration#environment-variables), [.env file](/docs/en/configuration#env-file), and [default values](/docs/en/configuration#default-values).
+:::
+
+## Install the SDK
+
+Install the Daytona SDK to interact with sandboxes from your code using [Python](/docs/python-sdk) or [TypeScript](/docs/typescript-sdk).
+
+<Tabs syncKey="language">
+  <TabItem label="Python" icon="seti:python">
+
+    ```bash
+    pip install daytona
+    ```
+
+  </TabItem>
+
+  <TabItem label="TypeScript" icon="seti:typescript">
+
+    ```bash
+    npm install @daytonaio/sdk
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Create a Sandbox
+
+Create a Daytona Sandbox to run your code securely in an isolated environment.
+
+<Tabs syncKey="language">
+  <TabItem label="Python" icon="seti:python">
+  
+    ```python
+    # Import the Daytona SDK
+    from daytona import Daytona, DaytonaConfig
+
+    # Define the configuration
+    config = DaytonaConfig(api_key="YOUR_API_KEY") # Replace with your API key
+
+    # Initialize the Daytona client
+    daytona = Daytona(config)
+
+    # Create the Sandbox instance
+    sandbox = daytona.create()
+    ```
+
+  </TabItem>
+  <TabItem label="TypeScript" icon="seti:typescript">
+  
+    ```typescript
+    // Import the Daytona SDK
+    import { Daytona } from '@daytonaio/sdk';
+
+    // Initialize the Daytona client
+    const daytona = new Daytona({ apiKey: 'YOUR_API_KEY' }); // Replace with your API key
+
+    // Create the Sandbox instance
+    const sandbox = await daytona.create({
+      language: 'typescript',
+    });
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Write code
+
+Create a program that runs code inside a Daytona Sandbox. The following snippet is an example "Hello World" program that runs securely inside a Daytona Sandbox.
+
+<Tabs syncKey="language">
+<TabItem label="Python" icon="seti:python">
+
+`main.py`
+
+```python
+# Import the Daytona SDK
+from daytona import Daytona, DaytonaConfig
+
+# Define the configuration
+config = DaytonaConfig(api_key="YOUR_API_KEY") # Replace with your API key
+
+# Initialize the Daytona client
+daytona = Daytona(config)
+
+# Create the Sandbox instance
+sandbox = daytona.create()
+
+# Run the code securely inside the Sandbox
+response = sandbox.process.code_run('print("Hello World")')
+
+# Check the response
+if response.exit_code != 0:
+  print(f"Error: {response.exit_code} {response.result}")
+else:
+  print(response.result)
+
+# Clean up
+sandbox.delete()
+```
+
+</TabItem>
+
+<TabItem label="TypeScript" icon="seti:typescript">
+
+`index.mts`
+
+```typescript
+// Import the Daytona SDK
+import { Daytona } from '@daytonaio/sdk'
+
+// Initialize the Daytona client
+const daytona = new Daytona({ apiKey: 'YOUR_API_KEY' }) // Replace with your API key
+
+// Create the Sandbox instance
+const sandbox = await daytona.create({
+  language: 'typescript',
+})
+
+// Run the code securely inside the Sandbox
+const response = await sandbox.process.codeRun('console.log("Hello World")')
+
+// Check the response
+if (response.exitCode !== 0) {
+  console.error(`Error: ${response.exitCode} ${response.result}`)
+} else {
+  console.log(response.result)
+}
+
+// Clean up
+await sandbox.delete()
+```
+
+</TabItem>
+</Tabs>
+
+## Run code
+
+Run the program to execute your code in a secure and isolated Daytona Sandbox environment.
+
+<Tabs syncKey="language">
+<TabItem label="Python" icon="seti:python">
+
+```bash
+python main.py
+```
+
+</TabItem>
+
+<TabItem label="TypeScript" icon="seti:typescript">
+
+```bash
+npx tsx index.mts
+```
+
+</TabItem>
+
+```text
+Hello World
+```
+
+</Tabs>
+
+## Summary
+
+By following the steps above, you successfully create a Daytona account, obtain an API key, install the SDK, create a sandbox, write code, and run it securely in a Daytona Sandbox.
+
+:::tip
+For faster development with AI agents and assistants, use our LLMs context files. Copy the [llms-full.txt](https://www.daytona.io/docs/llms-full.txt) and [llms.txt](https://www.daytona.io/docs/llms.txt) files and include them in your projects or chat contexts.
+:::
+
+<ExploreMore />
