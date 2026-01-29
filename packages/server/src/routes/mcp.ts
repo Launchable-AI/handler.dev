@@ -3,7 +3,7 @@ import { streamSSE } from 'hono/streaming';
 import * as mcpRegistry from '../services/mcp-registry.js';
 import { streamMCPInstallInstructions, isAIConfigured, searchMCPServersWithAI } from '../services/ai.js';
 import * as mcpDeploy from '../services/mcp-deploy.js';
-import { injectFilesIntoSandbox, readFileFromSandbox } from '../services/sandbox-inject.js';
+import { injectFilesIntoSandbox, readFileFromSandbox, ensureSandboxService, execInSandbox } from '../services/sandbox-inject.js';
 
 const mcp = new Hono();
 
@@ -390,7 +390,7 @@ mcp.post('/deployments/:id/start', async (c) => {
 mcp.post('/deployments/:id/connect/:sandboxId', async (c) => {
   const { id, sandboxId } = c.req.param();
 
-  // 1. Get deployment
+  // 1. Get deployment and target sandbox
   const deployment = await mcpDeploy.getDeployment(id);
   if (!deployment) {
     return c.json({ error: 'Deployment not found' }, 404);
@@ -399,22 +399,66 @@ mcp.post('/deployments/:id/connect/:sandboxId', async (c) => {
     return c.json({ error: 'Deployment has no connection config' }, 400);
   }
 
-  // 2. Build the mcpServers entry from connectionConfig
+  const service = await ensureSandboxService();
+  const targetSandbox = await service.get(sandboxId);
+  if (!targetSandbox) {
+    return c.json({ error: 'Target sandbox not found' }, 404);
+  }
+  if (targetSandbox.status !== 'running') {
+    return c.json({ error: 'Target sandbox must be running' }, 400);
+  }
+
+  // Also get the MCP server's sandbox for networking info
+  const mcpSandbox = deployment.sandboxId ? await service.get(deployment.sandboxId) : null;
+
+  // 2. Build the mcpServers entry, adjusting for cross-sandbox networking
   const serverKey = deployment.serverName;
   let mcpServerEntry: Record<string, unknown>;
 
   if (deployment.transport === 'stdio') {
-    mcpServerEntry = {
-      command: deployment.connectionConfig.command,
-      args: deployment.connectionConfig.args || [],
-      ...(deployment.connectionConfig.env && Object.keys(deployment.connectionConfig.env).length > 0
-        ? { env: deployment.connectionConfig.env }
-        : {}),
-    };
+    // stdio only works if the MCP process runs inside the target sandbox (it doesn't)
+    // or via SSH from target into the MCP sandbox
+    if (mcpSandbox?.sshPort && deployment.backend === 'docker' && targetSandbox.backend === 'docker') {
+      // Docker-to-Docker: SSH from target into MCP container via host gateway
+      mcpServerEntry = {
+        command: 'ssh',
+        args: [
+          '-o', 'StrictHostKeyChecking=no',
+          '-o', 'UserKnownHostsFile=/dev/null',
+          '-p', String(mcpSandbox.sshPort),
+          `root@host.docker.internal`,
+          deployment.command,
+          ...deployment.args,
+        ],
+        ...(deployment.connectionConfig.env && Object.keys(deployment.connectionConfig.env).length > 0
+          ? { env: deployment.connectionConfig.env }
+          : {}),
+      };
+    } else {
+      return c.json({
+        error: `stdio transport is not supported for cross-sandbox connections between ${deployment.backend} and ${targetSandbox.backend}. Deploy the MCP server with SSE or HTTP transport instead.`,
+      }, 400);
+    }
   } else {
+    // SSE or HTTP — rewrite the URL for cross-sandbox networking
+    let url = deployment.connectionConfig.url || '';
+
+    if (targetSandbox.backend === 'docker' && deployment.backend === 'docker') {
+      // Docker-to-Docker: replace localhost with Docker host gateway
+      url = url.replace(/\/\/localhost:/, '//host.docker.internal:');
+    } else if (targetSandbox.backend === 'docker' && mcpSandbox?.guestIp) {
+      // Docker targeting a VM: use VM's guest IP
+      url = url.replace(/\/\/localhost:/, `//${mcpSandbox.guestIp}:`);
+    } else if (targetSandbox.guestIp && mcpSandbox?.guestIp) {
+      // VM-to-VM: use MCP sandbox's guest IP
+      url = url.replace(/\/\/localhost:/, `//${mcpSandbox.guestIp}:`);
+    }
+    // If target is a VM and MCP is on Docker, localhost with host port should work
+    // (VM can reach the host's ports directly)
+
     mcpServerEntry = {
       type: deployment.transport === 'sse' ? 'sse' : 'http',
-      url: deployment.connectionConfig.url,
+      url,
       ...(deployment.connectionConfig.env && Object.keys(deployment.connectionConfig.env).length > 0
         ? { env: deployment.connectionConfig.env }
         : {}),
@@ -448,6 +492,7 @@ mcp.post('/deployments/:id/connect/:sandboxId', async (c) => {
       filesInjected: injected,
       serverKey,
       transport: deployment.transport,
+      mcpServerEntry,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to connect MCP server to sandbox';
@@ -490,6 +535,90 @@ mcp.post('/deployments/:id/disconnect/:sandboxId', async (c) => {
     const message = error instanceof Error ? error.message : 'Failed to disconnect MCP server';
     return c.json({ error: message }, 500);
   }
+});
+
+// Health check: verify an MCP server is reachable from inside a sandbox
+mcp.post('/deployments/:id/ping/:sandboxId', async (c) => {
+  const { id, sandboxId } = c.req.param();
+
+  const deployment = await mcpDeploy.getDeployment(id);
+  if (!deployment) {
+    return c.json({ error: 'Deployment not found' }, 404);
+  }
+
+  // Read the sandbox's .claude.json to get the actual configured URL/command
+  let configuredEntry: Record<string, unknown> | null = null;
+  try {
+    const raw = await readFileFromSandbox(sandboxId, '/home/dev/.claude.json');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      configuredEntry = parsed.mcpServers?.[deployment.serverName] || null;
+    }
+  } catch {
+    // ignore
+  }
+
+  if (!configuredEntry) {
+    return c.json({
+      reachable: false,
+      error: 'MCP server not configured in this sandbox',
+      configured: false,
+    });
+  }
+
+  // For SSE/HTTP: curl the URL from inside the sandbox
+  const url = configuredEntry.url as string | undefined;
+  const type = configuredEntry.type as string | undefined;
+
+  if (url && (type === 'sse' || type === 'http')) {
+    // For SSE endpoints, just check if the server responds (HEAD or short GET with timeout)
+    // Use curl with connect-timeout to avoid hanging
+    const curlCmd = `curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "${url}"`;
+    const result = await execInSandbox(sandboxId, curlCmd, 15000);
+
+    if (result) {
+      const statusCode = parseInt(result.trim(), 10);
+      // SSE endpoints typically return 200 or sometimes 405 for GET (but the connection works)
+      const reachable = statusCode > 0 && statusCode < 500;
+      return c.json({
+        reachable,
+        configured: true,
+        statusCode,
+        url,
+        transport: deployment.transport,
+      });
+    }
+
+    return c.json({
+      reachable: false,
+      configured: true,
+      error: 'Could not reach MCP server from sandbox (connection timed out or refused)',
+      url,
+      transport: deployment.transport,
+    });
+  }
+
+  // For stdio: check if the command exists in the sandbox
+  const command = configuredEntry.command as string | undefined;
+  if (command) {
+    const whichCmd = `which ${command} 2>/dev/null && echo EXISTS || echo MISSING`;
+    const result = await execInSandbox(sandboxId, whichCmd, 5000);
+    const exists = result?.includes('EXISTS') || false;
+
+    return c.json({
+      reachable: exists,
+      configured: true,
+      transport: 'stdio',
+      command,
+      error: exists ? undefined : `Command '${command}' not found in sandbox`,
+    });
+  }
+
+  return c.json({
+    reachable: false,
+    configured: true,
+    error: 'Unknown transport configuration',
+  });
 });
 
 // Discover local MCP servers

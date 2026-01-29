@@ -1037,6 +1037,20 @@ export async function disconnectMCPFromSandbox(deploymentId: string, sandboxId: 
   return fetchAPI(`/mcp/deployments/${encodeURIComponent(deploymentId)}/disconnect/${encodeURIComponent(sandboxId)}`, { method: 'POST' });
 }
 
+export interface MCPPingResult {
+  reachable: boolean;
+  configured: boolean;
+  statusCode?: number;
+  url?: string;
+  transport?: string;
+  command?: string;
+  error?: string;
+}
+
+export async function pingMCPFromSandbox(deploymentId: string, sandboxId: string): Promise<MCPPingResult> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(deploymentId)}/ping/${encodeURIComponent(sandboxId)}`, { method: 'POST' });
+}
+
 export async function discoverLocalMCPServers(): Promise<{ servers: MCPLocalServer[] }> {
   return fetchAPI('/mcp/local');
 }

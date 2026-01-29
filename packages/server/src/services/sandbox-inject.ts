@@ -150,6 +150,49 @@ export async function injectFilesIntoSandbox(
 }
 
 /**
+ * Execute a command inside a running sandbox. Returns stdout or null on failure.
+ */
+export async function execInSandbox(
+  sandboxId: string,
+  command: string,
+  timeoutMs = 10000,
+): Promise<string | null> {
+  const service = await ensureSandboxService();
+  const sandbox = await service.get(sandboxId);
+  if (!sandbox || sandbox.status !== 'running') {
+    return null;
+  }
+
+  try {
+    if (sandbox.backend === 'docker') {
+      const dockerMeta = sandbox.backendMeta as { type: 'docker'; containerId: string } | undefined;
+      const containerId = dockerMeta?.containerId || sandbox.id.replace('docker-', '');
+      const result = execSync(`docker exec ${containerId} sh -c ${JSON.stringify(command)}`, {
+        stdio: 'pipe',
+        timeout: timeoutMs,
+      });
+      return result.toString();
+    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+      const vmService = sandbox.backend === 'cloud-hypervisor'
+        ? service.getHypervisorService()
+        : service.getFirecrackerService();
+      const dataDir = vmService?.getDataDir?.();
+      const keyPath = dataDir ? path.join(dataDir, 'ssh', 'caisson_vm_key') : '';
+      if (keyPath && sandbox.guestIp) {
+        const result = execSync(
+          `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes agent@${sandbox.guestIp} ${JSON.stringify(command)}`,
+          { stdio: 'pipe', timeout: timeoutMs }
+        );
+        return result.toString();
+      }
+    }
+  } catch {
+    // Command failed or timed out
+  }
+  return null;
+}
+
+/**
  * Read a file from a running sandbox. Returns content or null if not found.
  */
 export async function readFileFromSandbox(
