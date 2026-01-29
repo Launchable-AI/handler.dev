@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog } from 'lucide-react';
+import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle } from 'lucide-react';
 import { Settings } from './components/Settings';
 import { MCPPage } from './components/MCPPage';
 import { Notes } from './components/Notes';
@@ -10,6 +10,7 @@ import { CommandCentre } from './components/CommandCentre';
 import { DockerfileEditor } from './components/DockerfileEditor';
 import { ImageManager } from './components/ImageManager';
 import { AgentConfig } from './components/AgentConfig';
+import { PluginMarketplace } from './components/PluginMarketplace';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
@@ -17,7 +18,7 @@ import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPa
 import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
 // All possible tabs - simplified to unified abstractions
-type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'settings';
+type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'settings';
 
 interface NavItem {
   id: Tab;
@@ -27,7 +28,7 @@ interface NavItem {
 }
 
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'settings'];
+const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'settings'];
 
 // Content area that adjusts for terminal panel
 function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; onCreateClick: () => void }) {
@@ -54,6 +55,7 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
       {activeTab === 'mcp' && <MCPPage />}
       {activeTab === 'notes' && <Notes />}
       {activeTab === 'agent-config' && <AgentConfig />}
+      {activeTab === 'plugins' && <PluginMarketplace />}
       {activeTab === 'settings' && <Settings />}
     </div>
   );
@@ -136,6 +138,7 @@ function App() {
     { id: 'mcp', label: 'MCP Servers', icon: Package, standalone: true },
     { id: 'notes', label: 'Notes', icon: StickyNote, standalone: true },
     { id: 'agent-config', label: 'Agent Config', icon: Cog, standalone: true },
+    { id: 'plugins', label: 'Plugins', icon: Puzzle, standalone: true },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, standalone: true },
   ];
 
