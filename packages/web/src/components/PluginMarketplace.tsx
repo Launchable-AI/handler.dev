@@ -15,11 +15,13 @@ import {
   X,
   BookOpen,
   GripVertical,
+  Plus,
+  AlertCircle,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { getPluginMarketplaces, searchPlugins } from '../api/client';
+import { getPluginMarketplaces, searchPlugins, addPluginMarketplace, removePluginMarketplace } from '../api/client';
 import type { MarketplaceData, MarketplacePlugin } from '../api/client';
 
 type ViewLayout = 'grid' | 'list';
@@ -66,6 +68,14 @@ export function PluginMarketplace() {
   });
   const [isResizing, setIsResizing] = useState(false);
   const resizeRef = useRef<HTMLDivElement>(null);
+
+  // Add marketplace form state
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addFormInput, setAddFormInput] = useState('');
+  const [addFormBranch, setAddFormBranch] = useState('');
+  const [addFormPath, setAddFormPath] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth));
@@ -227,6 +237,44 @@ export function PluginMarketplace() {
     setIsLoadingReadme(false);
   };
 
+  const handleAddMarketplace = async () => {
+    const input = addFormInput.trim();
+    const parts = input.split('/');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      setAddError('Enter a valid owner/repo (e.g. "myorg/my-plugins")');
+      return;
+    }
+    const [owner, repo] = parts;
+    setIsAdding(true);
+    setAddError(null);
+    try {
+      await addPluginMarketplace(
+        owner,
+        repo,
+        addFormBranch.trim() || undefined,
+        addFormPath.trim() || undefined,
+      );
+      setShowAddForm(false);
+      setAddFormInput('');
+      setAddFormBranch('');
+      setAddFormPath('');
+      await loadMarketplaces();
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : 'Failed to add marketplace');
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleRemoveMarketplace = async (owner: string, repo: string) => {
+    try {
+      await removePluginMarketplace(owner, repo);
+      await loadMarketplaces();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove marketplace');
+    }
+  };
+
   const handleDetailTabChange = (tab: DetailTab) => {
     setDetailTab(tab);
     if (tab === 'readme' && selectedPlugin && !readme && !readmeError) {
@@ -302,6 +350,14 @@ export function PluginMarketplace() {
               </button>
             </div>
             <button
+              onClick={() => { setShowAddForm(!showAddForm); setAddError(null); }}
+              className="p-1"
+              style={{ color: showAddForm ? 'hsl(var(--cyan))' : 'hsl(var(--text-muted))' }}
+              title="Add custom marketplace"
+            >
+              <Plus size={12} />
+            </button>
+            <button
               onClick={loadMarketplaces}
               className="p-1"
               style={{ color: 'hsl(var(--text-muted))' }}
@@ -340,8 +396,77 @@ export function PluginMarketplace() {
           />
         </div>
 
+        {/* Add marketplace form */}
+        {showAddForm && (
+          <div
+            className="mt-2 p-2 space-y-1.5"
+            style={{ background: 'hsl(var(--bg-base))', border: '1px solid hsl(var(--border))' }}
+          >
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={addFormInput}
+                onChange={e => setAddFormInput(e.target.value)}
+                placeholder="owner/repo"
+                className="flex-1 text-xs px-2 py-1 outline-none"
+                style={{
+                  background: 'hsl(var(--bg-surface))',
+                  border: '1px solid hsl(var(--border))',
+                  color: 'hsl(var(--text-primary))',
+                }}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddMarketplace(); }}
+              />
+              <button
+                onClick={handleAddMarketplace}
+                disabled={isAdding || !addFormInput.trim()}
+                className="text-[10px] px-2 py-1"
+                style={{
+                  background: 'hsl(var(--cyan) / 0.15)',
+                  color: 'hsl(var(--cyan))',
+                  border: '1px solid hsl(var(--cyan) / 0.4)',
+                  opacity: isAdding || !addFormInput.trim() ? 0.5 : 1,
+                }}
+              >
+                {isAdding ? <Loader2 size={10} className="animate-spin" /> : 'Add'}
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={addFormBranch}
+                onChange={e => setAddFormBranch(e.target.value)}
+                placeholder="branch (default: main)"
+                className="flex-1 text-[10px] px-2 py-0.5 outline-none"
+                style={{
+                  background: 'hsl(var(--bg-surface))',
+                  border: '1px solid hsl(var(--border))',
+                  color: 'hsl(var(--text-primary))',
+                }}
+              />
+              <input
+                type="text"
+                value={addFormPath}
+                onChange={e => setAddFormPath(e.target.value)}
+                placeholder="path (default: .claude-plugin/marketplace.json)"
+                className="flex-1 text-[10px] px-2 py-0.5 outline-none"
+                style={{
+                  background: 'hsl(var(--bg-surface))',
+                  border: '1px solid hsl(var(--border))',
+                  color: 'hsl(var(--text-primary))',
+                }}
+              />
+            </div>
+            {addError && (
+              <div className="flex items-center gap-1 text-[10px]" style={{ color: 'hsl(var(--red))' }}>
+                <AlertCircle size={10} />
+                {addError}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Marketplace tabs */}
-        {marketplaces.length > 1 && (
+        {marketplaces.length > 0 && (
           <div className="flex items-center gap-1 mt-2 flex-wrap">
             <button
               onClick={() => setSelectedMarketplace(null)}
@@ -358,7 +483,7 @@ export function PluginMarketplace() {
               <button
                 key={m.slug}
                 onClick={() => setSelectedMarketplace(selectedMarketplace === m.slug ? null : m.slug)}
-                className="text-[10px] px-2 py-0.5"
+                className="text-[10px] px-2 py-0.5 flex items-center gap-1"
                 style={{
                   background: selectedMarketplace === m.slug ? 'hsl(var(--cyan) / 0.15)' : 'hsl(var(--bg-elevated))',
                   color: selectedMarketplace === m.slug ? 'hsl(var(--cyan))' : 'hsl(var(--text-muted))',
@@ -366,7 +491,16 @@ export function PluginMarketplace() {
                 }}
               >
                 {m.name}
-                <span className="ml-1 opacity-60">({m.plugins.length})</span>
+                <span className="opacity-60">({m.plugins.length})</span>
+                {m.isCustom && m.owner && m.repo && (
+                  <span
+                    onClick={(e) => { e.stopPropagation(); handleRemoveMarketplace(m.owner!, m.repo!); }}
+                    className="ml-0.5 hover:text-[hsl(var(--red))] cursor-pointer"
+                    title="Remove custom marketplace"
+                  >
+                    <X size={8} />
+                  </span>
+                )}
               </button>
             ))}
           </div>

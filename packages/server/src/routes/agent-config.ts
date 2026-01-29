@@ -1,6 +1,9 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { readFile, writeFile, mkdir } from 'fs/promises';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import * as agentConfigService from '../services/agent-config.js';
 import { getSandboxService, initializeSandboxService } from '../services/sandbox/index.js';
 import { getCloudHypervisorService, initializeCloudHypervisorService } from '../services/hypervisor.js';
@@ -186,10 +189,43 @@ const KNOWN_MARKETPLACES: Array<{ owner: string; repo: string; branch: string; p
   { owner: 'kivilaid', repo: 'plugin-marketplace', branch: 'main', path: '.claude-plugin/marketplace.json' },
 ];
 
+// ============ Custom Marketplace Persistence ============
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
+const DATA_DIR = join(PROJECT_ROOT, 'data');
+const CUSTOM_MARKETPLACES_FILE = join(DATA_DIR, 'plugin-marketplaces.json');
+
+interface CustomMarketplace {
+  owner: string;
+  repo: string;
+  branch: string;
+  path: string;
+}
+
+interface CustomMarketplacesStore {
+  marketplaces: CustomMarketplace[];
+}
+
+async function loadCustomMarketplaces(): Promise<CustomMarketplace[]> {
+  try {
+    const raw = await readFile(CUSTOM_MARKETPLACES_FILE, 'utf-8');
+    const store = JSON.parse(raw) as CustomMarketplacesStore;
+    return store.marketplaces || [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveCustomMarketplaces(marketplaces: CustomMarketplace[]): Promise<void> {
+  await mkdir(DATA_DIR, { recursive: true });
+  await writeFile(CUSTOM_MARKETPLACES_FILE, JSON.stringify({ marketplaces } as CustomMarketplacesStore, null, 2));
+}
+
 const marketplaceCache = new Map<string, { data: MarketplaceData; fetchedAt: number }>();
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
-async function fetchMarketplace(owner: string, repo: string): Promise<MarketplaceData | null> {
+async function fetchMarketplace(owner: string, repo: string, branchOverride?: string, pathOverride?: string): Promise<MarketplaceData | null> {
   const key = `${owner}/${repo}`;
   const cached = marketplaceCache.get(key);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
@@ -197,8 +233,8 @@ async function fetchMarketplace(owner: string, repo: string): Promise<Marketplac
   }
 
   const known = KNOWN_MARKETPLACES.find(m => m.owner === owner && m.repo === repo);
-  const branch = known?.branch || 'main';
-  const path = known?.path || '.claude-plugin/marketplace.json';
+  const branch = branchOverride || known?.branch || 'main';
+  const path = pathOverride || known?.path || '.claude-plugin/marketplace.json';
 
   const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
   try {
@@ -223,15 +259,70 @@ agentConfig.get('/', async (c) => {
   return c.json({ configs });
 });
 
-// Browse all known marketplaces (must be before /:id to avoid matching)
+// Browse all known + custom marketplaces (must be before /:id to avoid matching)
 agentConfig.get('/plugins/marketplaces', async (c) => {
-  const results: MarketplaceData[] = [];
-  const fetches = KNOWN_MARKETPLACES.map(async (m) => {
-    const data = await fetchMarketplace(m.owner, m.repo);
-    if (data) results.push(data);
+  const customMarketplaces = await loadCustomMarketplaces();
+  const results: (MarketplaceData & { isCustom: boolean })[] = [];
+
+  const knownFetches = KNOWN_MARKETPLACES.map(async (m) => {
+    const data = await fetchMarketplace(m.owner, m.repo, m.branch, m.path);
+    if (data) results.push({ ...data, isCustom: false });
   });
-  await Promise.all(fetches);
+  const customFetches = customMarketplaces.map(async (m) => {
+    const data = await fetchMarketplace(m.owner, m.repo, m.branch, m.path);
+    if (data) results.push({ ...data, isCustom: true });
+  });
+  await Promise.all([...knownFetches, ...customFetches]);
   return c.json({ marketplaces: results });
+});
+
+// Add a custom marketplace
+agentConfig.post('/plugins/marketplaces', zValidator('json', z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  branch: z.string().optional(),
+  path: z.string().optional(),
+})), async (c) => {
+  const { owner, repo, branch, path } = c.req.valid('json');
+  const effectiveBranch = branch || 'main';
+  const effectivePath = path || '.claude-plugin/marketplace.json';
+
+  // Check if already exists (known or custom)
+  const isKnown = KNOWN_MARKETPLACES.some(m => m.owner === owner && m.repo === repo);
+  if (isKnown) {
+    return c.json({ error: 'This marketplace is already a built-in source' }, 400);
+  }
+  const existing = await loadCustomMarketplaces();
+  if (existing.some(m => m.owner === owner && m.repo === repo)) {
+    return c.json({ error: 'This marketplace has already been added' }, 400);
+  }
+
+  // Validate by fetching
+  // Clear cache to force fresh fetch
+  marketplaceCache.delete(`${owner}/${repo}`);
+  const data = await fetchMarketplace(owner, repo, effectiveBranch, effectivePath);
+  if (!data) {
+    return c.json({ error: `Could not fetch marketplace.json from ${owner}/${repo}` }, 400);
+  }
+
+  // Persist
+  existing.push({ owner, repo, branch: effectiveBranch, path: effectivePath });
+  await saveCustomMarketplaces(existing);
+
+  return c.json({ ...data, isCustom: true }, 201);
+});
+
+// Remove a custom marketplace
+agentConfig.delete('/plugins/marketplaces/:owner/:repo', async (c) => {
+  const { owner, repo } = c.req.param();
+  const existing = await loadCustomMarketplaces();
+  const filtered = existing.filter(m => !(m.owner === owner && m.repo === repo));
+  if (filtered.length === existing.length) {
+    return c.json({ error: 'Custom marketplace not found' }, 404);
+  }
+  await saveCustomMarketplaces(filtered);
+  marketplaceCache.delete(`${owner}/${repo}`);
+  return c.json({ success: true });
 });
 
 agentConfig.get('/plugins/marketplace/:owner/:repo', async (c) => {
@@ -246,9 +337,14 @@ agentConfig.get('/plugins/marketplace/:owner/:repo', async (c) => {
 agentConfig.get('/plugins/search', async (c) => {
   const query = (c.req.query('q') || '').toLowerCase();
   const results: Array<MarketplacePlugin & { marketplace: string; marketplaceOwner: string; marketplaceRepo: string }> = [];
+  const customMarketplaces = await loadCustomMarketplaces();
+  const allSources = [
+    ...KNOWN_MARKETPLACES,
+    ...customMarketplaces,
+  ];
 
-  const fetches = KNOWN_MARKETPLACES.map(async (m) => {
-    const data = await fetchMarketplace(m.owner, m.repo);
+  const fetches = allSources.map(async (m) => {
+    const data = await fetchMarketplace(m.owner, m.repo, m.branch, m.path);
     if (!data) return;
     for (const plugin of data.plugins) {
       if (!query ||
