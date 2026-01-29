@@ -19,7 +19,9 @@ import {
   Github,
   Trash2,
   GripVertical,
+  Rocket,
 } from 'lucide-react';
+import { DeployModal } from './mcp/DeployModal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -35,7 +37,11 @@ const MIN_PANEL_WIDTH = 300;
 const MAX_PANEL_WIDTH = 800;
 const DEFAULT_PANEL_WIDTH = 450;
 
-export function MCPRegistry() {
+interface MCPRegistryProps {
+  onDeploy?: (serverName: string, serverTitle: string) => void;
+}
+
+export function MCPRegistry({ onDeploy }: MCPRegistryProps = {}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [servers, setServers] = useState<MCPServer[]>([]);
@@ -63,6 +69,7 @@ export function MCPRegistry() {
   const [manualUrl, setManualUrl] = useState('');
   const [isAddingManual, setIsAddingManual] = useState(false);
   const [addManualError, setAddManualError] = useState<string | null>(null);
+  const [deployServer, setDeployServer] = useState<{ name: string; title: string } | null>(null);
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(() => {
@@ -738,12 +745,22 @@ export function MCPRegistry() {
                     {selectedServer.name}
                   </p>
                 </div>
-                <button
-                  onClick={() => setSelectedServer(null)}
-                  className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setDeployServer({ name: selectedServer.name, title: selectedServer.title || selectedServer.name })}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors"
+                    title="Deploy to backend"
+                  >
+                    <Rocket className="h-3 w-3" />
+                    Deploy
+                  </button>
+                  <button
+                    onClick={() => setSelectedServer(null)}
+                    className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               {selectedServer.status === 'deprecated' && (
                 <div className="mt-2 px-2 py-1.5 text-[10px] bg-[hsl(var(--amber)/0.1)] text-[hsl(var(--amber))] border border-[hsl(var(--amber)/0.3)]">
@@ -1085,6 +1102,18 @@ export function MCPRegistry() {
           </div>
         )}
       </div>
+
+      {/* Deploy Modal */}
+      {deployServer && (
+        <DeployModal
+          serverName={deployServer.name}
+          serverTitle={deployServer.title}
+          onClose={() => setDeployServer(null)}
+          onDeployed={() => {
+            onDeploy?.(deployServer.name, deployServer.title);
+          }}
+        />
+      )}
 
       {/* Add Manual Server Modal */}
       {showAddManual && (
