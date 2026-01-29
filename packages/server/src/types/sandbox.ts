@@ -6,7 +6,7 @@
  * and Daytona cloud workspaces.
  */
 
-export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws';
+export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
 
 export type SandboxStatus =
   | 'creating'
@@ -73,7 +73,7 @@ export interface Sandbox {
   startedAt?: string;
 
   /** Backend-specific metadata */
-  backendMeta?: DockerMeta | VmMeta | DaytonaMeta | AwsMeta;
+  backendMeta?: DockerMeta | VmMeta | DaytonaMeta | AwsMeta | AzureMeta | GcpMeta | DigitalOceanMeta | LinodeMeta;
 }
 
 export interface PortMapping {
@@ -170,6 +170,94 @@ export interface AwsMeta {
 }
 
 /**
+ * Azure-specific metadata
+ */
+export interface AzureMeta {
+  type: 'azure';
+  /** Azure VM ID */
+  vmId: string;
+  /** VM size (e.g., Standard_B1s) */
+  vmSize: string;
+  /** Resource group */
+  resourceGroup: string;
+  /** Azure region */
+  region: string;
+  /** Public IP address */
+  publicIp?: string;
+  /** Private IP address */
+  privateIp?: string;
+  /** VM provisioning state */
+  provisioningState?: string;
+  /** VM power state */
+  powerState?: string;
+  /** Subscription ID */
+  subscriptionId: string;
+}
+
+/**
+ * GCP-specific metadata
+ */
+export interface GcpMeta {
+  type: 'gcp';
+  /** GCE instance name */
+  instanceName: string;
+  /** Machine type (e.g., e2-micro) */
+  machineType: string;
+  /** GCP zone */
+  zone: string;
+  /** GCP project ID */
+  projectId: string;
+  /** Public IP address */
+  publicIp?: string;
+  /** Private IP address */
+  privateIp?: string;
+  /** Instance status */
+  gcpStatus?: string;
+  /** Creation timestamp */
+  creationTimestamp?: string;
+}
+
+/**
+ * DigitalOcean-specific metadata
+ */
+export interface DigitalOceanMeta {
+  type: 'digitalocean';
+  /** Droplet ID */
+  dropletId: number;
+  /** Droplet size slug */
+  sizeSlug: string;
+  /** DigitalOcean region slug */
+  region: string;
+  /** Public IP address */
+  publicIp?: string;
+  /** Private IP address */
+  privateIp?: string;
+  /** Droplet status */
+  doStatus?: string;
+  /** SSH key fingerprint */
+  sshKeyFingerprint?: string;
+}
+
+/**
+ * Linode-specific metadata
+ */
+export interface LinodeMeta {
+  type: 'linode';
+  /** Linode ID */
+  linodeId: number;
+  /** Linode type/plan */
+  linodeType: string;
+  /** Linode region */
+  region: string;
+  /** Public IP address */
+  publicIp?: string;
+  /** Private IP address */
+  privateIp?: string;
+  /** Linode status */
+  linodeStatus?: string;
+}
+
+/**
  * Request to create a new sandbox
  */
 export interface CreateSandboxRequest {
@@ -201,6 +289,14 @@ export interface CreateSandboxRequest {
   daytonaOptions?: DaytonaCreateOptions;
   /** AWS-specific options */
   awsOptions?: AwsCreateOptions;
+  /** Azure-specific options */
+  azureOptions?: AzureCreateOptions;
+  /** GCP-specific options */
+  gcpOptions?: GcpCreateOptions;
+  /** DigitalOcean-specific options */
+  digitaloceanOptions?: DigitalOceanCreateOptions;
+  /** Linode-specific options */
+  linodeOptions?: LinodeCreateOptions;
   /** Agent config preset to inject after sandbox is running */
   agentConfigId?: string;
 }
@@ -265,6 +361,30 @@ export interface AwsCreateOptions {
   subnetId?: string;
 }
 
+export interface AzureCreateOptions {
+  sizeClass?: 'small' | 'medium' | 'large';
+  vmSize?: string;
+  resourceGroup?: string;
+}
+
+export interface GcpCreateOptions {
+  sizeClass?: 'small' | 'medium' | 'large';
+  machineType?: string;
+  zone?: string;
+}
+
+export interface DigitalOceanCreateOptions {
+  sizeClass?: 'small' | 'medium' | 'large';
+  sizeSlug?: string;
+  region?: string;
+}
+
+export interface LinodeCreateOptions {
+  sizeClass?: 'small' | 'medium' | 'large';
+  linodeType?: string;
+  region?: string;
+}
+
 /**
  * Filter options for listing sandboxes
  */
@@ -283,11 +403,5 @@ export interface SandboxListFilter {
 export interface SandboxListResponse {
   sandboxes: Sandbox[];
   /** Backend availability status */
-  backends: {
-    docker: boolean;
-    'cloud-hypervisor': boolean;
-    firecracker: boolean;
-    daytona: boolean;
-    aws: boolean;
-  };
+  backends: Record<SandboxBackend, boolean>;
 }

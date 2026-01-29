@@ -330,6 +330,83 @@ export function createAwsTerminalSession(
   return sessionId;
 }
 
+/**
+ * Create a generic cloud terminal session using SSH with a private key
+ * Works for Azure, GCP, DigitalOcean, Linode, etc.
+ */
+export function createCloudTerminalSession(
+  ws: WebSocket,
+  instanceId: string,
+  publicIp: string,
+  sshPrivateKey: string,
+  sshUser: string = 'root',
+  cols: number = 80,
+  rows: number = 24
+): string {
+  const sessionId = `cloud-${instanceId}-${Date.now()}`;
+
+  console.log(`[Cloud Terminal] Creating session: ${sessionId}`);
+  console.log(`[Cloud Terminal] Connecting to ${sshUser}@${publicIp}`);
+
+  // Write the private key to a temporary file
+  const tempDir = fs.mkdtempSync('/tmp/cloud-terminal-');
+  const keyPath = `${tempDir}/key.pem`;
+  fs.writeFileSync(keyPath, sshPrivateKey, { mode: 0o600 });
+
+  const sshArgs = [
+    '-tt',
+    '-i', keyPath,
+    '-o', 'IdentitiesOnly=yes',
+    '-o', 'StrictHostKeyChecking=no',
+    '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'ConnectTimeout=10',
+    '-o', 'ServerAliveInterval=30',
+    '-o', 'ServerAliveCountMax=3',
+    `${sshUser}@${publicIp}`,
+    '/bin/bash'
+  ];
+
+  const sshProcess = spawn('ssh', sshArgs, {
+    env: { ...process.env, TERM: 'xterm-256color' }
+  });
+
+  sshProcess.stdout?.on('data', (data: Buffer) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+    }
+  });
+
+  sshProcess.stderr?.on('data', (data: Buffer) => {
+    console.log(`[Cloud Terminal] SSH stderr: ${data.toString()}`);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+    }
+  });
+
+  sshProcess.on('exit', (code) => {
+    console.log(`[Cloud Terminal] Session ${sessionId} exited with code ${code}`);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'exit', code }));
+    }
+    sessions.delete(sessionId);
+    try { fs.unlinkSync(keyPath); fs.rmdirSync(tempDir); } catch { /* ignore */ }
+  });
+
+  sshProcess.on('error', (err) => {
+    console.error(`[Cloud Terminal] Session ${sessionId} error:`, err);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'error', message: err.message }));
+    }
+    sessions.delete(sessionId);
+    try { fs.unlinkSync(keyPath); fs.rmdirSync(tempDir); } catch { /* ignore */ }
+  });
+
+  sessions.set(sessionId, { process: sshProcess, ws, vmId: instanceId });
+  ws.send(JSON.stringify({ type: 'connected', sessionId }));
+
+  return sessionId;
+}
+
 export function closeAllVmSessions(): void {
   console.log(`[VM Terminal] Closing ${sessions.size} active session(s)...`);
   for (const [id, session] of sessions.entries()) {

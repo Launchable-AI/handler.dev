@@ -159,6 +159,7 @@ import {
   createVmTerminalSession,
   createDaytonaTerminalSession,
   createAwsTerminalSession,
+  createCloudTerminalSession,
   writeToVmSession,
   resizeVmSession,
   closeVmSessionByWebSocket,
@@ -166,6 +167,10 @@ import {
 } from './services/vm-terminal.js';
 import { getDaytonaService } from './services/daytona.js';
 import { getAwsService } from './services/aws.js';
+import { getAzureService } from './services/azure.js';
+import { getGcpService } from './services/gcp.js';
+import { getDigitalOceanService } from './services/digitalocean.js';
+import { getLinodeService } from './services/linode.js';
 import containers from './routes/containers.js';
 import images from './routes/images.js';
 import volumes from './routes/volumes.js';
@@ -183,6 +188,10 @@ import templateRoutes from './routes/templates.js';
 import daytonaRoutes from './routes/daytona.js';
 import awsRoutes from './routes/aws.js';
 import agentConfigRoutes from './routes/agent-config.js';
+import azureRoutes from './routes/azure.js';
+import gcpRoutes from './routes/gcp.js';
+import digitaloceanRoutes from './routes/digitalocean.js';
+import linodeRoutes from './routes/linode.js';
 
 const app = new Hono();
 
@@ -242,6 +251,10 @@ app.route('/api/templates', templateRoutes);
 app.route('/api/daytona', daytonaRoutes);
 app.route('/api/backends/aws', awsRoutes);
 app.route('/api/agent-configs', agentConfigRoutes);
+app.route('/api/backends/azure', azureRoutes);
+app.route('/api/backends/gcp', gcpRoutes);
+app.route('/api/backends/digitalocean', digitaloceanRoutes);
+app.route('/api/backends/linode', linodeRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {
@@ -365,6 +378,51 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
                 isVmSession = true; // Use VM session handlers for write/resize/close
               } catch (err) {
                 console.error('[WS Terminal] Failed to create AWS terminal:', err);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  message: err instanceof Error ? err.message : 'Failed to create terminal'
+                }));
+              }
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'instanceId and publicIp are required' }));
+            }
+            break;
+
+          case 'start-azure':
+          case 'start-gcp':
+          case 'start-digitalocean':
+          case 'start-linode':
+            // Start a cloud backend terminal session via SSH
+            if (msg.instanceId && msg.publicIp) {
+              try {
+                const backendType = msg.type.replace('start-', '');
+                const backendService = backendType === 'azure' ? getAzureService()
+                  : backendType === 'gcp' ? getGcpService()
+                  : backendType === 'digitalocean' ? getDigitalOceanService()
+                  : getLinodeService();
+
+                const sshPrivateKey = await backendService.getSshPrivateKey();
+                if (!sshPrivateKey) {
+                  ws.send(JSON.stringify({ type: 'error', message: 'SSH key not available' }));
+                  break;
+                }
+
+                const sshUser = msg.sshUser || (backendType === 'azure' ? 'azureuser' : backendType === 'gcp' ? 'caisson' : 'root');
+
+                console.log(`[WS Terminal] Creating ${backendType} terminal for instance: ${msg.instanceId}`);
+
+                sessionId = createCloudTerminalSession(
+                  ws,
+                  msg.instanceId,
+                  msg.publicIp,
+                  sshPrivateKey,
+                  sshUser,
+                  msg.cols || 80,
+                  msg.rows || 24
+                );
+                isVmSession = true;
+              } catch (err) {
+                console.error(`[WS Terminal] Failed to create ${msg.type.replace('start-', '')} terminal:`, err);
                 ws.send(JSON.stringify({
                   type: 'error',
                   message: err instanceof Error ? err.message : 'Failed to create terminal'

@@ -16,6 +16,10 @@ import { getCloudHypervisorService, initializeCloudHypervisorService } from '../
 import { getFirecrackerService, initializeFirecrackerService } from '../services/firecracker.js';
 import { getDaytonaService, initializeDaytonaService } from '../services/daytona.js';
 import { getAwsService, initializeAwsService } from '../services/aws.js';
+import { getAzureService, initializeAzureService } from '../services/azure.js';
+import { getGcpService, initializeGcpService } from '../services/gcp.js';
+import { getDigitalOceanService, initializeDigitalOceanService } from '../services/digitalocean.js';
+import { getLinodeService, initializeLinodeService } from '../services/linode.js';
 import * as dockerService from '../services/docker.js';
 import * as containerBuilder from '../services/container-builder.js';
 import type { SandboxBackend, SandboxStatus } from '../types/sandbox.js';
@@ -47,6 +51,10 @@ async function ensureSandboxServiceInitialized() {
   let firecracker = null;
   let daytona = null;
   let aws = null;
+  let azure = null;
+  let gcp = null;
+  let digitalocean = null;
+  let linode = null;
 
   // Cloud-Hypervisor
   try {
@@ -86,12 +94,60 @@ async function ensureSandboxServiceInitialized() {
     console.log('[SandboxRoutes] AWS not available:', err instanceof Error ? err.message : 'unknown');
   }
 
+  // Azure
+  try {
+    await initializeAzureService();
+    const azureService = getAzureService();
+    if (await azureService.isAvailable()) {
+      azure = azureService;
+    }
+  } catch (err) {
+    console.log('[SandboxRoutes] Azure not available:', err instanceof Error ? err.message : 'unknown');
+  }
+
+  // GCP
+  try {
+    await initializeGcpService();
+    const gcpService = getGcpService();
+    if (await gcpService.isAvailable()) {
+      gcp = gcpService;
+    }
+  } catch (err) {
+    console.log('[SandboxRoutes] GCP not available:', err instanceof Error ? err.message : 'unknown');
+  }
+
+  // DigitalOcean
+  try {
+    await initializeDigitalOceanService();
+    const doService = getDigitalOceanService();
+    if (await doService.isAvailable()) {
+      digitalocean = doService;
+    }
+  } catch (err) {
+    console.log('[SandboxRoutes] DigitalOcean not available:', err instanceof Error ? err.message : 'unknown');
+  }
+
+  // Linode
+  try {
+    await initializeLinodeService();
+    const linodeService = getLinodeService();
+    if (await linodeService.isAvailable()) {
+      linode = linodeService;
+    }
+  } catch (err) {
+    console.log('[SandboxRoutes] Linode not available:', err instanceof Error ? err.message : 'unknown');
+  }
+
   // Initialize sandbox service with available backends
   await initializeSandboxService({
     hypervisor: hypervisor ?? undefined,
     firecracker: firecracker ?? undefined,
     daytona: daytona ?? undefined,
     aws: aws ?? undefined,
+    azure: azure ?? undefined,
+    gcp: gcp ?? undefined,
+    digitalocean: digitalocean ?? undefined,
+    linode: linode ?? undefined,
   });
 
   sandboxServiceInitialized = true;
@@ -99,7 +155,7 @@ async function ensureSandboxServiceInitialized() {
 }
 
 // Validation schemas
-const SandboxBackendEnum = z.enum(['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws']);
+const SandboxBackendEnum = z.enum(['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode']);
 const SandboxStatusEnum = z.enum([
   'creating', 'starting', 'running', 'stopping',
   'stopped', 'paused', 'error', 'archived', 'building'
@@ -172,6 +228,34 @@ const CreateSandboxSchema = z.object({
     subnetId: z.string().optional(),
   }).optional(),
 
+  // Azure-specific options
+  azureOptions: z.object({
+    sizeClass: z.enum(['small', 'medium', 'large']).optional(),
+    vmSize: z.string().optional(),
+    resourceGroup: z.string().optional(),
+  }).optional(),
+
+  // GCP-specific options
+  gcpOptions: z.object({
+    sizeClass: z.enum(['small', 'medium', 'large']).optional(),
+    machineType: z.string().optional(),
+    zone: z.string().optional(),
+  }).optional(),
+
+  // DigitalOcean-specific options
+  digitaloceanOptions: z.object({
+    sizeClass: z.enum(['small', 'medium', 'large']).optional(),
+    sizeSlug: z.string().optional(),
+    region: z.string().optional(),
+  }).optional(),
+
+  // Linode-specific options
+  linodeOptions: z.object({
+    sizeClass: z.enum(['small', 'medium', 'large']).optional(),
+    linodeType: z.string().optional(),
+    region: z.string().optional(),
+  }).optional(),
+
   // Agent config preset to inject after creation
   agentConfigId: z.string().optional(),
 });
@@ -193,7 +277,7 @@ sandboxes.get('/', zValidator('query', ListSandboxesQuerySchema), async (c) => {
   let backends: SandboxBackend[] | undefined;
   if (query.backend) {
     backends = query.backend.split(',').filter((b): b is SandboxBackend =>
-      ['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws'].includes(b)
+      ['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode'].includes(b)
     );
   }
 
@@ -428,8 +512,15 @@ sandboxes.get('/:id/logs', async (c) => {
       // Daytona - logs not supported directly, return info message
       logs = '[Daytona workspaces: Use SSH to view logs directly on the workspace]';
     } else if (sandbox.backend === 'aws') {
-      // AWS - logs not supported directly, return info message
       logs = '[AWS instances: Use SSH to view logs directly on the instance]';
+    } else if (sandbox.backend === 'azure') {
+      logs = '[Azure VMs: Use SSH to view logs directly on the VM]';
+    } else if (sandbox.backend === 'gcp') {
+      logs = '[GCP instances: Use SSH to view logs directly on the instance]';
+    } else if (sandbox.backend === 'digitalocean') {
+      logs = '[DigitalOcean droplets: Use SSH to view logs directly on the droplet]';
+    } else if (sandbox.backend === 'linode') {
+      logs = '[Linode instances: Use SSH to view logs directly on the instance]';
     }
 
     return c.json({ logs });
@@ -577,6 +668,30 @@ sandboxes.get('/:id/ssh-key', async (c) => {
         return c.json({ error: 'SSH key not available. Create an AWS instance first to generate a key.' }, 404);
       }
       privateKey = key;
+    } else if (sandbox.backend === 'azure') {
+      const azureService = service.getAzureService();
+      if (!azureService) return c.json({ error: 'Azure service not available' }, 500);
+      const key = await azureService.getSshPrivateKey();
+      if (!key) return c.json({ error: 'SSH key not available for Azure VMs' }, 404);
+      privateKey = key;
+    } else if (sandbox.backend === 'gcp') {
+      const gcpService = service.getGcpService();
+      if (!gcpService) return c.json({ error: 'GCP service not available' }, 500);
+      const key = await gcpService.getSshPrivateKey();
+      if (!key) return c.json({ error: 'SSH key not available for GCP instances' }, 404);
+      privateKey = key;
+    } else if (sandbox.backend === 'digitalocean') {
+      const doService = service.getDigitalOceanService();
+      if (!doService) return c.json({ error: 'DigitalOcean service not available' }, 500);
+      const key = await doService.getSshPrivateKey();
+      if (!key) return c.json({ error: 'SSH key not available for DigitalOcean droplets' }, 404);
+      privateKey = key;
+    } else if (sandbox.backend === 'linode') {
+      const linodeService = service.getLinodeService();
+      if (!linodeService) return c.json({ error: 'Linode service not available' }, 500);
+      const key = await linodeService.getSshPrivateKey();
+      if (!key) return c.json({ error: 'SSH key not available for Linode instances' }, 404);
+      privateKey = key;
     } else {
       return c.json({ error: 'SSH key not supported for this backend' }, 400);
     }
@@ -632,6 +747,11 @@ sandboxes.get('/:id/ssh-command', async (c) => {
         return c.json({ sshCommand });
       }
       return c.json({ error: 'SSH command not available - instance may not have a public IP' }, 404);
+    } else if (sandbox.backend === 'azure' || sandbox.backend === 'gcp' || sandbox.backend === 'digitalocean' || sandbox.backend === 'linode') {
+      if (sandbox.sshCommand) {
+        return c.json({ sshCommand: sandbox.sshCommand });
+      }
+      return c.json({ error: 'SSH command not available - instance may not have a public IP' }, 404);
     } else if (sandbox.sshCommand) {
       // Return existing SSH command from sandbox
       return c.json({ sshCommand: sandbox.sshCommand });
@@ -669,6 +789,10 @@ sandboxes.post('/:id/upload', async (c) => {
     const defaultDestPath = sandbox.backend === 'docker' ? '/home/dev/workspace'
       : sandbox.backend === 'daytona' ? '/home/daytona'
       : sandbox.backend === 'aws' ? '/home/ubuntu'
+      : sandbox.backend === 'azure' ? '/home/azureuser'
+      : sandbox.backend === 'gcp' ? '/home/caisson'
+      : sandbox.backend === 'digitalocean' ? '/root'
+      : sandbox.backend === 'linode' ? '/root'
       : '/home/agent';  // firecracker/cloud-hypervisor
     const destPath = formData.get('destPath') as string || defaultDestPath;
 
@@ -883,6 +1007,59 @@ sandboxes.post('/:id/upload', async (c) => {
       }
 
       return c.json({ success: true, path: `${destPath}/${filename}` });
+    } else if (sandbox.backend === 'azure' || sandbox.backend === 'gcp' || sandbox.backend === 'digitalocean' || sandbox.backend === 'linode') {
+      if (!sandbox.guestIp) {
+        return c.json({ error: 'Instance does not have a public IP address' }, 400);
+      }
+
+      const fs = await import('fs');
+      const path = await import('path');
+      const os = await import('os');
+      const { execSync } = await import('child_process');
+
+      const backendService = sandbox.backend === 'azure' ? service.getAzureService()
+        : sandbox.backend === 'gcp' ? service.getGcpService()
+        : sandbox.backend === 'digitalocean' ? service.getDigitalOceanService()
+        : service.getLinodeService();
+
+      if (!backendService) {
+        return c.json({ error: `${sandbox.backend} service not available` }, 500);
+      }
+
+      const sshPrivateKey = await backendService.getSshPrivateKey();
+      if (!sshPrivateKey) {
+        return c.json({ error: 'SSH key not available' }, 400);
+      }
+
+      const sshUser = sandbox.sshUser || 'root';
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
+      const tempKeyPath = path.join(tempDir, 'key');
+      const tempFilePath = path.join(tempDir, filename);
+
+      fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
+      fs.mkdirSync(path.dirname(tempFilePath), { recursive: true });
+      fs.writeFileSync(tempFilePath, buffer);
+
+      try {
+        const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
+        try {
+          execSync(
+            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
+            { stdio: 'pipe', timeout: 60000 }
+          );
+        } catch { /* ignore */ }
+
+        execSync(
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tempFilePath}" ${sshUser}@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          { stdio: 'pipe', timeout: 300000 }
+        );
+      } finally {
+        fs.unlinkSync(tempKeyPath);
+        fs.unlinkSync(tempFilePath);
+        fs.rmSync(tempDir, { recursive: true });
+      }
+
+      return c.json({ success: true, path: `${destPath}/${filename}` });
     }
 
     return c.json({ error: 'Upload not supported for this backend' }, 400);
@@ -919,6 +1096,10 @@ sandboxes.post('/:id/upload-directory', async (c) => {
     const defaultDestPath = sandbox.backend === 'docker' ? '/home/dev/workspace'
       : sandbox.backend === 'daytona' ? '/home/daytona'
       : sandbox.backend === 'aws' ? '/home/ubuntu'
+      : sandbox.backend === 'azure' ? '/home/azureuser'
+      : sandbox.backend === 'gcp' ? '/home/caisson'
+      : sandbox.backend === 'digitalocean' ? '/root'
+      : sandbox.backend === 'linode' ? '/root'
       : '/home/agent';  // firecracker/cloud-hypervisor
     const destPath = (formData.get('destPath') as string) || defaultDestPath;
 
@@ -1102,6 +1283,46 @@ sandboxes.post('/:id/upload-directory', async (c) => {
         );
 
         console.log(`[SandboxRoutes] Directory uploaded to AWS instance ${sandbox.guestIp}`);
+      } else if (sandbox.backend === 'azure' || sandbox.backend === 'gcp' || sandbox.backend === 'digitalocean' || sandbox.backend === 'linode') {
+        if (!sandbox.guestIp) {
+          return c.json({ error: 'Instance does not have a public IP address' }, 400);
+        }
+
+        const backendService = sandbox.backend === 'azure' ? service.getAzureService()
+          : sandbox.backend === 'gcp' ? service.getGcpService()
+          : sandbox.backend === 'digitalocean' ? service.getDigitalOceanService()
+          : service.getLinodeService();
+
+        if (!backendService) {
+          return c.json({ error: `${sandbox.backend} service not available` }, 500);
+        }
+
+        const sshPrivateKey = await backendService.getSshPrivateKey();
+        if (!sshPrivateKey) {
+          return c.json({ error: 'SSH key not available' }, 400);
+        }
+
+        const sshUser = sandbox.sshUser || 'root';
+        const tempKeyPath = path.join(tempDir, 'key');
+        fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
+
+        try {
+          execSync(
+            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            { stdio: 'pipe', timeout: 60000 }
+          );
+        } catch { /* ignore */ }
+
+        execSync(
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tarPath}" ${sshUser}@${sandbox.guestIp}:/tmp/upload.tar.gz`,
+          { stdio: 'pipe', timeout: 300000 }
+        );
+        execSync(
+          `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
+          { stdio: 'pipe', timeout: 120000 }
+        );
+
+        console.log(`[SandboxRoutes] Directory uploaded to ${sandbox.backend} instance ${sandbox.guestIp}`);
       } else {
         return c.json({ error: 'Upload not supported for this backend' }, 400);
       }

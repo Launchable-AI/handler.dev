@@ -26,6 +26,10 @@ interface BackendStatus {
   firecracker: BackendInfo;
   daytona: BackendInfo;
   aws: BackendInfo;
+  azure: BackendInfo;
+  gcp: BackendInfo;
+  digitalocean: BackendInfo;
+  linode: BackendInfo;
 }
 
 // Helper to check if a binary exists in PATH or common locations
@@ -230,14 +234,49 @@ async function getAwsStatus(): Promise<BackendInfo> {
   return info;
 }
 
+async function getCloudBackendStatus(backendKey: 'azure' | 'gcp' | 'digitalocean' | 'linode', credCheck: (cfg: any) => boolean): Promise<BackendInfo> {
+  const info: BackendInfo = { installed: false, enabled: false, running: false };
+  try {
+    const config = await getConfig();
+    const cfg = config.cloudBackends?.[backendKey];
+    if (!cfg || !credCheck(cfg)) return info;
+    info.installed = true;
+    info.enabled = cfg.enabled ?? false;
+    if (cfg.enabled) info.running = true;
+  } catch (err) {
+    info.error = err instanceof Error ? err.message : `Failed to check ${backendKey} status`;
+  }
+  return info;
+}
+
+async function getAzureStatus(): Promise<BackendInfo> {
+  return getCloudBackendStatus('azure', (c) => !!(c.clientId && c.clientSecret && c.tenantId && c.subscriptionId));
+}
+
+async function getGcpStatus(): Promise<BackendInfo> {
+  return getCloudBackendStatus('gcp', (c) => !!(c.projectId && c.keyFileJson));
+}
+
+async function getDigitalOceanStatus(): Promise<BackendInfo> {
+  return getCloudBackendStatus('digitalocean', (c) => !!c.apiToken);
+}
+
+async function getLinodeStatus(): Promise<BackendInfo> {
+  return getCloudBackendStatus('linode', (c) => !!c.apiToken);
+}
+
 // GET /backends/status - Get status of all backends
 backends.get('/status', async (c) => {
-  const [docker, cloudHypervisor, firecracker, daytona, aws] = await Promise.all([
+  const [docker, cloudHypervisor, firecracker, daytona, aws, azure, gcp, digitalocean, linode] = await Promise.all([
     getDockerStatus(),
     getCloudHypervisorStatus(),
     getFirecrackerStatus(),
     getDaytonaStatus(),
     getAwsStatus(),
+    getAzureStatus(),
+    getGcpStatus(),
+    getDigitalOceanStatus(),
+    getLinodeStatus(),
   ]);
 
   const status: BackendStatus = {
@@ -246,6 +285,10 @@ backends.get('/status', async (c) => {
     firecracker,
     daytona,
     aws,
+    azure,
+    gcp,
+    digitalocean,
+    linode,
   };
 
   return c.json(status);
@@ -316,6 +359,29 @@ backends.post('/:backend/enable', async (c) => {
         return c.json({ success: false, message: 'Failed to enable AWS' }, 500);
       }
 
+    case 'azure':
+    case 'gcp':
+    case 'digitalocean':
+    case 'linode': {
+      try {
+        const config = await getConfig();
+        const cfg = config.cloudBackends?.[backend];
+        if (!cfg) {
+          return c.json({ success: false, message: `${backend} not configured` }, 400);
+        }
+        await setConfig({
+          cloudBackends: {
+            ...config.cloudBackends,
+            [backend]: { ...cfg, enabled: true },
+          },
+        });
+        reinitializeSandboxService();
+        return c.json({ success: true, message: `${backend} backend enabled` });
+      } catch (err) {
+        return c.json({ success: false, message: `Failed to enable ${backend}` }, 500);
+      }
+    }
+
     default:
       return c.json({ error: 'Unknown backend' }, 404);
   }
@@ -378,6 +444,28 @@ backends.post('/:backend/disable', async (c) => {
       } catch (err) {
         return c.json({ success: false, message: 'Failed to disable AWS' }, 500);
       }
+
+    case 'azure':
+    case 'gcp':
+    case 'digitalocean':
+    case 'linode': {
+      try {
+        const config = await getConfig();
+        const cfg = config.cloudBackends?.[backend];
+        if (cfg) {
+          await setConfig({
+            cloudBackends: {
+              ...config.cloudBackends,
+              [backend]: { ...cfg, enabled: false },
+            },
+          });
+        }
+        reinitializeSandboxService();
+        return c.json({ success: true, message: `${backend} backend disabled` });
+      } catch (err) {
+        return c.json({ success: false, message: `Failed to disable ${backend}` }, 500);
+      }
+    }
 
     default:
       return c.json({ error: 'Unknown backend' }, 404);
@@ -449,11 +537,13 @@ backends.post('/:backend/install', async (c) => {
       }, 400);
 
     case 'aws':
-      // AWS is a cloud service - "install" means configure it
-      return c.json({
-        success: false,
-        message: 'AWS is a cloud service. Configure it via the Cloud Backends settings.',
-      }, 400);
+      return c.json({ success: false, message: 'AWS is a cloud service. Configure it via the Cloud Backends settings.' }, 400);
+
+    case 'azure':
+    case 'gcp':
+    case 'digitalocean':
+    case 'linode':
+      return c.json({ success: false, message: `${backend} is a cloud service. Configure it via the Cloud Backends settings.` }, 400);
 
     default:
       return c.json({ error: 'Unknown backend' }, 404);
@@ -519,6 +609,25 @@ backends.post('/:backend/uninstall', async (c) => {
       } catch (err) {
         return c.json({ success: false, message: 'Failed to remove AWS configuration' }, 500);
       }
+
+    case 'azure':
+    case 'gcp':
+    case 'digitalocean':
+    case 'linode': {
+      try {
+        const config = await getConfig();
+        await setConfig({
+          cloudBackends: {
+            ...config.cloudBackends,
+            [backend]: undefined,
+          },
+        });
+        reinitializeSandboxService();
+        return c.json({ success: true, message: `${backend} configuration removed` });
+      } catch (err) {
+        return c.json({ success: false, message: `Failed to remove ${backend} configuration` }, 500);
+      }
+    }
 
     default:
       return c.json({ error: 'Unknown backend' }, 404);

@@ -78,6 +78,9 @@ export class FirecrackerService extends EventEmitter {
     // Sync VM states with running processes
     await this.syncVmStates();
 
+    // Clean up any orphaned firecracker processes
+    await this.cleanupOrphanedProcesses();
+
     // Initialize network pool (detects helper vs pool mode)
     await this.networkPool.initialize();
 
@@ -201,6 +204,37 @@ export class FirecrackerService extends EventEmitter {
           await this.saveVmState(vm);
         }
       }
+    }
+  }
+
+  /**
+   * Find and kill orphaned firecracker processes that reference our data directory
+   */
+  private async cleanupOrphanedProcesses(): Promise<void> {
+    try {
+      const result = execSync('pgrep -af firecracker 2>/dev/null || true', { encoding: 'utf-8' });
+
+      const vmLines = result.split('\n').filter(line => line.includes(this.config.dataDir));
+      for (const line of vmLines) {
+        const vmIdMatch = line.match(new RegExp(`${this.config.dataDir}/([^/]+)/`));
+        if (vmIdMatch) {
+          const vmId = vmIdMatch[1];
+          if (!this.vms.has(vmId)) {
+            const pidMatch = line.match(/^(\d+)/);
+            if (pidMatch) {
+              const pid = parseInt(pidMatch[1], 10);
+              console.warn(`[FirecrackerService] Killing orphaned VM process: PID ${pid}, VM ID ${vmId}`);
+              try {
+                process.kill(pid, 'SIGTERM');
+              } catch (e) {
+                // Process may have already exited
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[FirecrackerService] Failed to cleanup orphaned processes:', error);
     }
   }
 
