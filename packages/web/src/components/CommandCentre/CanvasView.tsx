@@ -28,7 +28,7 @@ interface CanvasViewProps {
 }
 
 export function CanvasView({ className = '' }: CanvasViewProps) {
-  const { state, nodes, edges, addNode, updatePosition, updateSize } = useCanvas();
+  const { state, nodes, edges, addNode, updatePosition, updateSize, activeWorkspace } = useCanvas();
   const { data: containers } = useContainers();
   const [showAddMenu, setShowAddMenu] = useState(false);
 
@@ -41,9 +41,15 @@ export function CanvasView({ className = '' }: CanvasViewProps) {
   );
 
   const availableContainers = useMemo(() => {
-    const onCanvas = new Set(state.worktreeNodes.map(n => n.sandboxId));
+    // Only exclude containers visible in the active workspace
+    const activeNodeIds = new Set(activeWorkspace?.nodeIds || []);
+    const onCanvas = new Set(
+      state.worktreeNodes
+        .filter(n => activeNodeIds.has(n.id))
+        .map(n => n.sandboxId)
+    );
     return runningContainers.filter(c => !onCanvas.has(c.id));
-  }, [runningContainers, state.worktreeNodes]);
+  }, [runningContainers, state.worktreeNodes, activeWorkspace]);
 
   // Get all descendant node IDs for a given parent
   const getDescendantIds = useCallback((parentId: string): string[] => {

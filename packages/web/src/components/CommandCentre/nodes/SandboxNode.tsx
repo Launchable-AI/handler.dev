@@ -1,4 +1,4 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
@@ -25,6 +25,26 @@ function SandboxNodeComponent({ data, selected }: NodeProps<WorktreeNode>) {
   const [isMerging, setIsMerging] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [connState, setConnState] = useState<ConnectionState>('connecting');
+  const [termReady, setTermReady] = useState(false);
+  const termContainerRef = useRef<HTMLDivElement>(null);
+
+  // Wait for the terminal container to have non-zero dimensions before mounting xterm
+  useEffect(() => {
+    const el = termContainerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          setTermReady(true);
+          observer.disconnect();
+          return;
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const isRoot = data.parentNodeId === null;
   const statusColor = statusColors[data.status];
@@ -243,13 +263,15 @@ function SandboxNodeComponent({ data, selected }: NodeProps<WorktreeNode>) {
       )}
 
       {/* Terminal body - takes remaining space */}
-      <div className="flex-1 min-h-0">
-        <TerminalInstance
-          target={{ type: 'container', id: data.sandboxId }}
-          onStateChange={handleTerminalStateChange}
-          showStatusBar={false}
-          className="h-full"
-        />
+      <div ref={termContainerRef} className="flex-1 min-h-0">
+        {termReady && (
+          <TerminalInstance
+            target={{ type: 'container', id: data.sandboxId }}
+            onStateChange={handleTerminalStateChange}
+            showStatusBar={false}
+            className="h-full"
+          />
+        )}
       </div>
     </div>
   );
