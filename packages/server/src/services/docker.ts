@@ -227,6 +227,16 @@ export async function renameImage(currentTag: string, newTag: string): Promise<v
   }
 }
 
+export async function imageExists(imageName: string): Promise<boolean> {
+  try {
+    const image = docker.getImage(imageName);
+    await image.inspect();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function imageHasLabel(imageName: string, label: string): Promise<boolean> {
   try {
     const image = docker.getImage(imageName);
