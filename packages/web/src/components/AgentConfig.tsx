@@ -390,12 +390,16 @@ function PluginsTab({ plugins, setPlugins, marketplaces, setMarketplaces }: {
   plugins: PluginRef[]; setPlugins: (v: PluginRef[]) => void;
   marketplaces: PluginMarketplace[]; setMarketplaces: (v: PluginMarketplace[]) => void;
 }) {
-  const [showBrowser, setShowBrowser] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(true);
   const [marketplaceData, setMarketplaceData] = useState<MarketplaceData[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MarketplacePlugin[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadMarketplaces();
+  }, []);
 
   const loadMarketplaces = async () => {
     setLoading(true);
@@ -480,7 +484,7 @@ function PluginsTab({ plugins, setPlugins, marketplaces, setMarketplaces }: {
         <div className="flex items-center justify-between mb-2">
           <label className={labelClass}>Installed Plugins</label>
           <button
-            onClick={() => { setShowBrowser(!showBrowser); if (!showBrowser && marketplaceData.length === 0) loadMarketplaces(); }}
+            onClick={() => setShowBrowser(!showBrowser)}
             className={addBtnClass}
           >
             <Search className="h-3 w-3" /> {showBrowser ? 'Hide Browser' : 'Browse Marketplace'}
