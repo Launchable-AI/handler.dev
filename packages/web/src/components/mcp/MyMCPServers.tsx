@@ -168,7 +168,7 @@ export function MyMCPServers() {
               <Cloud className="h-3 w-3" />
               Deployed Servers
             </div>
-            <div className="divide-y divide-[hsl(var(--border))]">
+            <div className="grid gap-3 lg:grid-cols-2 p-4">
               {filteredDeployments.map(deployment => (
                 <DeploymentCard
                   key={deployment.id}
@@ -196,7 +196,7 @@ export function MyMCPServers() {
               <Monitor className="h-3 w-3" />
               Local Servers
             </div>
-            <div className="divide-y divide-[hsl(var(--border))]">
+            <div className="grid gap-3 lg:grid-cols-2 p-4">
               {localServers.map(server => (
                 <LocalServerCard key={server.name} server={server} />
               ))}
@@ -298,7 +298,7 @@ function DeploymentCard({
     setConnectingTo(null);
   };
   return (
-    <div className="bg-[hsl(var(--bg-surface))]">
+    <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded-md overflow-hidden">
       <div
         className="flex items-center gap-3 px-4 py-3 hover:bg-[hsl(var(--bg-elevated))] cursor-pointer transition-colors"
         onClick={onToggleExpand}
@@ -572,7 +572,8 @@ function LocalServerCard({ server }: { server: MCPLocalServer }) {
   };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 hover:bg-[hsl(var(--bg-elevated))] transition-colors">
+    <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded-md overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-[hsl(var(--bg-elevated))] transition-colors">
       <div className={`w-2 h-2 rounded-full ${
         server.status === 'running' ? 'bg-[hsl(var(--green))]' :
         server.status === 'stopped' ? 'bg-[hsl(var(--text-muted))]' :
@@ -604,6 +605,7 @@ function LocalServerCard({ server }: { server: MCPLocalServer }) {
         >
           {copied ? <Check className="h-3.5 w-3.5 text-[hsl(var(--green))]" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
+      </div>
       </div>
     </div>
   );
