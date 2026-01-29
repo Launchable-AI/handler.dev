@@ -358,6 +358,10 @@ export function useSandboxesByBackend(filter?: SandboxListFilter) {
       firecracker: [] as Sandbox[],
       daytona: [] as Sandbox[],
       aws: [] as Sandbox[],
+      azure: [] as Sandbox[],
+      gcp: [] as Sandbox[],
+      digitalocean: [] as Sandbox[],
+      linode: [] as Sandbox[],
     };
   }
 
@@ -367,6 +371,10 @@ export function useSandboxesByBackend(filter?: SandboxListFilter) {
     firecracker: [],
     daytona: [],
     aws: [],
+    azure: [],
+    gcp: [],
+    digitalocean: [],
+    linode: [],
   };
 
   for (const sandbox of data.sandboxes) {

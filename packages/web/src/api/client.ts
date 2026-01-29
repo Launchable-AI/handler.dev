@@ -1690,7 +1690,7 @@ export async function downloadBaseImage(
 /**
  * Backend types for sandboxes
  */
-export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws';
+export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
 
 /**
  * Unified status across all backends
@@ -1825,6 +1825,10 @@ export interface SandboxListResponse {
     firecracker: boolean;
     daytona: boolean;
     aws: boolean;
+    azure: boolean;
+    gcp: boolean;
+    digitalocean: boolean;
+    linode: boolean;
   };
 }
 
@@ -2746,6 +2750,153 @@ export async function getAwsSizes(): Promise<Record<AwsSizeClass, {
 export async function refreshAwsCache(): Promise<{ success: boolean; message?: string; error?: string }> {
   return fetchAPI('/backends/aws/refresh', {
     method: 'POST',
+  });
+}
+
+// ==================== Azure Backend API ====================
+
+export interface AzureConfigResponse {
+  configured: boolean;
+  region: string;
+  resourceGroup: string;
+  enabled: boolean;
+  hasCredentials?: boolean;
+}
+
+export async function getAzureConfig(): Promise<AzureConfigResponse> {
+  return fetchAPI('/backends/azure/config');
+}
+
+export async function configureAzure(config: {
+  clientId?: string;
+  clientSecret?: string;
+  tenantId?: string;
+  subscriptionId?: string;
+  region?: string;
+  resourceGroup?: string;
+  enabled?: boolean;
+}): Promise<{ success: boolean }> {
+  return fetchAPI('/backends/azure/configure', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function testAzureConnection(config?: {
+  clientId?: string;
+  clientSecret?: string;
+  tenantId?: string;
+  subscriptionId?: string;
+  region?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/azure/test', {
+    method: 'POST',
+    body: JSON.stringify(config || {}),
+  });
+}
+
+// ==================== GCP Backend API ====================
+
+export interface GcpConfigResponse {
+  configured: boolean;
+  projectId: string;
+  zone: string;
+  enabled: boolean;
+  hasCredentials?: boolean;
+}
+
+export async function getGcpConfig(): Promise<GcpConfigResponse> {
+  return fetchAPI('/backends/gcp/config');
+}
+
+export async function configureGcp(config: {
+  projectId?: string;
+  keyFileJson?: string;
+  zone?: string;
+  enabled?: boolean;
+}): Promise<{ success: boolean }> {
+  return fetchAPI('/backends/gcp/configure', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function testGcpConnection(config?: {
+  projectId?: string;
+  keyFileJson?: string;
+  zone?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/gcp/test', {
+    method: 'POST',
+    body: JSON.stringify(config || {}),
+  });
+}
+
+// ==================== DigitalOcean Backend API ====================
+
+export interface DigitalOceanConfigResponse {
+  configured: boolean;
+  region: string;
+  enabled: boolean;
+  hasCredentials?: boolean;
+}
+
+export async function getDigitalOceanConfig(): Promise<DigitalOceanConfigResponse> {
+  return fetchAPI('/backends/digitalocean/config');
+}
+
+export async function configureDigitalOcean(config: {
+  apiToken?: string;
+  region?: string;
+  enabled?: boolean;
+}): Promise<{ success: boolean }> {
+  return fetchAPI('/backends/digitalocean/configure', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function testDigitalOceanConnection(config?: {
+  apiToken?: string;
+  region?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/digitalocean/test', {
+    method: 'POST',
+    body: JSON.stringify(config || {}),
+  });
+}
+
+// ==================== Linode Backend API ====================
+
+export interface LinodeConfigResponse {
+  configured: boolean;
+  region: string;
+  enabled: boolean;
+  hasCredentials?: boolean;
+}
+
+export async function getLinodeConfig(): Promise<LinodeConfigResponse> {
+  return fetchAPI('/backends/linode/config');
+}
+
+export async function configureLinode(config: {
+  apiToken?: string;
+  region?: string;
+  enabled?: boolean;
+}): Promise<{ success: boolean }> {
+  return fetchAPI('/backends/linode/configure', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function testLinodeConnection(config?: {
+  apiToken?: string;
+  region?: string;
+}): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/backends/linode/test', {
+    method: 'POST',
+    body: JSON.stringify(config || {}),
   });
 }
 

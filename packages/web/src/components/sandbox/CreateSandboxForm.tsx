@@ -74,6 +74,26 @@ const BACKEND_INFO: Record<SandboxBackend, { label: string; icon: typeof Box; de
     icon: Cloud,
     description: 'Cost-effective Spot instances with persistent EBS volumes.',
   },
+  azure: {
+    label: 'Azure VM',
+    icon: Cloud,
+    description: 'Azure Virtual Machines with managed disks and VNet isolation.',
+  },
+  gcp: {
+    label: 'Google Cloud',
+    icon: Cloud,
+    description: 'GCP Compute Engine instances with persistent disk storage.',
+  },
+  digitalocean: {
+    label: 'DigitalOcean',
+    icon: Cloud,
+    description: 'DigitalOcean Droplets with block storage volumes.',
+  },
+  linode: {
+    label: 'Linode',
+    icon: Cloud,
+    description: 'Linode instances with dedicated CPU and SSD storage.',
+  },
 };
 
 export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {

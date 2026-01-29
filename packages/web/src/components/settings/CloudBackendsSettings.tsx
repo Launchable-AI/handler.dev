@@ -1,5 +1,5 @@
 /**
- * CloudBackendsSettings - Cloud backend configuration (Daytona, AWS)
+ * CloudBackendsSettings - Cloud backend configuration (Daytona, AWS, Azure, GCP, DigitalOcean, Linode)
  */
 
 import { useState, useEffect } from 'react';
@@ -30,6 +30,47 @@ export function CloudBackendsSettings() {
   const [showAwsSecretKey, setShowAwsSecretKey] = useState(false);
   const [awsRegions, setAwsRegions] = useState<{ id: string; name: string }[]>([]);
 
+  // Azure state
+  const [azureClientId, setAzureClientId] = useState('');
+  const [azureClientSecret, setAzureClientSecret] = useState('');
+  const [azureTenantId, setAzureTenantId] = useState('');
+  const [azureSubscriptionId, setAzureSubscriptionId] = useState('');
+  const [azureRegion, setAzureRegion] = useState('eastus');
+  const [azureResourceGroup, setAzureResourceGroup] = useState('');
+  const [azureEnabled, setAzureEnabled] = useState(false);
+  const [azureConfigured, setAzureConfigured] = useState(false);
+  const [azureSaving, setAzureSaving] = useState(false);
+  const [azureTestResult, setAzureTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [showAzureClientSecret, setShowAzureClientSecret] = useState(false);
+
+  // GCP state
+  const [gcpProjectId, setGcpProjectId] = useState('');
+  const [gcpKeyFileJson, setGcpKeyFileJson] = useState('');
+  const [gcpZone, setGcpZone] = useState('us-central1-a');
+  const [gcpEnabled, setGcpEnabled] = useState(false);
+  const [gcpConfigured, setGcpConfigured] = useState(false);
+  const [gcpSaving, setGcpSaving] = useState(false);
+  const [gcpTestResult, setGcpTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [showGcpKeyFile, setShowGcpKeyFile] = useState(false);
+
+  // DigitalOcean state
+  const [doApiToken, setDoApiToken] = useState('');
+  const [doRegion, setDoRegion] = useState('nyc1');
+  const [doEnabled, setDoEnabled] = useState(false);
+  const [doConfigured, setDoConfigured] = useState(false);
+  const [doSaving, setDoSaving] = useState(false);
+  const [doTestResult, setDoTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [showDoApiToken, setShowDoApiToken] = useState(false);
+
+  // Linode state
+  const [linodeApiToken, setLinodeApiToken] = useState('');
+  const [linodeRegion, setLinodeRegion] = useState('us-east');
+  const [linodeEnabled, setLinodeEnabled] = useState(false);
+  const [linodeConfigured, setLinodeConfigured] = useState(false);
+  const [linodeSaving, setLinodeSaving] = useState(false);
+  const [linodeTestResult, setLinodeTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [showLinodeApiToken, setShowLinodeApiToken] = useState(false);
+
   // Loading state
   const [isLoading, setIsLoading] = useState(true);
 
@@ -41,10 +82,14 @@ export function CloudBackendsSettings() {
   const loadCloudConfig = async () => {
     setIsLoading(true);
     try {
-      const [daytonaConfig, awsConfig, regions] = await Promise.all([
+      const [daytonaConfig, awsConfig, regions, azureConfig, gcpConfig, doConfig, linodeConfig] = await Promise.all([
         api.getDaytonaConfig(),
         api.getAwsConfig(),
         api.listAwsRegions(),
+        api.getAzureConfig().catch(() => null),
+        api.getGcpConfig().catch(() => null),
+        api.getDigitalOceanConfig().catch(() => null),
+        api.getLinodeConfig().catch(() => null),
       ]);
 
       // Daytona
@@ -63,6 +108,51 @@ export function CloudBackendsSettings() {
       if (!awsConfig.hasCredentials) {
         setAwsAccessKeyId('');
         setAwsSecretAccessKey('');
+      }
+
+      // Azure
+      if (azureConfig) {
+        setAzureRegion(azureConfig.region || 'eastus');
+        setAzureResourceGroup(azureConfig.resourceGroup || '');
+        setAzureEnabled(azureConfig.enabled);
+        setAzureConfigured(azureConfig.configured);
+        if (!azureConfig.hasCredentials) {
+          setAzureClientId('');
+          setAzureClientSecret('');
+          setAzureTenantId('');
+          setAzureSubscriptionId('');
+        }
+      }
+
+      // GCP
+      if (gcpConfig) {
+        setGcpProjectId(gcpConfig.projectId || '');
+        setGcpZone(gcpConfig.zone || 'us-central1-a');
+        setGcpEnabled(gcpConfig.enabled);
+        setGcpConfigured(gcpConfig.configured);
+        if (!gcpConfig.hasCredentials) {
+          setGcpKeyFileJson('');
+        }
+      }
+
+      // DigitalOcean
+      if (doConfig) {
+        setDoRegion(doConfig.region || 'nyc1');
+        setDoEnabled(doConfig.enabled);
+        setDoConfigured(doConfig.configured);
+        if (!doConfig.hasCredentials) {
+          setDoApiToken('');
+        }
+      }
+
+      // Linode
+      if (linodeConfig) {
+        setLinodeRegion(linodeConfig.region || 'us-east');
+        setLinodeEnabled(linodeConfig.enabled);
+        setLinodeConfigured(linodeConfig.configured);
+        if (!linodeConfig.hasCredentials) {
+          setLinodeApiToken('');
+        }
       }
     } catch {
       // Ignore errors - defaults are fine
@@ -128,6 +218,135 @@ export function CloudBackendsSettings() {
       setAwsTestResult(result);
     } catch (err) {
       setAwsTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+    }
+  };
+
+  // Azure handlers
+  const handleSaveAzure = async () => {
+    setAzureSaving(true);
+    setAzureTestResult(null);
+    try {
+      await api.configureAzure({
+        clientId: azureClientId || undefined,
+        clientSecret: azureClientSecret || undefined,
+        tenantId: azureTenantId || undefined,
+        subscriptionId: azureSubscriptionId || undefined,
+        region: azureRegion,
+        resourceGroup: azureResourceGroup || undefined,
+        enabled: azureEnabled,
+      });
+      setAzureConfigured(!!(azureClientId && azureClientSecret && azureTenantId && azureSubscriptionId));
+      queryClient.invalidateQueries({ queryKey: ['backend-status'] });
+    } finally {
+      setAzureSaving(false);
+    }
+  };
+
+  const handleTestAzure = async () => {
+    setAzureTestResult(null);
+    try {
+      const result = await api.testAzureConnection({
+        clientId: azureClientId || undefined,
+        clientSecret: azureClientSecret || undefined,
+        tenantId: azureTenantId || undefined,
+        subscriptionId: azureSubscriptionId || undefined,
+        region: azureRegion,
+      });
+      setAzureTestResult(result);
+    } catch (err) {
+      setAzureTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+    }
+  };
+
+  // GCP handlers
+  const handleSaveGcp = async () => {
+    setGcpSaving(true);
+    setGcpTestResult(null);
+    try {
+      await api.configureGcp({
+        projectId: gcpProjectId || undefined,
+        keyFileJson: gcpKeyFileJson || undefined,
+        zone: gcpZone,
+        enabled: gcpEnabled,
+      });
+      setGcpConfigured(!!(gcpProjectId && gcpKeyFileJson));
+      queryClient.invalidateQueries({ queryKey: ['backend-status'] });
+    } finally {
+      setGcpSaving(false);
+    }
+  };
+
+  const handleTestGcp = async () => {
+    setGcpTestResult(null);
+    try {
+      const result = await api.testGcpConnection({
+        projectId: gcpProjectId || undefined,
+        keyFileJson: gcpKeyFileJson || undefined,
+        zone: gcpZone,
+      });
+      setGcpTestResult(result);
+    } catch (err) {
+      setGcpTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+    }
+  };
+
+  // DigitalOcean handlers
+  const handleSaveDigitalOcean = async () => {
+    setDoSaving(true);
+    setDoTestResult(null);
+    try {
+      await api.configureDigitalOcean({
+        apiToken: doApiToken || undefined,
+        region: doRegion,
+        enabled: doEnabled,
+      });
+      setDoConfigured(!!doApiToken);
+      queryClient.invalidateQueries({ queryKey: ['backend-status'] });
+    } finally {
+      setDoSaving(false);
+    }
+  };
+
+  const handleTestDigitalOcean = async () => {
+    setDoTestResult(null);
+    try {
+      const result = await api.testDigitalOceanConnection({
+        apiToken: doApiToken || undefined,
+        region: doRegion,
+      });
+      setDoTestResult(result);
+    } catch (err) {
+      setDoTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+    }
+  };
+
+  // Linode handlers
+  const handleSaveLinode = async () => {
+    setLinodeSaving(true);
+    setLinodeTestResult(null);
+    try {
+      await api.configureLinode({
+        apiToken: linodeApiToken || undefined,
+        region: linodeRegion,
+        enabled: linodeEnabled,
+      });
+      setLinodeConfigured(!!linodeApiToken);
+      queryClient.invalidateQueries({ queryKey: ['backend-status'] });
+    } finally {
+      setLinodeSaving(false);
+    }
+  };
+
+  const handleTestLinode = async () => {
+    setLinodeTestResult(null);
+    try {
+      const result = await api.testLinodeConnection({
+        apiToken: linodeApiToken || undefined,
+        region: linodeRegion,
+      });
+      setLinodeTestResult(result);
+    } catch (err) {
+      setLinodeTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
     }
   };
 
@@ -418,6 +637,567 @@ export function CloudBackendsSettings() {
         </div>
       </div>
 
+      {/* Azure Configuration */}
+      <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+            <Cloud className="h-5 w-5 text-[hsl(var(--cyan))]" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Azure VM</h4>
+              {azureConfigured && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                  Configured
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+              Azure Virtual Machines with managed disks and VNet isolation.
+            </p>
+            <a
+              href="https://azure.microsoft.com/en-us/products/virtual-machines"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--cyan))] hover:underline mt-1"
+            >
+              Learn more <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={azureEnabled}
+              onChange={(e) => setAzureEnabled(e.target.checked)}
+              disabled={!azureConfigured}
+              className="w-4 h-4 accent-[hsl(var(--cyan))]"
+            />
+            <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
+          </label>
+        </div>
+
+        <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
+          {/* Tenant ID */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Tenant ID
+            </label>
+            <input
+              type="text"
+              value={azureTenantId}
+              onChange={(e) => setAzureTenantId(e.target.value)}
+              placeholder={azureConfigured ? '••••••••••••••••' : 'Enter your Azure Tenant ID'}
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+          </div>
+
+          {/* Subscription ID */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Subscription ID
+            </label>
+            <input
+              type="text"
+              value={azureSubscriptionId}
+              onChange={(e) => setAzureSubscriptionId(e.target.value)}
+              placeholder={azureConfigured ? '••••••••••••••••' : 'Enter your Azure Subscription ID'}
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+          </div>
+
+          {/* Client ID */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Client ID (App ID)
+            </label>
+            <input
+              type="text"
+              value={azureClientId}
+              onChange={(e) => setAzureClientId(e.target.value)}
+              placeholder={azureConfigured ? '••••••••••••••••' : 'Enter your Azure Client ID'}
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+          </div>
+
+          {/* Client Secret */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Client Secret
+            </label>
+            <div className="relative">
+              <input
+                type={showAzureClientSecret ? 'text' : 'password'}
+                value={azureClientSecret}
+                onChange={(e) => setAzureClientSecret(e.target.value)}
+                placeholder={azureConfigured ? '••••••••••••••••' : 'Enter your Azure Client Secret'}
+                className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAzureClientSecret(!showAzureClientSecret)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+              >
+                {showAzureClientSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Region */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Region
+            </label>
+            <input
+              type="text"
+              value={azureRegion}
+              onChange={(e) => setAzureRegion(e.target.value)}
+              placeholder="eastus"
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+          </div>
+
+          {/* Resource Group */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Resource Group
+            </label>
+            <input
+              type="text"
+              value={azureResourceGroup}
+              onChange={(e) => setAzureResourceGroup(e.target.value)}
+              placeholder="my-resource-group"
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">
+              Get credentials from Azure Active Directory app registrations
+            </p>
+          </div>
+
+          {/* Test Result */}
+          {azureTestResult && (
+            <div className={`p-3 text-xs ${
+              azureTestResult.success
+                ? 'bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.2)] text-[hsl(var(--green))]'
+                : 'bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-[hsl(var(--red))]'
+            }`}>
+              {azureTestResult.success ? (
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle className="h-4 w-4" />
+                  {azureTestResult.message || 'Connection successful'}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <XCircle className="h-4 w-4" />
+                  {azureTestResult.error || 'Connection failed'}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              onClick={handleTestAzure}
+              disabled={(!azureClientId || !azureClientSecret || !azureTenantId || !azureSubscriptionId) || azureSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50"
+            >
+              Test Connection
+            </button>
+            <button
+              onClick={handleSaveAzure}
+              disabled={azureSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--cyan))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50"
+            >
+              {azureSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* GCP Configuration */}
+      <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+            <Cloud className="h-5 w-5 text-[hsl(var(--green))]" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Google Cloud</h4>
+              {gcpConfigured && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                  Configured
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+              GCP Compute Engine instances with persistent disk storage.
+            </p>
+            <a
+              href="https://cloud.google.com/compute"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--green))] hover:underline mt-1"
+            >
+              Learn more <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={gcpEnabled}
+              onChange={(e) => setGcpEnabled(e.target.checked)}
+              disabled={!gcpConfigured}
+              className="w-4 h-4 accent-[hsl(var(--green))]"
+            />
+            <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
+          </label>
+        </div>
+
+        <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
+          {/* Project ID */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Project ID
+            </label>
+            <input
+              type="text"
+              value={gcpProjectId}
+              onChange={(e) => setGcpProjectId(e.target.value)}
+              placeholder="my-gcp-project"
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+          </div>
+
+          {/* Zone */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Zone
+            </label>
+            <input
+              type="text"
+              value={gcpZone}
+              onChange={(e) => setGcpZone(e.target.value)}
+              placeholder="us-central1-a"
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+          </div>
+
+          {/* Service Account Key JSON */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Service Account Key (JSON)
+            </label>
+            <div className="relative">
+              <textarea
+                value={gcpKeyFileJson}
+                onChange={(e) => setGcpKeyFileJson(e.target.value)}
+                placeholder={gcpConfigured ? '••••••••••••••••' : 'Paste your service account JSON key content'}
+                rows={4}
+                className={`w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] font-mono resize-y ${
+                  !showGcpKeyFile && gcpKeyFileJson ? 'text-transparent' : ''
+                }`}
+                style={!showGcpKeyFile && gcpKeyFileJson ? { caretColor: 'hsl(var(--text-primary))' } : undefined}
+              />
+              <button
+                type="button"
+                onClick={() => setShowGcpKeyFile(!showGcpKeyFile)}
+                className="absolute right-2 top-2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+              >
+                {showGcpKeyFile ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">
+              Create a service account key from the GCP IAM console
+            </p>
+          </div>
+
+          {/* Test Result */}
+          {gcpTestResult && (
+            <div className={`p-3 text-xs ${
+              gcpTestResult.success
+                ? 'bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.2)] text-[hsl(var(--green))]'
+                : 'bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-[hsl(var(--red))]'
+            }`}>
+              {gcpTestResult.success ? (
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle className="h-4 w-4" />
+                  {gcpTestResult.message || 'Connection successful'}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <XCircle className="h-4 w-4" />
+                  {gcpTestResult.error || 'Connection failed'}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              onClick={handleTestGcp}
+              disabled={(!gcpProjectId || !gcpKeyFileJson) || gcpSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50"
+            >
+              Test Connection
+            </button>
+            <button
+              onClick={handleSaveGcp}
+              disabled={gcpSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50"
+            >
+              {gcpSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* DigitalOcean Configuration */}
+      <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+            <Cloud className="h-5 w-5 text-[hsl(var(--purple))]" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">DigitalOcean</h4>
+              {doConfigured && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                  Configured
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+              DigitalOcean Droplets with block storage volumes.
+            </p>
+            <a
+              href="https://www.digitalocean.com/products/droplets"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--purple))] hover:underline mt-1"
+            >
+              Learn more <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={doEnabled}
+              onChange={(e) => setDoEnabled(e.target.checked)}
+              disabled={!doConfigured}
+              className="w-4 h-4 accent-[hsl(var(--purple))]"
+            />
+            <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
+          </label>
+        </div>
+
+        <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
+          {/* Region */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Region
+            </label>
+            <input
+              type="text"
+              value={doRegion}
+              onChange={(e) => setDoRegion(e.target.value)}
+              placeholder="nyc1"
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+          </div>
+
+          {/* API Token */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              API Token
+            </label>
+            <div className="relative">
+              <input
+                type={showDoApiToken ? 'text' : 'password'}
+                value={doApiToken}
+                onChange={(e) => setDoApiToken(e.target.value)}
+                placeholder={doConfigured ? '••••••••••••••••' : 'Enter your DigitalOcean API token'}
+                className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowDoApiToken(!showDoApiToken)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+              >
+                {showDoApiToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">
+              Generate a personal access token from the DigitalOcean API settings
+            </p>
+          </div>
+
+          {/* Test Result */}
+          {doTestResult && (
+            <div className={`p-3 text-xs ${
+              doTestResult.success
+                ? 'bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.2)] text-[hsl(var(--green))]'
+                : 'bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-[hsl(var(--red))]'
+            }`}>
+              {doTestResult.success ? (
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle className="h-4 w-4" />
+                  {doTestResult.message || 'Connection successful'}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <XCircle className="h-4 w-4" />
+                  {doTestResult.error || 'Connection failed'}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              onClick={handleTestDigitalOcean}
+              disabled={!doApiToken || doSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50"
+            >
+              Test Connection
+            </button>
+            <button
+              onClick={handleSaveDigitalOcean}
+              disabled={doSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--purple))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--purple)/0.9)] disabled:opacity-50"
+            >
+              {doSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Linode Configuration */}
+      <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+            <Cloud className="h-5 w-5 text-[hsl(var(--green))]" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Linode</h4>
+              {linodeConfigured && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                  Configured
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">
+              Linode instances with dedicated CPU and SSD storage.
+            </p>
+            <a
+              href="https://www.linode.com/products/dedicated-cpu/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--green))] hover:underline mt-1"
+            >
+              Learn more <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={linodeEnabled}
+              onChange={(e) => setLinodeEnabled(e.target.checked)}
+              disabled={!linodeConfigured}
+              className="w-4 h-4 accent-[hsl(var(--green))]"
+            />
+            <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
+          </label>
+        </div>
+
+        <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
+          {/* Region */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              Region
+            </label>
+            <input
+              type="text"
+              value={linodeRegion}
+              onChange={(e) => setLinodeRegion(e.target.value)}
+              placeholder="us-east"
+              className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+            />
+          </div>
+
+          {/* API Token */}
+          <div>
+            <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">
+              API Token
+            </label>
+            <div className="relative">
+              <input
+                type={showLinodeApiToken ? 'text' : 'password'}
+                value={linodeApiToken}
+                onChange={(e) => setLinodeApiToken(e.target.value)}
+                placeholder={linodeConfigured ? '••••••••••••••••' : 'Enter your Linode API token'}
+                className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowLinodeApiToken(!showLinodeApiToken)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+              >
+                {showLinodeApiToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">
+              Generate a personal access token from the Linode Cloud Manager
+            </p>
+          </div>
+
+          {/* Test Result */}
+          {linodeTestResult && (
+            <div className={`p-3 text-xs ${
+              linodeTestResult.success
+                ? 'bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.2)] text-[hsl(var(--green))]'
+                : 'bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.2)] text-[hsl(var(--red))]'
+            }`}>
+              {linodeTestResult.success ? (
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle className="h-4 w-4" />
+                  {linodeTestResult.message || 'Connection successful'}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <XCircle className="h-4 w-4" />
+                  {linodeTestResult.error || 'Connection failed'}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              onClick={handleTestLinode}
+              disabled={!linodeApiToken || linodeSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50"
+            >
+              Test Connection
+            </button>
+            <button
+              onClick={handleSaveLinode}
+              disabled={linodeSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50"
+            >
+              {linodeSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Info section */}
       <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
         <h4 className="text-xs font-medium text-[hsl(var(--text-primary))] uppercase tracking-wider">About Cloud Backends</h4>
@@ -429,6 +1209,18 @@ export function CloudBackendsSettings() {
           <p>
             <strong className="text-[hsl(var(--orange))]">AWS EC2</strong>: Cost-effective Spot instances in your own AWS account.
             Persistent EBS volumes preserve state across stop/start cycles.
+          </p>
+          <p>
+            <strong className="text-[hsl(var(--cyan))]">Azure</strong>: Virtual Machines with managed disks and VNet isolation in your Azure subscription.
+          </p>
+          <p>
+            <strong className="text-[hsl(var(--green))]">Google Cloud</strong>: Compute Engine instances with persistent disk storage in your GCP project.
+          </p>
+          <p>
+            <strong className="text-[hsl(var(--purple))]">DigitalOcean</strong>: Simple Droplets with block storage volumes for lightweight workloads.
+          </p>
+          <p>
+            <strong className="text-[hsl(var(--green))]">Linode</strong>: Dedicated CPU instances with SSD storage for predictable performance.
           </p>
           <p>
             Cloud backends appear as additional options when creating new sandboxes, alongside local hypervisors.

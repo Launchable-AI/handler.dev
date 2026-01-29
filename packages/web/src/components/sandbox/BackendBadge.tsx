@@ -47,6 +47,30 @@ const BACKEND_CONFIG: Record<SandboxBackend, {
     color: 'text-[hsl(var(--orange))]',
     bgColor: 'bg-[hsl(var(--orange)/0.1)]',
   },
+  azure: {
+    icon: Cloud,
+    label: 'Azure',
+    color: 'text-[hsl(var(--blue))]',
+    bgColor: 'bg-[hsl(var(--blue)/0.1)]',
+  },
+  gcp: {
+    icon: Cloud,
+    label: 'GCP',
+    color: 'text-[hsl(var(--green))]',
+    bgColor: 'bg-[hsl(var(--green)/0.1)]',
+  },
+  digitalocean: {
+    icon: Cloud,
+    label: 'DigitalOcean',
+    color: 'text-[hsl(var(--cyan))]',
+    bgColor: 'bg-[hsl(var(--cyan)/0.1)]',
+  },
+  linode: {
+    icon: Cloud,
+    label: 'Linode',
+    color: 'text-[hsl(var(--green))]',
+    bgColor: 'bg-[hsl(var(--green)/0.1)]',
+  },
 };
 
 export function BackendBadge({ backend, size = 'sm', showLabel = false }: BackendBadgeProps) {
@@ -89,5 +113,13 @@ export function getBackendShortName(backend: SandboxBackend): string {
       return 'Daytona';
     case 'aws':
       return 'AWS';
+    case 'azure':
+      return 'Azure';
+    case 'gcp':
+      return 'GCP';
+    case 'digitalocean':
+      return 'DO';
+    case 'linode':
+      return 'Linode';
   }
 }

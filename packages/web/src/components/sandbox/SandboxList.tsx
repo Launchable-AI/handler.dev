@@ -73,6 +73,10 @@ const BACKEND_OPTIONS: Array<{ value: SandboxBackend; label: string; icon: React
   { value: 'firecracker', label: 'Firecracker', icon: Flame },
   { value: 'daytona', label: 'Daytona', icon: Globe },
   { value: 'aws', label: 'AWS', icon: Cloud },
+  { value: 'azure', label: 'Azure', icon: Cloud },
+  { value: 'gcp', label: 'GCP', icon: Cloud },
+  { value: 'digitalocean', label: 'DigitalOcean', icon: Cloud },
+  { value: 'linode', label: 'Linode', icon: Cloud },
 ];
 
 // Sortable columns for list view
@@ -242,6 +246,10 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
     firecracker: false,
     daytona: false,
     aws: false,
+    azure: false,
+    gcp: false,
+    digitalocean: false,
+    linode: false,
   };
 
   // Filter sandboxes by search query
