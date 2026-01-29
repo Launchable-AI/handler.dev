@@ -4,6 +4,7 @@ import type {
   CommandCentreContextValue,
   TerminalSession,
   SplitLayout,
+  ViewMode,
 } from '../types/command-centre';
 
 // Constants
@@ -15,6 +16,9 @@ const MAX_SIDEBAR_WIDTH = 500;
 const DEFAULT_SIDEBAR_WIDTH = 220;
 
 // Initial state
+// Load persisted view mode from localStorage
+const savedViewMode = (typeof window !== 'undefined' && localStorage.getItem('caisson-view-mode')) as ViewMode | null;
+
 const initialState: CommandCentreState = {
   sessions: [],
   layouts: [],
@@ -23,6 +27,7 @@ const initialState: CommandCentreState = {
   focusedSessionIds: [],
   isFullscreen: false,
   maximizedSessionId: null,
+  viewMode: savedViewMode || 'grid',
   fontSize: DEFAULT_FONT_SIZE,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
 };
@@ -47,7 +52,8 @@ type Action =
   | { type: 'MAXIMIZE_SESSION'; payload: string | null }
   | { type: 'TOGGLE_MAXIMIZE'; payload: string }
   | { type: 'REORDER_SESSIONS'; payload: { fromIndex: number; toIndex: number } }
-  | { type: 'REORDER_FOCUSED_SESSIONS'; payload: { fromIndex: number; toIndex: number } };
+  | { type: 'REORDER_FOCUSED_SESSIONS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'SET_VIEW_MODE'; payload: ViewMode };
 
 // Reducer
 function commandCentreReducer(state: CommandCentreState, action: Action): CommandCentreState {
@@ -255,6 +261,13 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         focusedSessionIds: newFocusedIds,
       };
     }
+    case 'SET_VIEW_MODE': {
+      localStorage.setItem('caisson-view-mode', action.payload);
+      return {
+        ...state,
+        viewMode: action.payload,
+      };
+    }
     default:
       return state;
   }
@@ -380,6 +393,10 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'REORDER_FOCUSED_SESSIONS', payload: { fromIndex, toIndex } });
   }, []);
 
+  const setViewMode = useCallback((mode: ViewMode) => {
+    dispatch({ type: 'SET_VIEW_MODE', payload: mode });
+  }, []);
+
   const value: CommandCentreContextValue = {
     state,
     createSession,
@@ -403,6 +420,7 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
     toggleMaximize,
     reorderSessions,
     reorderFocusedSessions,
+    setViewMode,
   };
 
   return (

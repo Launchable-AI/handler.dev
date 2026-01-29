@@ -28,6 +28,22 @@ export interface TileLayout {
 // Split layouts for main view
 export type SplitLayout = 'grid' | 'vertical' | 'horizontal';
 
+// View modes for CommandCentre
+export type ViewMode = 'grid' | 'canvas';
+
+// Worktree node for canvas view
+export interface WorktreeNode {
+  id: string;
+  sandboxId: string;          // underlying sandbox/container
+  sessionId?: string;         // linked terminal session (if opened)
+  branch: string;             // git branch name
+  worktreePath: string;       // path inside container
+  parentNodeId: string | null; // null = root/main node
+  status: 'creating' | 'ready' | 'merging' | 'merged' | 'error';
+  ports: Array<{ container: number; host: number }>;
+  position: { x: number; y: number }; // canvas position
+}
+
 export interface CommandCentreState {
   sessions: TerminalSession[];
   layouts: TileLayout[];
@@ -40,6 +56,9 @@ export interface CommandCentreState {
   // Fullscreen/maximize
   isFullscreen: boolean;            // Hide app sidebar/header
   maximizedSessionId: string | null; // Single session takes full view
+
+  // View mode
+  viewMode: ViewMode;               // grid or canvas view
 
   // UI settings
   fontSize: number;                 // Terminal font size in pixels
@@ -85,4 +104,7 @@ export interface CommandCentreContextValue {
   // Reorder sessions (drag and drop)
   reorderSessions: (fromIndex: number, toIndex: number) => void;
   reorderFocusedSessions: (fromIndex: number, toIndex: number) => void;
+
+  // View mode
+  setViewMode: (mode: ViewMode) => void;
 }
