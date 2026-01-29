@@ -72,6 +72,18 @@ export interface HookMatcher {
 
 export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit' | 'Stop' | 'Notification' | 'SessionStart' | 'SessionEnd' | 'SubagentStart' | 'SubagentStop' | 'PermissionRequest' | 'PreCompact' | 'Setup';
 
+export interface PluginMarketplace {
+  type: 'github';
+  owner: string;
+  repo: string;
+}
+
+export interface PluginRef {
+  name: string;           // plugin name
+  marketplace: string;    // marketplace slug (e.g. "claude-plugins-official")
+  enabled: boolean;
+}
+
 export interface AgentConfigPreset {
   id: string;           // "ac-{timestamp}-{random}"
   name: string;
@@ -85,6 +97,8 @@ export interface AgentConfigPreset {
   env: Record<string, string>;                    // environment variables
   model: string;                                  // model override
   subagents: SubagentConfig[];
+  plugins: PluginRef[];
+  marketplaces: PluginMarketplace[];
   createdAt: string;
   updatedAt: string;
 }

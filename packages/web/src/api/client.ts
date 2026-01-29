@@ -1146,6 +1146,38 @@ export interface HookMatcher {
 
 export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit' | 'Stop' | 'Notification' | 'SessionStart' | 'SessionEnd' | 'SubagentStart' | 'SubagentStop' | 'PermissionRequest' | 'PreCompact' | 'Setup';
 
+export interface PluginMarketplace {
+  type: 'github';
+  owner: string;
+  repo: string;
+}
+
+export interface PluginRef {
+  name: string;
+  marketplace: string;
+  enabled: boolean;
+}
+
+export interface MarketplacePlugin {
+  name: string;
+  description: string;
+  version?: string;
+  homepage?: string;
+  category?: string;
+  tags?: string[];
+  source?: { type: string; url?: string; path?: string };
+  marketplace?: string;
+  marketplaceOwner?: string;
+  marketplaceRepo?: string;
+}
+
+export interface MarketplaceData {
+  name: string;
+  slug: string;
+  description?: string;
+  plugins: MarketplacePlugin[];
+}
+
 export interface AgentConfigPreset {
   id: string;
   name: string;
@@ -1159,6 +1191,8 @@ export interface AgentConfigPreset {
   env: Record<string, string>;
   model: string;
   subagents: SubagentConfig[];
+  plugins: PluginRef[];
+  marketplaces: PluginMarketplace[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1183,6 +1217,8 @@ export async function createAgentConfig(input: {
   env?: Record<string, string>;
   model?: string;
   subagents?: SubagentConfig[];
+  plugins?: PluginRef[];
+  marketplaces?: PluginMarketplace[];
 }): Promise<AgentConfigPreset> {
   return fetchAPI('/agent-configs', {
     method: 'POST',
@@ -1202,6 +1238,8 @@ export async function updateAgentConfig(id: string, input: {
   env?: Record<string, string>;
   model?: string;
   subagents?: SubagentConfig[];
+  plugins?: PluginRef[];
+  marketplaces?: PluginMarketplace[];
 }): Promise<AgentConfigPreset> {
   return fetchAPI(`/agent-configs/${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -1219,6 +1257,15 @@ export async function injectAgentConfig(configId: string, sandboxId: string): Pr
   return fetchAPI(`/agent-configs/${encodeURIComponent(configId)}/inject/${encodeURIComponent(sandboxId)}`, {
     method: 'POST',
   });
+}
+
+// Plugin Marketplace
+export async function getPluginMarketplaces(): Promise<{ marketplaces: MarketplaceData[] }> {
+  return fetchAPI('/agent-configs/plugins/marketplaces');
+}
+
+export async function searchPlugins(query: string): Promise<{ plugins: MarketplacePlugin[] }> {
+  return fetchAPI(`/agent-configs/plugins/search?q=${encodeURIComponent(query)}`);
 }
 
 // ============ Virtual Machines ============
