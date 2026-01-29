@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Search,
   Loader2,
@@ -12,11 +12,29 @@ import {
   Info,
   RefreshCw,
   FolderOpen,
+  X,
+  BookOpen,
+  GripVertical,
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { getPluginMarketplaces, searchPlugins } from '../api/client';
 import type { MarketplaceData, MarketplacePlugin } from '../api/client';
 
 type ViewLayout = 'grid' | 'list';
+type DetailTab = 'info' | 'readme';
+
+const PANEL_WIDTH_KEY = 'caisson-plugin-panel-width';
+const MIN_PANEL_WIDTH = 300;
+const MAX_PANEL_WIDTH = 800;
+const DEFAULT_PANEL_WIDTH = 420;
+
+// Extended plugin type that includes marketplace owner/repo for README fetching
+interface PluginWithMeta extends MarketplacePlugin {
+  _owner?: string;
+  _repo?: string;
+}
 
 export function PluginMarketplace() {
   const [marketplaces, setMarketplaces] = useState<MarketplaceData[]>([]);
@@ -29,6 +47,59 @@ export function PluginMarketplace() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMarketplace, setSelectedMarketplace] = useState<string | null>(null);
   const [layout, setLayout] = useState<ViewLayout>('grid');
+
+  // Detail panel state
+  const [selectedPlugin, setSelectedPlugin] = useState<PluginWithMeta | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>('info');
+  const [readme, setReadme] = useState<string | null>(null);
+  const [isLoadingReadme, setIsLoadingReadme] = useState(false);
+  const [readmeError, setReadmeError] = useState<string | null>(null);
+
+  // Resizable panel
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const stored = localStorage.getItem(PANEL_WIDTH_KEY);
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      if (!isNaN(parsed) && parsed >= MIN_PANEL_WIDTH && parsed <= MAX_PANEL_WIDTH) return parsed;
+    }
+    return DEFAULT_PANEL_WIDTH;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth));
+  }, [panelWidth]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const containerRect = resizeRef.current.parentElement?.getBoundingClientRect();
+      if (!containerRect) return;
+      const newWidth = containerRect.right - e.clientX;
+      setPanelWidth(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, newWidth)));
+    };
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  // Build a slug -> {owner, repo} map from marketplaces
+  const marketplaceMetaMap = useMemo(() => {
+    const map = new Map<string, { owner: string; repo: string }>();
+    for (const m of marketplaces) {
+      if (m.owner && m.repo) {
+        map.set(m.slug, { owner: m.owner, repo: m.repo });
+      }
+    }
+    return map;
+  }, [marketplaces]);
 
   // Fetch marketplaces on mount
   useEffect(() => {
@@ -107,6 +178,61 @@ export function PluginMarketplace() {
   }, [allPlugins, selectedCategory, selectedMarketplace]);
 
   const totalCount = allPlugins.length;
+
+  // Select a plugin for detail view
+  const selectPlugin = (plugin: MarketplacePlugin) => {
+    // Resolve owner/repo: from search results or from marketplace meta
+    const owner = plugin.marketplaceOwner || (plugin.marketplace ? marketplaceMetaMap.get(plugin.marketplace)?.owner : undefined);
+    const repo = plugin.marketplaceRepo || (plugin.marketplace ? marketplaceMetaMap.get(plugin.marketplace)?.repo : undefined);
+    const pluginWithMeta: PluginWithMeta = { ...plugin, _owner: owner, _repo: repo };
+    setSelectedPlugin(pluginWithMeta);
+    setDetailTab('info');
+    setReadme(null);
+    setReadmeError(null);
+  };
+
+  // Load README from GitHub
+  const loadReadme = async (plugin: PluginWithMeta) => {
+    const { _owner: owner, _repo: repo, source } = plugin;
+    if (!owner || !repo) {
+      setReadmeError('Cannot determine repository for this plugin');
+      return;
+    }
+
+    setIsLoadingReadme(true);
+    setReadmeError(null);
+
+    // Try to construct the README URL from source path
+    const basePath = source?.path ? source.path.replace(/\/?$/, '') : '';
+    const readmePaths = basePath
+      ? [`${basePath}/README.md`, `${basePath}/readme.md`]
+      : ['README.md', 'readme.md'];
+
+    for (const readmePath of readmePaths) {
+      try {
+        const url = `https://raw.githubusercontent.com/${owner}/${repo}/main/${readmePath}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const content = await response.text();
+          setReadme(content);
+          setIsLoadingReadme(false);
+          return;
+        }
+      } catch {
+        // Try next path
+      }
+    }
+
+    setReadmeError('README not found for this plugin');
+    setIsLoadingReadme(false);
+  };
+
+  const handleDetailTabChange = (tab: DetailTab) => {
+    setDetailTab(tab);
+    if (tab === 'readme' && selectedPlugin && !readme && !readmeError) {
+      loadReadme(selectedPlugin);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -221,9 +347,9 @@ export function PluginMarketplace() {
               onClick={() => setSelectedMarketplace(null)}
               className="text-[10px] px-2 py-0.5"
               style={{
-                background: !selectedMarketplace ? 'hsl(var(--cyan-dim))' : 'hsl(var(--bg-elevated))',
+                background: !selectedMarketplace ? 'hsl(var(--cyan) / 0.15)' : 'hsl(var(--bg-elevated))',
                 color: !selectedMarketplace ? 'hsl(var(--cyan))' : 'hsl(var(--text-muted))',
-                border: '1px solid ' + (!selectedMarketplace ? 'hsl(var(--cyan))' : 'hsl(var(--border))'),
+                border: '1px solid ' + (!selectedMarketplace ? 'hsl(var(--cyan) / 0.4)' : 'hsl(var(--border))'),
               }}
             >
               All Sources
@@ -234,9 +360,9 @@ export function PluginMarketplace() {
                 onClick={() => setSelectedMarketplace(selectedMarketplace === m.slug ? null : m.slug)}
                 className="text-[10px] px-2 py-0.5"
                 style={{
-                  background: selectedMarketplace === m.slug ? 'hsl(var(--cyan-dim))' : 'hsl(var(--bg-elevated))',
+                  background: selectedMarketplace === m.slug ? 'hsl(var(--cyan) / 0.15)' : 'hsl(var(--bg-elevated))',
                   color: selectedMarketplace === m.slug ? 'hsl(var(--cyan))' : 'hsl(var(--text-muted))',
-                  border: '1px solid ' + (selectedMarketplace === m.slug ? 'hsl(var(--cyan))' : 'hsl(var(--border))'),
+                  border: '1px solid ' + (selectedMarketplace === m.slug ? 'hsl(var(--cyan) / 0.4)' : 'hsl(var(--border))'),
                 }}
               >
                 {m.name}
@@ -314,14 +440,288 @@ export function PluginMarketplace() {
           ) : layout === 'grid' ? (
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
               {filteredPlugins.map((plugin, i) => (
-                <PluginCard key={`${plugin.marketplace}-${plugin.name}-${i}`} plugin={plugin} />
+                <PluginCard
+                  key={`${plugin.marketplace}-${plugin.name}-${i}`}
+                  plugin={plugin}
+                  isSelected={selectedPlugin?.name === plugin.name && selectedPlugin?.marketplace === plugin.marketplace}
+                  onClick={() => selectPlugin(plugin)}
+                />
               ))}
             </div>
           ) : (
             <div className="flex flex-col gap-1">
               {filteredPlugins.map((plugin, i) => (
-                <PluginRow key={`${plugin.marketplace}-${plugin.name}-${i}`} plugin={plugin} />
+                <PluginRow
+                  key={`${plugin.marketplace}-${plugin.name}-${i}`}
+                  plugin={plugin}
+                  isSelected={selectedPlugin?.name === plugin.name && selectedPlugin?.marketplace === plugin.marketplace}
+                  onClick={() => selectPlugin(plugin)}
+                />
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Detail Panel */}
+        <div
+          ref={resizeRef}
+          className="flex-none flex flex-col border-l bg-[hsl(var(--bg-surface))] relative"
+          style={{ width: panelWidth, borderColor: 'hsl(var(--border))' }}
+        >
+          {/* Resize Handle */}
+          <div
+            onMouseDown={handleMouseDown}
+            className={`absolute left-0 top-0 bottom-0 w-1 cursor-col-resize group hover:bg-[hsl(var(--cyan)/0.3)] transition-colors z-10 ${
+              isResizing ? 'bg-[hsl(var(--cyan)/0.5)]' : ''
+            }`}
+          >
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <GripVertical className="h-6 w-6 text-[hsl(var(--text-muted))]" />
+            </div>
+          </div>
+
+          {selectedPlugin ? (
+            <>
+              {/* Header */}
+              <div className="p-4 border-b border-[hsl(var(--border))]">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Package size={14} className="flex-none" style={{ color: 'hsl(var(--cyan))' }} />
+                      <h3 className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">
+                        {selectedPlugin.name}
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {selectedPlugin.homepage && (
+                      <a
+                        href={selectedPlugin.homepage}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))]"
+                        title="Homepage"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => setSelectedPlugin(null)}
+                      className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Detail Tabs */}
+              <div className="flex border-b border-[hsl(var(--border))]">
+                <button
+                  onClick={() => handleDetailTabChange('info')}
+                  className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
+                    detailTab === 'info'
+                      ? 'text-[hsl(var(--cyan))] border-b-2 border-[hsl(var(--cyan))]'
+                      : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]'
+                  }`}
+                >
+                  Info
+                </button>
+                <button
+                  onClick={() => handleDetailTabChange('readme')}
+                  className={`flex-1 px-4 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                    detailTab === 'readme'
+                      ? 'text-[hsl(var(--cyan))] border-b-2 border-[hsl(var(--cyan))]'
+                      : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]'
+                  }`}
+                >
+                  <BookOpen className="h-3 w-3" />
+                  README
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-auto p-4">
+                {detailTab === 'info' ? (
+                  <div className="space-y-4">
+                    {/* Description */}
+                    <div>
+                      <p className="text-xs text-[hsl(var(--text-secondary))] leading-relaxed">
+                        {selectedPlugin.description || 'No description available'}
+                      </p>
+                    </div>
+
+                    {/* Version */}
+                    {selectedPlugin.version && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Version</div>
+                        <div className="text-xs text-[hsl(var(--text-primary))] font-mono">
+                          v{selectedPlugin.version}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Category */}
+                    {selectedPlugin.category && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Category</div>
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 inline-block"
+                          style={{ background: 'hsl(var(--purple) / 0.15)', color: 'hsl(var(--purple))' }}
+                        >
+                          {selectedPlugin.category}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Tags */}
+                    {selectedPlugin.tags && selectedPlugin.tags.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">
+                          <Tag className="h-3 w-3" />
+                          <span>Tags</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedPlugin.tags.map(tag => (
+                            <span
+                              key={tag}
+                              className="text-[10px] px-1.5 py-0.5"
+                              style={{ background: 'hsl(var(--bg-base))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--text-secondary))' }}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Source */}
+                    {selectedPlugin.marketplace && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Marketplace</div>
+                        <span className="text-xs text-[hsl(var(--text-secondary))]">
+                          {selectedPlugin.marketplace}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Source info */}
+                    {selectedPlugin.source && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Source</div>
+                        <div className="text-[10px] font-mono text-[hsl(var(--text-secondary))] p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+                          <div>Type: {selectedPlugin.source.type}</div>
+                          {selectedPlugin.source.url && <div className="truncate">URL: {selectedPlugin.source.url}</div>}
+                          {selectedPlugin.source.path && <div className="truncate">Path: {selectedPlugin.source.path}</div>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Homepage */}
+                    {selectedPlugin.homepage && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">Homepage</div>
+                        <a
+                          href={selectedPlugin.homepage}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--cyan))] hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {selectedPlugin.homepage}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="prose prose-sm prose-invert max-w-none">
+                    {isLoadingReadme ? (
+                      <div className="flex flex-col items-center justify-center py-8 gap-2">
+                        <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--text-muted))]" />
+                        <span className="text-[10px] text-[hsl(var(--text-muted))]">Loading README...</span>
+                      </div>
+                    ) : readmeError ? (
+                      <div className="text-center py-8">
+                        <BookOpen className="h-8 w-8 mx-auto mb-2 text-[hsl(var(--text-muted))] opacity-30" />
+                        <p className="text-xs text-[hsl(var(--text-muted))]">{readmeError}</p>
+                        <button
+                          onClick={() => loadReadme(selectedPlugin)}
+                          className="mt-2 text-[10px] text-[hsl(var(--cyan))] hover:underline"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    ) : readme ? (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
+                        components={{
+                          h1: ({ children }) => <h1 className="text-base font-semibold text-[hsl(var(--text-primary))] mt-4 mb-2">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-sm font-semibold text-[hsl(var(--text-primary))] mt-3 mb-2">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-xs font-semibold text-[hsl(var(--text-primary))] mt-2 mb-1">{children}</h3>,
+                          p: ({ children }) => <p className="text-xs text-[hsl(var(--text-secondary))] mb-2 leading-relaxed">{children}</p>,
+                          a: ({ href, children }) => (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-[hsl(var(--cyan))] hover:underline">
+                              {children}
+                            </a>
+                          ),
+                          code: ({ className, children }) => {
+                            const isBlock = className?.includes('language-');
+                            return isBlock ? (
+                              <pre className="bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] p-2 overflow-x-auto text-[10px] my-2">
+                                <code>{children}</code>
+                              </pre>
+                            ) : (
+                              <code className="bg-[hsl(var(--bg-base))] px-1 py-0.5 text-[10px] text-[hsl(var(--cyan))]">{children}</code>
+                            );
+                          },
+                          pre: ({ children }) => <>{children}</>,
+                          ul: ({ children }) => <ul className="list-disc list-inside text-xs text-[hsl(var(--text-secondary))] mb-2 space-y-0.5">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside text-xs text-[hsl(var(--text-secondary))] mb-2 space-y-0.5">{children}</ol>,
+                          li: ({ children }) => <li className="text-xs">{children}</li>,
+                          blockquote: ({ children }) => (
+                            <blockquote className="border-l-2 border-[hsl(var(--border))] pl-3 my-2 text-[hsl(var(--text-muted))]">
+                              {children}
+                            </blockquote>
+                          ),
+                          table: ({ children }) => (
+                            <div className="overflow-x-auto my-2">
+                              <table className="text-[10px] border-collapse w-full">{children}</table>
+                            </div>
+                          ),
+                          th: ({ children }) => <th className="border border-[hsl(var(--border))] px-2 py-1 bg-[hsl(var(--bg-base))] text-left">{children}</th>,
+                          td: ({ children }) => <td className="border border-[hsl(var(--border))] px-2 py-1">{children}</td>,
+                          img: ({ src, alt }) => (
+                            <img
+                              src={src}
+                              alt={alt || ''}
+                              className="max-w-full h-auto my-2 rounded"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ),
+                        }}
+                      >
+                        {readme}
+                      </ReactMarkdown>
+                    ) : (
+                      <div className="text-center py-8 text-xs text-[hsl(var(--text-muted))]">
+                        README not available
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="h-full flex items-center justify-center text-[hsl(var(--text-muted))]">
+              <div className="text-center">
+                <Package className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-[10px] uppercase tracking-wider">
+                  Select a plugin to view details
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -330,13 +730,14 @@ export function PluginMarketplace() {
   );
 }
 
-function PluginCard({ plugin }: { plugin: MarketplacePlugin }) {
+function PluginCard({ plugin, isSelected, onClick }: { plugin: MarketplacePlugin; isSelected: boolean; onClick: () => void }) {
   return (
     <div
-      className="p-3 flex flex-col gap-2"
+      onClick={onClick}
+      className="p-3 flex flex-col gap-2 cursor-pointer transition-colors"
       style={{
-        background: 'hsl(var(--bg-surface))',
-        border: '1px solid hsl(var(--border))',
+        background: isSelected ? 'hsl(var(--cyan) / 0.08)' : 'hsl(var(--bg-surface))',
+        border: isSelected ? '1px solid hsl(var(--cyan) / 0.4)' : '1px solid hsl(var(--border))',
       }}
     >
       {/* Header */}
@@ -354,6 +755,7 @@ function PluginCard({ plugin }: { plugin: MarketplacePlugin }) {
             rel="noopener noreferrer"
             className="flex-none"
             style={{ color: 'hsl(var(--text-muted))' }}
+            onClick={e => e.stopPropagation()}
           >
             <ExternalLink size={10} />
           </a>
@@ -411,13 +813,14 @@ function PluginCard({ plugin }: { plugin: MarketplacePlugin }) {
   );
 }
 
-function PluginRow({ plugin }: { plugin: MarketplacePlugin }) {
+function PluginRow({ plugin, isSelected, onClick }: { plugin: MarketplacePlugin; isSelected: boolean; onClick: () => void }) {
   return (
     <div
-      className="flex items-center gap-3 px-3 py-2"
+      onClick={onClick}
+      className="flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors"
       style={{
-        background: 'hsl(var(--bg-surface))',
-        border: '1px solid hsl(var(--border))',
+        background: isSelected ? 'hsl(var(--cyan) / 0.08)' : 'hsl(var(--bg-surface))',
+        border: isSelected ? '1px solid hsl(var(--cyan) / 0.4)' : '1px solid hsl(var(--border))',
       }}
     >
       <Package size={12} className="flex-none" style={{ color: 'hsl(var(--cyan))' }} />
@@ -465,6 +868,7 @@ function PluginRow({ plugin }: { plugin: MarketplacePlugin }) {
           rel="noopener noreferrer"
           className="flex-none"
           style={{ color: 'hsl(var(--text-muted))' }}
+          onClick={e => e.stopPropagation()}
         >
           <ExternalLink size={10} />
         </a>
