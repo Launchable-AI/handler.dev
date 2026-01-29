@@ -39,6 +39,7 @@ export function TerminalInstance({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const isDisposedRef = useRef(false);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   const getWsUrl = useCallback(() => {
     const apiPort = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
@@ -60,7 +61,16 @@ export function TerminalInstance({
   useEffect(() => {
     if (!terminalRef.current) return;
 
+    const containerEl = terminalRef.current;
     isDisposedRef.current = false;
+
+    // Delay creation by a tick to survive React strict mode's immediate
+    // unmount cycle. Without this, xterm's internal Viewport setTimeout
+    // fires after disposal → "Cannot read properties of undefined (reading 'dimensions')".
+    const initTimeout = setTimeout(() => init(), 0);
+
+    function init() {
+    if (isDisposedRef.current) return;
 
     // Create terminal instance with theme matching the UI
     const term = new XTerm({
@@ -106,7 +116,7 @@ export function TerminalInstance({
     term.loadAddon(webLinksAddon);
 
     // Open terminal
-    term.open(terminalRef.current);
+    term.open(containerEl);
     xtermRef.current = term;
 
     // Connect WebSocket first
@@ -238,12 +248,10 @@ export function TerminalInstance({
     };
 
     const resizeObserver = new ResizeObserver(() => handleResize());
-    if (terminalRef.current) {
-      resizeObserver.observe(terminalRef.current);
-    }
+    resizeObserver.observe(containerEl);
 
-    return () => {
-      isDisposedRef.current = true;
+    // Store cleanup for resources created inside init()
+    cleanupRef.current = () => {
       clearTimeout(fitTimeout1);
       clearTimeout(fitTimeout2);
       clearTimeout(fitTimeout3);
@@ -258,6 +266,17 @@ export function TerminalInstance({
       xtermRef.current = null;
       fitAddonRef.current = null;
       wsRef.current = null;
+    };
+
+    } // end init()
+
+    return () => {
+      isDisposedRef.current = true;
+      clearTimeout(initTimeout);
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
+      }
     };
   }, [target.type, target.id, target.ip, target.isDevNode, getWsUrl, updateState]);
 
