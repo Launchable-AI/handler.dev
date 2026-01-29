@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   Loader2,
   Square,
+  Play,
   RotateCcw,
   Trash2,
   FileText,
@@ -12,11 +13,14 @@ import {
   Cloud,
   ChevronDown,
   ChevronUp,
+  Link,
+  Unlink,
+  AlertCircle,
 } from 'lucide-react';
 import { useMCPDeployments } from '../../hooks/useMCPDeployments';
 import { ConnectionInfo } from './ConnectionInfo';
 import * as api from '../../api/client';
-import type { MCPDeployment, MCPDeploymentStatus, MCPLocalServer } from '../../api/client';
+import type { MCPDeployment, MCPDeploymentStatus, MCPLocalServer, Sandbox } from '../../api/client';
 
 type FilterStatus = 'all' | MCPDeploymentStatus;
 
@@ -58,7 +62,7 @@ function formatUptime(startedAt: string): string {
 }
 
 export function MyMCPServers() {
-  const { deployments, localServers, isLoading, error, stop, restart, remove } = useMCPDeployments();
+  const { deployments, localServers, isLoading, error, stop, start, restart, remove, connectToSandbox, disconnectFromSandbox } = useMCPDeployments();
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [logsId, setLogsId] = useState<string | null>(null);
@@ -70,10 +74,11 @@ export function MyMCPServers() {
     ? deployments
     : deployments.filter(d => d.status === filterStatus);
 
-  const handleAction = async (id: string, action: 'stop' | 'restart' | 'delete') => {
+  const handleAction = async (id: string, action: 'stop' | 'start' | 'restart' | 'delete') => {
     setActionInProgress(id);
     try {
       if (action === 'stop') await stop(id);
+      else if (action === 'start') await start(id);
       else if (action === 'restart') await restart(id);
       else if (action === 'delete') await remove(id);
     } catch (err) {
@@ -172,6 +177,8 @@ export function MyMCPServers() {
                   onToggleExpand={() => setExpandedId(expandedId === deployment.id ? null : deployment.id)}
                   onAction={handleAction}
                   onViewLogs={handleViewLogs}
+                  onConnect={connectToSandbox}
+                  onDisconnect={disconnectFromSandbox}
                   actionInProgress={actionInProgress === deployment.id}
                   showLogs={logsId === deployment.id}
                   logs={logs}
@@ -207,6 +214,8 @@ function DeploymentCard({
   onToggleExpand,
   onAction,
   onViewLogs,
+  onConnect,
+  onDisconnect,
   actionInProgress,
   showLogs,
   logs,
@@ -215,13 +224,70 @@ function DeploymentCard({
   deployment: MCPDeployment;
   isExpanded: boolean;
   onToggleExpand: () => void;
-  onAction: (id: string, action: 'stop' | 'restart' | 'delete') => void;
+  onAction: (id: string, action: 'stop' | 'start' | 'restart' | 'delete') => void;
   onViewLogs: (id: string) => void;
+  onConnect: (deploymentId: string, sandboxId: string) => Promise<unknown>;
+  onDisconnect: (deploymentId: string, sandboxId: string) => Promise<unknown>;
   actionInProgress: boolean;
   showLogs: boolean;
   logs: api.MCPDeploymentLogEntry[];
   isLoadingLogs: boolean;
 }) {
+  const [showConnectPicker, setShowConnectPicker] = useState(false);
+  const [sandboxes, setSandboxes] = useState<Sandbox[]>([]);
+  const [isLoadingSandboxes, setIsLoadingSandboxes] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [connectingTo, setConnectingTo] = useState<string | null>(null);
+  const [connectedSandbox, setConnectedSandbox] = useState<string | null>(null);
+
+  const loadSandboxes = async () => {
+    setIsLoadingSandboxes(true);
+    try {
+      const result = await api.listSandboxes({ status: ['running'] });
+      // Exclude the MCP server's own sandbox
+      setSandboxes(result.sandboxes.filter(s => s.id !== deployment.sandboxId));
+    } catch {
+      setSandboxes([]);
+    }
+    setIsLoadingSandboxes(false);
+  };
+
+  const handleConnectClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (showConnectPicker) {
+      setShowConnectPicker(false);
+      return;
+    }
+    setShowConnectPicker(true);
+    setConnectError(null);
+    loadSandboxes();
+  };
+
+  const handleConnect = async (sandboxId: string) => {
+    setConnectingTo(sandboxId);
+    setConnectError(null);
+    try {
+      await onConnect(deployment.id, sandboxId);
+      setConnectedSandbox(sandboxId);
+      setTimeout(() => {
+        setShowConnectPicker(false);
+        setConnectedSandbox(null);
+      }, 1500);
+    } catch (err) {
+      setConnectError(err instanceof Error ? err.message : 'Failed to connect');
+    }
+    setConnectingTo(null);
+  };
+
+  const handleDisconnect = async (sandboxId: string) => {
+    setConnectingTo(sandboxId);
+    try {
+      await onDisconnect(deployment.id, sandboxId);
+    } catch (err) {
+      setConnectError(err instanceof Error ? err.message : 'Failed to disconnect');
+    }
+    setConnectingTo(null);
+  };
   return (
     <div className="bg-[hsl(var(--bg-surface))]">
       <div
@@ -261,15 +327,33 @@ function DeploymentCard({
           ) : (
             <>
               {deployment.status === 'running' && (
+                <>
+                  <button
+                    onClick={handleConnectClick}
+                    className={`p-1 ${showConnectPicker ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))]'}`}
+                    title="Connect to sandbox"
+                  >
+                    <Link className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onAction(deployment.id, 'stop'); }}
+                    className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))]"
+                    title="Stop"
+                  >
+                    <Square className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
+              {deployment.status === 'stopped' && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onAction(deployment.id, 'stop'); }}
-                  className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))]"
-                  title="Stop"
+                  onClick={(e) => { e.stopPropagation(); onAction(deployment.id, 'start'); }}
+                  className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))]"
+                  title="Start"
                 >
-                  <Square className="h-3.5 w-3.5" />
+                  <Play className="h-3.5 w-3.5" />
                 </button>
               )}
-              {(deployment.status === 'stopped' || deployment.status === 'unreachable') && (
+              {deployment.status === 'unreachable' && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onAction(deployment.id, 'restart'); }}
                   className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))]"
@@ -328,6 +412,82 @@ function DeploymentCard({
 
           {deployment.connectionConfig && (
             <ConnectionInfo config={deployment.connectionConfig} transport={deployment.transport} />
+          )}
+        </div>
+      )}
+
+      {/* Connect to Sandbox Picker */}
+      {showConnectPicker && (
+        <div className="px-4 pb-3 border-t border-[hsl(var(--border))]">
+          <div className="pt-2 flex items-center justify-between mb-2">
+            <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">
+              Connect to Sandbox
+            </span>
+            <button
+              onClick={() => setShowConnectPicker(false)}
+              className="text-[10px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+            >
+              Close
+            </button>
+          </div>
+          {connectError && (
+            <div className="flex items-center gap-1.5 mb-2 text-[10px] text-[hsl(var(--red))]">
+              <AlertCircle className="h-3 w-3" />
+              {connectError}
+            </div>
+          )}
+          {isLoadingSandboxes ? (
+            <div className="flex items-center gap-2 py-2">
+              <Loader2 className="h-3 w-3 animate-spin text-[hsl(var(--text-muted))]" />
+              <span className="text-[10px] text-[hsl(var(--text-muted))]">Loading sandboxes...</span>
+            </div>
+          ) : sandboxes.length === 0 ? (
+            <p className="text-[10px] text-[hsl(var(--text-muted))] py-2">
+              No running sandboxes available.
+            </p>
+          ) : (
+            <div className="space-y-1 max-h-40 overflow-auto">
+              {sandboxes.map(sandbox => (
+                <div
+                  key={sandbox.id}
+                  className="flex items-center gap-2 px-2 py-1.5 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]"
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--green))]" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] font-medium text-[hsl(var(--text-primary))] truncate block">
+                      {sandbox.name}
+                    </span>
+                    <span className="text-[9px] text-[hsl(var(--text-muted))] font-mono truncate block">
+                      {sandbox.backend} &middot; {sandbox.id}
+                    </span>
+                  </div>
+                  {connectedSandbox === sandbox.id ? (
+                    <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--green))]">
+                      <Check className="h-3 w-3" /> Connected
+                    </span>
+                  ) : connectingTo === sandbox.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-[hsl(var(--cyan))]" />
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleConnect(sandbox.id)}
+                        className="text-[10px] px-1.5 py-0.5 text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
+                        title="Connect MCP server to this sandbox"
+                      >
+                        <Link className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDisconnect(sandbox.id)}
+                        className="text-[10px] px-1.5 py-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--border))]"
+                        title="Disconnect MCP server from this sandbox"
+                      >
+                        <Unlink className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

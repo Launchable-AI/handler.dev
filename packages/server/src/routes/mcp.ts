@@ -3,6 +3,7 @@ import { streamSSE } from 'hono/streaming';
 import * as mcpRegistry from '../services/mcp-registry.js';
 import { streamMCPInstallInstructions, isAIConfigured, searchMCPServersWithAI } from '../services/ai.js';
 import * as mcpDeploy from '../services/mcp-deploy.js';
+import { injectFilesIntoSandbox, readFileFromSandbox } from '../services/sandbox-inject.js';
 
 const mcp = new Hono();
 
@@ -370,6 +371,124 @@ mcp.get('/deployments/:id/logs', async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return c.json({ error: message }, 404);
+  }
+});
+
+// Start a stopped deployment
+mcp.post('/deployments/:id/start', async (c) => {
+  const id = c.req.param('id');
+  try {
+    const deployment = await mcpDeploy.restartDeployment(id);
+    return c.json(deployment);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: message }, 400);
+  }
+});
+
+// Connect a deployed MCP server to a dev sandbox
+mcp.post('/deployments/:id/connect/:sandboxId', async (c) => {
+  const { id, sandboxId } = c.req.param();
+
+  // 1. Get deployment
+  const deployment = await mcpDeploy.getDeployment(id);
+  if (!deployment) {
+    return c.json({ error: 'Deployment not found' }, 404);
+  }
+  if (!deployment.connectionConfig) {
+    return c.json({ error: 'Deployment has no connection config' }, 400);
+  }
+
+  // 2. Build the mcpServers entry from connectionConfig
+  const serverKey = deployment.serverName;
+  let mcpServerEntry: Record<string, unknown>;
+
+  if (deployment.transport === 'stdio') {
+    mcpServerEntry = {
+      command: deployment.connectionConfig.command,
+      args: deployment.connectionConfig.args || [],
+      ...(deployment.connectionConfig.env && Object.keys(deployment.connectionConfig.env).length > 0
+        ? { env: deployment.connectionConfig.env }
+        : {}),
+    };
+  } else {
+    mcpServerEntry = {
+      type: deployment.transport === 'sse' ? 'sse' : 'http',
+      url: deployment.connectionConfig.url,
+      ...(deployment.connectionConfig.env && Object.keys(deployment.connectionConfig.env).length > 0
+        ? { env: deployment.connectionConfig.env }
+        : {}),
+    };
+  }
+
+  // 3. Read existing .claude.json from sandbox and merge
+  let existingConfig: Record<string, unknown> = {};
+  try {
+    const existing = await readFileFromSandbox(sandboxId, '/home/dev/.claude.json');
+    if (existing) {
+      existingConfig = JSON.parse(existing);
+    }
+  } catch {
+    // No existing config or invalid JSON — start fresh
+  }
+
+  const existingServers = (existingConfig.mcpServers as Record<string, unknown>) || {};
+  existingServers[serverKey] = mcpServerEntry;
+  existingConfig.mcpServers = existingServers;
+
+  // 4. Inject the merged .claude.json
+  try {
+    const injected = await injectFilesIntoSandbox(sandboxId, [{
+      content: JSON.stringify(existingConfig, null, 2),
+      destPath: '/home/dev',
+      filename: '.claude.json',
+    }]);
+    return c.json({
+      success: true,
+      filesInjected: injected,
+      serverKey,
+      transport: deployment.transport,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to connect MCP server to sandbox';
+    return c.json({ error: message }, 500);
+  }
+});
+
+// Disconnect a deployed MCP server from a dev sandbox
+mcp.post('/deployments/:id/disconnect/:sandboxId', async (c) => {
+  const { id, sandboxId } = c.req.param();
+
+  const deployment = await mcpDeploy.getDeployment(id);
+  if (!deployment) {
+    return c.json({ error: 'Deployment not found' }, 404);
+  }
+
+  // Read existing .claude.json and remove this server
+  let existingConfig: Record<string, unknown> = {};
+  try {
+    const existing = await readFileFromSandbox(sandboxId, '/home/dev/.claude.json');
+    if (existing) {
+      existingConfig = JSON.parse(existing);
+    }
+  } catch {
+    return c.json({ success: true }); // Nothing to disconnect
+  }
+
+  const existingServers = (existingConfig.mcpServers as Record<string, unknown>) || {};
+  delete existingServers[deployment.serverName];
+  existingConfig.mcpServers = existingServers;
+
+  try {
+    await injectFilesIntoSandbox(sandboxId, [{
+      content: JSON.stringify(existingConfig, null, 2),
+      destPath: '/home/dev',
+      filename: '.claude.json',
+    }]);
+    return c.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to disconnect MCP server';
+    return c.json({ error: message }, 500);
   }
 });
 
