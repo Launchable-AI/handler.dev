@@ -1072,25 +1072,65 @@ export async function deleteNote(id: string): Promise<{ success: boolean }> {
 
 // ============ Agent Config Presets ============
 
-export interface MCPServerConfig {
+export interface MCPServerStdioConfig {
+  type?: 'stdio';
   command: string;
   args: string[];
   env?: Record<string, string>;
 }
+
+export interface MCPServerHttpConfig {
+  type: 'http';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export interface MCPServerSseConfig {
+  type: 'sse';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export type MCPServerConfig = MCPServerStdioConfig | MCPServerHttpConfig | MCPServerSseConfig;
 
 export interface AgentPermissions {
   allow?: string[];
   deny?: string[];
 }
 
+export interface SkillFrontmatter {
+  description?: string;
+  'disable-model-invocation'?: boolean;
+  'user-invocable'?: boolean;
+  'allowed-tools'?: string;
+  model?: string;
+  context?: string;
+  agent?: string;
+  'argument-hint'?: string;
+}
+
 export interface SkillConfig {
   name: string;
   content: string;
+  frontmatter?: SkillFrontmatter;
 }
 
 export interface RuleConfig {
   filename: string;
   content: string;
+}
+
+export type SubagentPermissionMode = 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan';
+
+export interface SubagentConfig {
+  name: string;
+  description: string;
+  tools?: string[];
+  disallowedTools?: string[];
+  model?: string;
+  permissionMode?: SubagentPermissionMode;
+  skills?: string[];
+  systemPrompt: string;
 }
 
 export interface HookEntry {
@@ -1104,7 +1144,7 @@ export interface HookMatcher {
   hooks: HookEntry[];
 }
 
-export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit' | 'Stop' | 'Notification' | 'SessionStart' | 'SessionEnd' | 'SubagentStart' | 'SubagentStop';
+export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit' | 'Stop' | 'Notification' | 'SessionStart' | 'SessionEnd' | 'SubagentStart' | 'SubagentStop' | 'PermissionRequest' | 'PreCompact' | 'Setup';
 
 export interface AgentConfigPreset {
   id: string;
@@ -1118,6 +1158,7 @@ export interface AgentConfigPreset {
   hooks: Partial<Record<HookEvent, HookMatcher[]>>;
   env: Record<string, string>;
   model: string;
+  subagents: SubagentConfig[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1141,6 +1182,7 @@ export async function createAgentConfig(input: {
   hooks?: Partial<Record<HookEvent, HookMatcher[]>>;
   env?: Record<string, string>;
   model?: string;
+  subagents?: SubagentConfig[];
 }): Promise<AgentConfigPreset> {
   return fetchAPI('/agent-configs', {
     method: 'POST',
@@ -1159,6 +1201,7 @@ export async function updateAgentConfig(id: string, input: {
   hooks?: Partial<Record<HookEvent, HookMatcher[]>>;
   env?: Record<string, string>;
   model?: string;
+  subagents?: SubagentConfig[];
 }): Promise<AgentConfigPreset> {
   return fetchAPI(`/agent-configs/${encodeURIComponent(id)}`, {
     method: 'PATCH',
