@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, Cloud, ExternalLink, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, ExternalLink, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import * as api from '../../api/client';
 
 export function CloudBackendsSettings() {
@@ -376,7 +376,7 @@ export function CloudBackendsSettings() {
         <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-              <Cloud className="h-5 w-5 text-[hsl(var(--amber))]" />
+              <img src="/backends/daytona.ico" alt="Daytona" className="h-5 w-5" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
@@ -431,7 +431,7 @@ export function CloudBackendsSettings() {
         <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-              <Cloud className="h-5 w-5 text-[hsl(var(--orange))]" />
+              <img src="/backends/aws.ico" alt="AWS" className="h-5 w-5" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
@@ -492,7 +492,7 @@ export function CloudBackendsSettings() {
         <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-              <Cloud className="h-5 w-5 text-[hsl(var(--cyan))]" />
+              <img src="/backends/microsoft.ico" alt="Azure" className="h-5 w-5" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
@@ -563,7 +563,7 @@ export function CloudBackendsSettings() {
         <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-              <Cloud className="h-5 w-5 text-[hsl(var(--green))]" />
+              <img src="/backends/gcp.ico" alt="Google Cloud" className="h-5 w-5" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
@@ -622,7 +622,7 @@ export function CloudBackendsSettings() {
         <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-              <Cloud className="h-5 w-5 text-[hsl(var(--purple))]" />
+              <img src="/backends/digital_ocean.ico" alt="DigitalOcean" className="h-5 w-5" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
@@ -677,7 +677,7 @@ export function CloudBackendsSettings() {
         <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
-              <Cloud className="h-5 w-5 text-[hsl(var(--green))]" />
+              <img src="/backends/linode.ico" alt="Linode" className="h-5 w-5" />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
