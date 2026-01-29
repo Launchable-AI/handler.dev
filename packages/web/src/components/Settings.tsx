@@ -215,7 +215,7 @@ export function Settings() {
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-3xl mx-auto">
+        <div className={activeTab === 'backends' && backendsView === 'cloud' ? '' : 'max-w-3xl mx-auto'}>
           {activeTab === 'general' && (
             <div className="space-y-6">
               {/* SSH Host */}
