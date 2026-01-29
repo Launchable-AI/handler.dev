@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
   MiniMap,
   type OnNodesChange,
+  type NodeDragHandler,
   BackgroundVariant,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -27,32 +28,83 @@ interface CanvasViewProps {
 }
 
 export function CanvasView({ className = '' }: CanvasViewProps) {
-  const { state, nodes, edges, addNode, updatePosition } = useCanvas();
+  const { state, nodes, edges, addNode, updatePosition, updateSize } = useCanvas();
   const { data: containers } = useContainers();
   const [showAddMenu, setShowAddMenu] = useState(false);
+
+  // Track previous positions for child-node movement
+  const prevPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   const runningContainers = useMemo(
     () => containers?.filter(c => c.state === 'running') || [],
     [containers]
   );
 
-  // Containers not already on the canvas
   const availableContainers = useMemo(() => {
     const onCanvas = new Set(state.worktreeNodes.map(n => n.sandboxId));
     return runningContainers.filter(c => !onCanvas.has(c.id));
   }, [runningContainers, state.worktreeNodes]);
 
+  // Get all descendant node IDs for a given parent
+  const getDescendantIds = useCallback((parentId: string): string[] => {
+    const descendants: string[] = [];
+    const queue = [parentId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const node of state.worktreeNodes) {
+        if (node.parentNodeId === current && !descendants.includes(node.id)) {
+          descendants.push(node.id);
+          queue.push(node.id);
+        }
+      }
+    }
+    return descendants;
+  }, [state.worktreeNodes]);
+
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      // Apply position changes to our state
       for (const change of changes) {
         if (change.type === 'position' && change.position) {
           updatePosition(change.id, change.position);
         }
+        if (change.type === 'dimensions' && change.dimensions) {
+          updateSize(change.id, {
+            width: change.dimensions.width,
+            height: change.dimensions.height,
+          });
+        }
       }
     },
-    [updatePosition]
+    [updatePosition, updateSize]
   );
+
+  // Move children when parent is dragged
+  const onNodeDragStart: NodeDragHandler = useCallback((_event, node) => {
+    prevPositions.current.set(node.id, { ...node.position });
+  }, []);
+
+  const onNodeDrag: NodeDragHandler = useCallback((_event, node) => {
+    const prev = prevPositions.current.get(node.id);
+    if (!prev) return;
+
+    const dx = node.position.x - prev.x;
+    const dy = node.position.y - prev.y;
+
+    if (dx === 0 && dy === 0) return;
+
+    const descendantIds = getDescendantIds(node.id);
+    for (const childId of descendantIds) {
+      const child = state.worktreeNodes.find(n => n.id === childId);
+      if (child) {
+        updatePosition(childId, {
+          x: child.position.x + dx,
+          y: child.position.y + dy,
+        });
+      }
+    }
+
+    prevPositions.current.set(node.id, { ...node.position });
+  }, [getDescendantIds, state.worktreeNodes, updatePosition]);
 
   const handleAddToCanvas = (container: { id: string; name: string }) => {
     const nodeId = `wt-${container.id}-${Date.now()}`;
@@ -65,6 +117,7 @@ export function CanvasView({ className = '' }: CanvasViewProps) {
       status: 'ready',
       ports: [],
       position: { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 },
+      size: { width: 500, height: 350 },
     };
     addNode(newNode);
     setShowAddMenu(false);
@@ -76,6 +129,8 @@ export function CanvasView({ className = '' }: CanvasViewProps) {
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
@@ -83,6 +138,7 @@ export function CanvasView({ className = '' }: CanvasViewProps) {
         maxZoom={2}
         defaultEdgeOptions={{ type: 'worktree' }}
         proOptions={{ hideAttribution: true }}
+        selectNodesOnDrag={false}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
         <Controls

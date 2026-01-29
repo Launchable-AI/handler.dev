@@ -17,9 +17,14 @@ import {
   HardDrive,
   Activity,
   Network,
+  FolderOpen,
+  Pencil,
+  Trash2,
+  Check,
 } from 'lucide-react';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
 import { useVms, useContainers, useVolumes, useVmVolumes } from '../../hooks/useContainers';
+import { useCanvas } from '../../context/CanvasContext';
 
 interface ToolBarProps {
   className?: string;
@@ -149,6 +154,9 @@ export function ToolBar({ className = '' }: ToolBarProps) {
           onClick={() => setViewMode(viewMode === 'canvas' ? 'grid' : 'canvas')}
           title={viewMode === 'canvas' ? 'Switch to grid view' : 'Switch to canvas view'}
         />
+
+        {/* Workspace switcher (only in canvas mode) */}
+        {viewMode === 'canvas' && <WorkspaceSwitcher />}
 
         {/* Separator */}
         <div className="w-px h-5 bg-[hsl(var(--border))]" />
@@ -333,6 +341,133 @@ function LayoutButton({ icon, active, onClick, title }: LayoutButtonProps) {
     >
       {icon}
     </button>
+  );
+}
+
+function WorkspaceSwitcher() {
+  const {
+    state: canvasState,
+    activeWorkspace,
+    createWorkspace,
+    renameWorkspace,
+    deleteWorkspace,
+    setActiveWorkspace,
+  } = useCanvas();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [showNewInput, setShowNewInput] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  const handleCreate = () => {
+    if (!newName.trim()) return;
+    createWorkspace(newName.trim());
+    setNewName('');
+    setShowNewInput(false);
+  };
+
+  const handleRename = (id: string) => {
+    if (!renameValue.trim()) return;
+    renameWorkspace(id, renameValue.trim());
+    setRenamingId(null);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowDropdown(!showDropdown)}
+        className="flex items-center gap-1.5 px-2 py-1 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] rounded transition-colors"
+      >
+        <FolderOpen className="h-3.5 w-3.5" />
+        <span className="max-w-[100px] truncate">{activeWorkspace?.name || 'Default'}</span>
+        <ChevronDown className="h-3 w-3" />
+      </button>
+
+      {showDropdown && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => { setShowDropdown(false); setRenamingId(null); setShowNewInput(false); }} />
+          <div className="absolute left-0 top-full mt-1 z-50 w-52 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg rounded overflow-hidden">
+            {canvasState.workspaces.map(ws => (
+              <div
+                key={ws.id}
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-[hsl(var(--bg-elevated))] transition-colors ${
+                  ws.id === canvasState.activeWorkspaceId ? 'bg-[hsl(var(--bg-elevated))]' : ''
+                }`}
+              >
+                {renamingId === ws.id ? (
+                  <div className="flex items-center gap-1 flex-1">
+                    <input
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleRename(ws.id)}
+                      className="flex-1 px-1.5 py-0.5 text-[10px] bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded text-[hsl(var(--text-primary))] focus:outline-none focus:border-[hsl(var(--cyan))]"
+                      autoFocus
+                    />
+                    <button onClick={() => handleRename(ws.id)} className="p-0.5 text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-overlay))] rounded">
+                      <Check className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => { setActiveWorkspace(ws.id); setShowDropdown(false); }}
+                      className="flex-1 text-left text-[hsl(var(--text-primary))] truncate"
+                    >
+                      {ws.name}
+                      <span className="ml-1 text-[hsl(var(--text-muted))]">({ws.nodeIds.length})</span>
+                    </button>
+                    <button
+                      onClick={() => { setRenamingId(ws.id); setRenameValue(ws.name); }}
+                      className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] rounded"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    {ws.id !== 'default' && (
+                      <button
+                        onClick={() => deleteWorkspace(ws.id)}
+                        className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] rounded"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+
+            <div className="border-t border-[hsl(var(--border))]">
+              {showNewInput ? (
+                <div className="flex items-center gap-1 px-3 py-1.5">
+                  <input
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                    placeholder="Workspace name"
+                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] rounded text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:outline-none focus:border-[hsl(var(--cyan))]"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleCreate}
+                    disabled={!newName.trim()}
+                    className="px-2 py-0.5 text-[10px] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] rounded disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowNewInput(true)}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  New Workspace
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

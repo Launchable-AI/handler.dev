@@ -42,6 +42,14 @@ export interface WorktreeNode {
   status: 'creating' | 'ready' | 'merging' | 'merged' | 'error';
   ports: Array<{ container: number; host: number }>;
   position: { x: number; y: number }; // canvas position
+  size: { width: number; height: number }; // canvas node size
+}
+
+// Workspace for organizing canvas nodes
+export interface Workspace {
+  id: string;
+  name: string;
+  nodeIds: string[];
 }
 
 export interface CommandCentreState {
