@@ -25,7 +25,7 @@ const PERMISSION_MODES: { value: SubagentPermissionMode; label: string }[] = [
 const inputClass = "w-full px-2.5 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--cyan-dim)/0.3)]";
 const monoInputClass = `${inputClass} font-mono`;
 const labelClass = "block text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider mb-1 font-medium";
-const cardClass = "border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))] p-3 space-y-2";
+const cardClass = "border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))] p-3 space-y-2 rounded-md";
 const emptyClass = "p-4 text-xs text-[hsl(var(--text-muted))] border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--bg-base))] text-center";
 const addBtnClass = "flex items-center gap-1 text-[10px] text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan-dim))] font-medium";
 const removeBtnClass = "p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] transition-colors";
@@ -746,7 +746,7 @@ function MCPTab({ servers, setServers }: {
       {Object.keys(servers).length === 0 ? (
         <div className={emptyClass}>No MCP servers configured. Add a server to connect external tools.</div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-3 lg:grid-cols-2">
           {Object.entries(servers).map(([name, config]) => (
             <MCPServerEditor
               key={name}
