@@ -81,4 +81,38 @@ configRoutes.post('/browse', zValidator('json', BrowseDirectorySchema), async (c
   }
 });
 
+// Get Docker Hub config status
+configRoutes.get('/dockerhub', async (c) => {
+  const config = await getConfig();
+  const dh = config.containerRegistries?.dockerHub;
+  return c.json({
+    username: dh?.username || '',
+    hasPassword: !!dh?.password,
+    enabled: dh?.enabled || false,
+    configured: !!(dh?.username && dh?.password),
+  });
+});
+
+// Configure Docker Hub
+configRoutes.put('/dockerhub', async (c) => {
+  const body = await c.req.json();
+  const config = await getConfig();
+  const existing = config.containerRegistries?.dockerHub || { username: '', password: '', enabled: false };
+
+  const updated = {
+    username: body.username ?? existing.username,
+    password: body.password ?? existing.password,
+    enabled: body.enabled ?? existing.enabled,
+  };
+
+  await setConfig({
+    containerRegistries: {
+      ...config.containerRegistries,
+      dockerHub: updated,
+    },
+  });
+
+  return c.json({ success: true });
+});
+
 export default configRoutes;

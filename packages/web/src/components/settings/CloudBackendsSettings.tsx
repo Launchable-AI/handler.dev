@@ -71,6 +71,14 @@ export function CloudBackendsSettings() {
   const [linodeTestResult, setLinodeTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
   const [showLinodeApiToken, setShowLinodeApiToken] = useState(false);
 
+  // Docker Hub state
+  const [dockerHubUsername, setDockerHubUsername] = useState('');
+  const [dockerHubPassword, setDockerHubPassword] = useState('');
+  const [dockerHubEnabled, setDockerHubEnabled] = useState(false);
+  const [dockerHubConfigured, setDockerHubConfigured] = useState(false);
+  const [dockerHubSaving, setDockerHubSaving] = useState(false);
+  const [showDockerHubPassword, setShowDockerHubPassword] = useState(false);
+
   // Loading state
   const [isLoading, setIsLoading] = useState(true);
 
@@ -86,7 +94,7 @@ export function CloudBackendsSettings() {
   const loadCloudConfig = async () => {
     setIsLoading(true);
     try {
-      const [daytonaConfig, awsConfig, regions, azureConfig, gcpConfig, doConfig, linodeConfig] = await Promise.all([
+      const [daytonaConfig, awsConfig, regions, azureConfig, gcpConfig, doConfig, linodeConfig, dockerHubConfig] = await Promise.all([
         api.getDaytonaConfig(),
         api.getAwsConfig(),
         api.listAwsRegions(),
@@ -94,6 +102,7 @@ export function CloudBackendsSettings() {
         api.getGcpConfig().catch(() => null),
         api.getDigitalOceanConfig().catch(() => null),
         api.getLinodeConfig().catch(() => null),
+        api.getDockerHubConfig().catch(() => null),
       ]);
 
       // Daytona
@@ -156,6 +165,16 @@ export function CloudBackendsSettings() {
         setLinodeConfigured(linodeConfig.configured);
         if (!linodeConfig.hasCredentials) {
           setLinodeApiToken('');
+        }
+      }
+
+      // Docker Hub
+      if (dockerHubConfig) {
+        setDockerHubUsername(dockerHubConfig.username || '');
+        setDockerHubEnabled(dockerHubConfig.enabled);
+        setDockerHubConfigured(dockerHubConfig.configured);
+        if (!dockerHubConfig.hasPassword) {
+          setDockerHubPassword('');
         }
       }
     } catch {
@@ -351,6 +370,22 @@ export function CloudBackendsSettings() {
       setLinodeTestResult(result);
     } catch (err) {
       setLinodeTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection failed' });
+    }
+  };
+
+  // Docker Hub handlers
+  const handleSaveDockerHub = async () => {
+    setDockerHubSaving(true);
+    try {
+      await api.configureDockerHub({
+        username: dockerHubUsername || undefined,
+        password: dockerHubPassword || undefined,
+        enabled: dockerHubEnabled,
+      });
+      setDockerHubConfigured(!!(dockerHubUsername && dockerHubPassword));
+      queryClient.invalidateQueries({ queryKey: ['backend-status'] });
+    } finally {
+      setDockerHubSaving(false);
     }
   };
 
@@ -735,6 +770,55 @@ export function CloudBackendsSettings() {
               <button onClick={handleTestLinode} disabled={!linodeApiToken || linodeSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] disabled:opacity-50">Test Connection</button>
               <button onClick={handleSaveLinode} disabled={linodeSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--green))] text-white hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50">
                 {linodeSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                Save
+              </button>
+            </div>
+          </div>
+        </div>}
+
+        {/* Docker Hub */}
+        {(!showOnlyEnabled || dockerHubEnabled) && <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
+              <img src="/backends/docker.ico" alt="Docker Hub" className="h-5 w-5" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-[hsl(var(--text-primary))]">Docker Hub</h4>
+                {dockerHubConfigured && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">Configured</span>
+                )}
+              </div>
+              <p className="text-[10px] text-[hsl(var(--text-muted))] mt-0.5">Push container images to Docker Hub registry.</p>
+              <div className="flex items-center gap-4 mt-1">
+                <a href="https://hub.docker.com/signup" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--cyan))] hover:underline">Sign up</a>
+                <a href="https://hub.docker.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-[hsl(var(--cyan))] hover:underline">Login</a>
+                <a href="https://docs.docker.com/docker-hub/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--text-muted))] hover:underline">Docs <ExternalLink className="h-2.5 w-2.5" /></a>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={dockerHubEnabled} onChange={(e) => setDockerHubEnabled(e.target.checked)} disabled={!dockerHubConfigured} className="w-4 h-4 accent-[hsl(var(--cyan))]" />
+              <span className="text-xs text-[hsl(var(--text-secondary))]">Enabled</span>
+            </label>
+          </div>
+          <div className="space-y-3 pt-3 border-t border-[hsl(var(--border))]">
+            <div>
+              <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">Username</label>
+              <input type="text" value={dockerHubUsername} onChange={(e) => setDockerHubUsername(e.target.value)} placeholder={dockerHubConfigured ? '••••••••••••••••' : 'Docker Hub username'} className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-1.5 block">Password / Access Token</label>
+              <div className="relative">
+                <input type={showDockerHubPassword ? 'text' : 'password'} value={dockerHubPassword} onChange={(e) => setDockerHubPassword(e.target.value)} placeholder={dockerHubConfigured ? '••••••••••••••••' : 'Enter password or access token'} className="w-full px-3 py-2 pr-10 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]" />
+                <button type="button" onClick={() => setShowDockerHubPassword(!showDockerHubPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]">
+                  {showDockerHubPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1.5">Use a personal access token for better security</p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button onClick={handleSaveDockerHub} disabled={dockerHubSaving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[hsl(var(--cyan))] text-white hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50">
+                {dockerHubSaving && <Loader2 className="h-3 w-3 animate-spin" />}
                 Save
               </button>
             </div>
