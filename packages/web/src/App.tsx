@@ -50,15 +50,6 @@ const navStructure: NavEntry[] = [
   { id: 'agents', label: 'Agents', icon: LayoutGrid },
   'separator',
   {
-    id: 'extensions',
-    label: 'Extensions',
-    icon: Puzzle,
-    children: [
-      { id: 'mcp', label: 'MCP Servers', icon: Package },
-      { id: 'plugins', label: 'Plugins', icon: Store },
-    ],
-  },
-  {
     id: 'resources',
     label: 'Resources',
     icon: Boxes,
@@ -68,6 +59,15 @@ const navStructure: NavEntry[] = [
       { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
       { id: 'volumes', label: 'Volumes', icon: HardDrive },
       { id: 'snapshots', label: 'Snapshots', icon: Camera },
+    ],
+  },
+  {
+    id: 'extensions',
+    label: 'Extensions',
+    icon: Puzzle,
+    children: [
+      { id: 'mcp', label: 'MCP Servers', icon: Package },
+      { id: 'plugins', label: 'Plugins', icon: Store },
     ],
   },
   { id: 'agent-config', label: 'Agent Config', icon: Cog },
