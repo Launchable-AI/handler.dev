@@ -42,10 +42,23 @@ export function useMCPDeployments() {
     await refresh();
   }, [refresh]);
 
+  const start = useCallback(async (id: string) => {
+    await api.startMCPDeployment(id);
+    await refresh();
+  }, [refresh]);
+
   const remove = useCallback(async (id: string) => {
     await api.deleteMCPDeployment(id);
     await refresh();
   }, [refresh]);
+
+  const connectToSandbox = useCallback(async (deploymentId: string, sandboxId: string) => {
+    return api.connectMCPToSandbox(deploymentId, sandboxId);
+  }, []);
+
+  const disconnectFromSandbox = useCallback(async (deploymentId: string, sandboxId: string) => {
+    return api.disconnectMCPFromSandbox(deploymentId, sandboxId);
+  }, []);
 
   return {
     deployments,
@@ -54,7 +67,10 @@ export function useMCPDeployments() {
     error,
     refresh,
     stop,
+    start,
     restart,
     remove,
+    connectToSandbox,
+    disconnectFromSandbox,
   };
 }

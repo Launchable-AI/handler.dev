@@ -1025,6 +1025,18 @@ export async function getMCPDeploymentLogs(id: string): Promise<{ logs: MCPDeplo
   return fetchAPI(`/mcp/deployments/${encodeURIComponent(id)}/logs`);
 }
 
+export async function startMCPDeployment(id: string): Promise<MCPDeployment> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(id)}/start`, { method: 'POST' });
+}
+
+export async function connectMCPToSandbox(deploymentId: string, sandboxId: string): Promise<{ success: boolean; serverKey: string; transport: string }> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(deploymentId)}/connect/${encodeURIComponent(sandboxId)}`, { method: 'POST' });
+}
+
+export async function disconnectMCPFromSandbox(deploymentId: string, sandboxId: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(deploymentId)}/disconnect/${encodeURIComponent(sandboxId)}`, { method: 'POST' });
+}
+
 export async function discoverLocalMCPServers(): Promise<{ servers: MCPLocalServer[] }> {
   return fetchAPI('/mcp/local');
 }
