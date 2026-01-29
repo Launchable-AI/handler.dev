@@ -175,6 +175,8 @@ interface MarketplaceData {
   name: string;
   slug: string;
   description?: string;
+  owner?: string;
+  repo?: string;
   plugins: MarketplacePlugin[];
 }
 
@@ -206,6 +208,8 @@ async function fetchMarketplace(owner: string, repo: string): Promise<Marketplac
     if (!data.slug) {
       data.slug = `${owner}-${repo}`.replace(/[^a-zA-Z0-9-]/g, '-');
     }
+    data.owner = owner;
+    data.repo = repo;
     marketplaceCache.set(key, { data, fetchedAt: Date.now() });
     return data;
   } catch {

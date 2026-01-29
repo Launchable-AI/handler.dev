@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle } from 'lucide-react';
+import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle, ChevronDown, ChevronRight, Store } from 'lucide-react';
 import { Settings } from './components/Settings';
 import { MCPPage } from './components/MCPPage';
 import { Notes } from './components/Notes';
@@ -17,18 +17,80 @@ import { ThemeProvider } from './hooks/useTheme';
 import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPanel';
 import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
-// All possible tabs - simplified to unified abstractions
-type Tab = 'command-centre' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'settings';
+// All possible tabs
+type Tab = 'agents' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'settings';
 
-interface NavItem {
+// Valid tabs for persistence
+const VALID_TABS: Tab[] = ['agents', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'settings'];
+
+interface NavItemDef {
   id: Tab;
   label: string;
   icon: typeof Boxes;
-  standalone: true;
 }
 
-// Valid tabs for persistence
-const VALID_TABS: Tab[] = ['command-centre', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'settings'];
+interface NavGroup {
+  id: string;
+  label: string;
+  icon: typeof Boxes;
+  children: NavItemDef[];
+}
+
+type NavEntry = NavItemDef | NavGroup | 'separator' | 'spacer';
+
+function isGroup(entry: NavEntry): entry is NavGroup {
+  return typeof entry === 'object' && 'children' in entry;
+}
+
+function isItem(entry: NavEntry): entry is NavItemDef {
+  return typeof entry === 'object' && 'id' in entry && !('children' in entry);
+}
+
+const navStructure: NavEntry[] = [
+  { id: 'agents', label: 'Agents', icon: LayoutGrid },
+  'separator',
+  {
+    id: 'extensions',
+    label: 'Extensions',
+    icon: Puzzle,
+    children: [
+      { id: 'mcp', label: 'MCP Servers', icon: Package },
+      { id: 'plugins', label: 'Plugins', icon: Store },
+    ],
+  },
+  {
+    id: 'resources',
+    label: 'Resources',
+    icon: Boxes,
+    children: [
+      { id: 'sandboxes', label: 'Sandboxes', icon: Boxes },
+      { id: 'images', label: 'Images', icon: Image },
+      { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
+      { id: 'volumes', label: 'Volumes', icon: HardDrive },
+      { id: 'snapshots', label: 'Snapshots', icon: Camera },
+    ],
+  },
+  { id: 'agent-config', label: 'Agent Config', icon: Cog },
+  'spacer',
+  { id: 'notes', label: 'Notes', icon: StickyNote },
+  { id: 'settings', label: 'Settings', icon: SettingsIcon },
+];
+
+// Build a flat lookup of tab id -> label (including group children)
+function getTabLabelMap(): Map<Tab, string> {
+  const map = new Map<Tab, string>();
+  for (const entry of navStructure) {
+    if (isItem(entry)) map.set(entry.id, entry.label);
+    else if (isGroup(entry)) {
+      for (const child of entry.children) {
+        map.set(child.id, child.label);
+      }
+    }
+  }
+  return map;
+}
+
+const tabLabelMap = getTabLabelMap();
 
 // Content area that adjusts for terminal panel
 function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; onCreateClick: () => void }) {
@@ -46,7 +108,7 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
 
   return (
     <div className="flex-1 overflow-hidden" style={style}>
-      {activeTab === 'command-centre' && <CommandCentre />}
+      {activeTab === 'agents' && <CommandCentre />}
       {activeTab === 'sandboxes' && <SandboxList onCreateClick={onCreateClick} />}
       {activeTab === 'volumes' && <UnifiedVolumeList />}
       {activeTab === 'dockerfiles' && <DockerfileEditor />}
@@ -65,6 +127,11 @@ function App() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = localStorage.getItem('caisson:activeTab');
+    // Migrate old command-centre value
+    if (saved === 'command-centre') {
+      localStorage.setItem('caisson:activeTab', 'agents');
+      return 'agents';
+    }
     if (saved && VALID_TABS.includes(saved as Tab)) {
       return saved as Tab;
     }
@@ -76,10 +143,24 @@ function App() {
   const { data: hostStats } = useHostStats();
   const { data: backendStatus } = useBackendStatus();
 
+  // Collapsible groups state
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('caisson:expandedGroups');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { extensions: true, resources: true };
+  });
+
   // Persist active tab
   useEffect(() => {
     localStorage.setItem('caisson:activeTab', activeTab);
   }, [activeTab]);
+
+  // Persist expanded groups
+  useEffect(() => {
+    localStorage.setItem('caisson:expandedGroups', JSON.stringify(expandedGroups));
+  }, [expandedGroups]);
 
   // Listen for tab change requests from other components (e.g., volume list -> sandboxes)
   useEffect(() => {
@@ -128,28 +209,40 @@ function App() {
     return `${mins}m`;
   };
 
-  const navConfig: NavItem[] = [
-    { id: 'command-centre', label: 'Command Centre', icon: LayoutGrid, standalone: true },
-    { id: 'sandboxes', label: 'Sandboxes', icon: Boxes, standalone: true },
-    { id: 'snapshots', label: 'Snapshots', icon: Camera, standalone: true },
-    { id: 'volumes', label: 'Volumes', icon: HardDrive, standalone: true },
-    { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode, standalone: true },
-    { id: 'images', label: 'Images', icon: Image, standalone: true },
-    { id: 'mcp', label: 'MCP Servers', icon: Package, standalone: true },
-    { id: 'notes', label: 'Notes', icon: StickyNote, standalone: true },
-    { id: 'agent-config', label: 'Agent Config', icon: Cog, standalone: true },
-    { id: 'plugins', label: 'Plugins', icon: Puzzle, standalone: true },
-    { id: 'settings', label: 'Settings', icon: SettingsIcon, standalone: true },
-  ];
-
   const handleTabClick = (tab: Tab) => {
     setActiveTab(tab);
   };
 
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
+
+  // Check if a group contains the active tab
+  const groupContainsActive = (group: NavGroup) =>
+    group.children.some(c => c.id === activeTab);
+
   // Get the label for the current tab
   const getTabLabel = (): string => {
-    const item = navConfig.find(i => i.id === activeTab);
-    return item?.label || '';
+    return tabLabelMap.get(activeTab) || '';
+  };
+
+  const renderNavButton = (item: NavItemDef, indent = false) => {
+    const Icon = item.icon;
+    const isActive = activeTab === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => handleTabClick(item.id)}
+        className={`w-full flex items-center gap-2.5 ${indent ? 'pl-7 pr-3' : 'px-3'} py-2 mb-0.5 text-xs font-medium transition-all ${
+          isActive
+            ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] border-l-2 border-[hsl(var(--cyan))]'
+            : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border-l-2 border-transparent'
+        }`}
+      >
+        <Icon className="h-4 w-4" />
+        {item.label}
+      </button>
+    );
   };
 
   return (
@@ -176,24 +269,41 @@ function App() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 py-3 px-2 overflow-y-auto">
-          {navConfig.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleTabClick(item.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 mb-0.5 text-xs font-medium transition-all ${
-                  isActive
-                    ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] border-l-2 border-[hsl(var(--cyan))]'
-                    : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border-l-2 border-transparent'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </button>
-            );
+        <nav className="flex-1 py-3 px-2 overflow-y-auto flex flex-col">
+          {navStructure.map((entry, idx) => {
+            if (entry === 'separator') {
+              return <div key={`sep-${idx}`} className="my-1.5 mx-3 border-t border-[hsl(var(--border))]" />;
+            }
+            if (entry === 'spacer') {
+              return <div key={`spacer-${idx}`} className="flex-1" />;
+            }
+            if (isGroup(entry)) {
+              const expanded = expandedGroups[entry.id] ?? true;
+              const GroupIcon = entry.icon;
+              const containsActive = groupContainsActive(entry);
+              return (
+                <div key={entry.id} className="mb-0.5">
+                  <button
+                    onClick={() => toggleGroup(entry.id)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-all border-l-2 border-transparent ${
+                      containsActive && !expanded
+                        ? 'text-[hsl(var(--cyan))]'
+                        : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
+                    }`}
+                  >
+                    <GroupIcon className="h-4 w-4" />
+                    <span className="flex-1 text-left">{entry.label}</span>
+                    {expanded
+                      ? <ChevronDown className="h-3 w-3 text-[hsl(var(--text-muted))]" />
+                      : <ChevronRight className="h-3 w-3 text-[hsl(var(--text-muted))]" />
+                    }
+                  </button>
+                  {expanded && entry.children.map(child => renderNavButton(child, true))}
+                </div>
+              );
+            }
+            // NavItemDef
+            return renderNavButton(entry);
           })}
         </nav>
 

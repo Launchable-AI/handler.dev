@@ -1175,6 +1175,8 @@ export interface MarketplaceData {
   name: string;
   slug: string;
   description?: string;
+  owner?: string;
+  repo?: string;
   plugins: MarketplacePlugin[];
 }
 
