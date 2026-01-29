@@ -1,16 +1,22 @@
 import { createPortal } from 'react-dom';
 import { CommandCentreProvider, useCommandCentre } from '../../context/CommandCentreContext';
+import { CanvasProvider } from '../../context/CanvasContext';
 import { ToolBar } from './ToolBar';
 import { SessionGrid } from './SessionGrid';
+import { CanvasView } from './CanvasView';
 
 function CommandCentreContent() {
   const { state } = useCommandCentre();
-  const { isFullscreen } = state;
+  const { isFullscreen, viewMode } = state;
 
   const content = (
     <div className={`flex flex-col bg-[hsl(var(--bg-base))] ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
       <ToolBar />
-      <SessionGrid className="flex-1" />
+      {viewMode === 'canvas' ? (
+        <CanvasView className="flex-1" />
+      ) : (
+        <SessionGrid className="flex-1" />
+      )}
     </div>
   );
 
@@ -25,7 +31,9 @@ function CommandCentreContent() {
 export function CommandCentre() {
   return (
     <CommandCentreProvider>
-      <CommandCentreContent />
+      <CanvasProvider>
+        <CommandCentreContent />
+      </CanvasProvider>
     </CommandCentreProvider>
   );
 }

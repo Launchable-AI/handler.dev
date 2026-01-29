@@ -16,6 +16,7 @@ import {
   Minimize2,
   HardDrive,
   Activity,
+  Network,
 } from 'lucide-react';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
 import { useVms, useContainers, useVolumes, useVmVolumes } from '../../hooks/useContainers';
@@ -33,6 +34,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
     createSession,
     toggleFullscreen,
     maximizeSession,
+    setViewMode,
   } = useCommandCentre();
   const [showPicker, setShowPicker] = useState(false);
   const [isOpeningAll, setIsOpeningAll] = useState(false);
@@ -43,7 +45,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
   const { data: vmVolumes } = useVmVolumes();
 
   const sessionCount = state.sessions.length;
-  const { fontSize, splitLayout, focusedSessionIds, isFullscreen, maximizedSessionId } = state;
+  const { fontSize, splitLayout, focusedSessionIds, isFullscreen, maximizedSessionId, viewMode } = state;
   const unfocusedCount = sessionCount - focusedSessionIds.length;
 
   // Keyboard shortcut for fullscreen (Escape to exit, F11 or Ctrl+Shift+F to toggle)
@@ -136,6 +138,17 @@ export function ToolBar({ className = '' }: ToolBarProps) {
             title="Vertical split"
           />
         </div>
+
+        {/* Separator */}
+        <div className="w-px h-5 bg-[hsl(var(--border))]" />
+
+        {/* Canvas view toggle */}
+        <LayoutButton
+          icon={<Network className="h-3.5 w-3.5" />}
+          active={viewMode === 'canvas'}
+          onClick={() => setViewMode(viewMode === 'canvas' ? 'grid' : 'canvas')}
+          title={viewMode === 'canvas' ? 'Switch to grid view' : 'Switch to canvas view'}
+        />
 
         {/* Separator */}
         <div className="w-px h-5 bg-[hsl(var(--border))]" />
