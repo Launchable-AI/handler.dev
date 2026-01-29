@@ -71,6 +71,16 @@ export interface CloudBackendsConfig {
   linode?: LinodeConfig;
 }
 
+export interface DockerHubConfig {
+  username: string;
+  password: string;
+  enabled: boolean;
+}
+
+export interface ContainerRegistriesConfig {
+  dockerHub?: DockerHubConfig;
+}
+
 export interface AppConfig {
   sshKeysDisplayPath: string; // Path shown in SSH commands (e.g., ~/.ssh)
   sshHost: string; // Host used in SSH commands (empty = localhost)
@@ -78,6 +88,7 @@ export interface AppConfig {
   sshJumpHostKeyPath: string; // Path to SSH key for jump host (e.g., ~/.ssh/jump_key.pem)
   dataDirectory: string; // Base directory for all data (volumes, ssh-keys, etc.)
   cloudBackends?: CloudBackendsConfig; // Cloud backend configurations
+  containerRegistries?: ContainerRegistriesConfig; // Container registry configurations
 }
 
 const DEFAULT_CONFIG: AppConfig = {

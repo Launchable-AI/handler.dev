@@ -193,6 +193,7 @@ import gcpRoutes from './routes/gcp.js';
 import digitaloceanRoutes from './routes/digitalocean.js';
 import linodeRoutes from './routes/linode.js';
 import worktreeRoutes from './routes/worktrees.js';
+import registryRoutes from './routes/registry.js';
 
 const app = new Hono();
 
@@ -257,6 +258,7 @@ app.route('/api/backends/gcp', gcpRoutes);
 app.route('/api/backends/digitalocean', digitaloceanRoutes);
 app.route('/api/backends/linode', linodeRoutes);
 app.route('/api/worktrees', worktreeRoutes);
+app.route('/api/registry', registryRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {

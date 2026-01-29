@@ -1,10 +1,11 @@
 /**
- * ImageManager - Docker images and Daytona snapshots management
+ * ImageManager - Docker images, Daytona snapshots, and push history management
  *
  * Features:
  * - Local Docker images list with Dockerfile viewer
  * - Daytona snapshots management
- * - Push local images to Daytona
+ * - Push to multiple registries (Daytona, ECR, GCR, ACR, Docker Hub)
+ * - Push history tracking
  */
 
 import { useState, useEffect } from 'react';
@@ -30,12 +31,21 @@ import {
   Settings,
   Pencil,
   Terminal,
+  History,
 } from 'lucide-react';
 import { useImages } from '../hooks/useContainers';
 import { useConfirm } from './ConfirmModal';
 import * as api from '../api/client';
 
-type ActiveTab = 'local' | 'daytona';
+type ActiveTab = 'local' | 'daytona' | 'push-history';
+
+const REGISTRY_LABELS: Record<api.RegistryType, string> = {
+  daytona: 'Daytona',
+  ecr: 'AWS ECR',
+  gcr: 'Google Artifact Registry',
+  acr: 'Azure Container Registry',
+  dockerhub: 'Docker Hub',
+};
 
 export function ImageManager() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('local');
@@ -50,6 +60,11 @@ export function ImageManager() {
   const [launchingImageTag, setLaunchingImageTag] = useState<string | null>(null);
   const [pushProgress, setPushProgress] = useState<string[]>([]);
 
+  // Registry selection
+  const [selectedRegistry, setSelectedRegistry] = useState<api.RegistryType>('daytona');
+  const [availableRegistries, setAvailableRegistries] = useState<api.AvailableRegistry[]>([]);
+  const [acrLoginServer, setAcrLoginServer] = useState('');
+
   // Daytona snapshots state
   const [daytonaSnapshots, setDaytonaSnapshots] = useState<api.DaytonaSnapshot[]>([]);
   const [isLoadingSnapshots, setIsLoadingSnapshots] = useState(false);
@@ -58,6 +73,11 @@ export function ImageManager() {
     const saved = localStorage.getItem('caisson:show-daytona-managed');
     return saved !== 'false'; // Default to true
   });
+
+  // Push history state
+  const [pushHistory, setPushHistory] = useState<api.PushRecord[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
 
   // Check if a snapshot is Daytona-managed (not user-created)
   const isDaytonaManaged = (snapshot: api.DaytonaSnapshot) => {
@@ -90,10 +110,17 @@ export function ImageManager() {
   const { data: images, refetch: refetchImages } = useImages();
   const confirm = useConfirm();
 
+  // Load available registries on mount
+  useEffect(() => {
+    loadAvailableRegistries();
+  }, []);
+
   // Load Daytona snapshots when tab is selected
   useEffect(() => {
     if (activeTab === 'daytona') {
       loadDaytonaSnapshots();
+    } else if (activeTab === 'push-history') {
+      loadPushHistory();
     }
   }, [activeTab]);
 
@@ -105,6 +132,18 @@ export function ImageManager() {
   // Filter snapshots based on managed toggle
   const filteredSnapshots = daytonaSnapshots.filter(s => showDaytonaManaged || !isDaytonaManaged(s));
 
+  const loadAvailableRegistries = async () => {
+    try {
+      const registries = await api.listAvailableRegistries();
+      setAvailableRegistries(registries);
+      // Default to first configured registry, or daytona
+      const firstConfigured = registries.find(r => r.configured);
+      if (firstConfigured) setSelectedRegistry(firstConfigured.type);
+    } catch {
+      // Ignore - will use defaults
+    }
+  };
+
   const loadDaytonaSnapshots = async () => {
     setIsLoadingSnapshots(true);
     try {
@@ -114,6 +153,17 @@ export function ImageManager() {
       console.error('Failed to load Daytona snapshots:', err);
     }
     setIsLoadingSnapshots(false);
+  };
+
+  const loadPushHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const records = await api.listPushHistory();
+      setPushHistory(records);
+    } catch (err) {
+      console.error('Failed to load push history:', err);
+    }
+    setIsLoadingHistory(false);
   };
 
   // Poll for a snapshot until it reaches a final state
@@ -167,35 +217,55 @@ export function ImageManager() {
     setDeletingImageId(null);
   };
 
-  const handlePushToDaytona = async (imageTag: string) => {
+  const handlePushToRegistry = async (imageTag: string) => {
     if (!pushSnapshotName.trim()) return;
+
+    // ACR requires login server
+    if (selectedRegistry === 'acr' && !acrLoginServer.trim()) {
+      alert('ACR login server is required (e.g. myregistry.azurecr.io)');
+      return;
+    }
 
     setPushingImageId(imageTag);
     setShowPushModal(null);
     setPushProgress([]);
 
     try {
-      await api.pushImageToDaytona(
-        {
-          localImage: imageTag,
-          snapshotName: pushSnapshotName.trim(),
-        },
-        (message, _type) => {
-          setPushProgress(prev => {
-            // Keep last 10 messages for display
-            const newProgress = [...prev, message].slice(-10);
-            return newProgress;
-          });
-        }
-      );
-      const snapshotNameToFind = pushSnapshotName.trim();
-      setPushSnapshotName('');
-      // Switch to Daytona tab and poll until snapshot is ready
-      setActiveTab('daytona');
-      await pollForSnapshot(snapshotNameToFind);
+      if (selectedRegistry === 'daytona') {
+        // Use existing Daytona push flow for backward compatibility
+        await api.pushImageToDaytona(
+          {
+            localImage: imageTag,
+            snapshotName: pushSnapshotName.trim(),
+          },
+          (message, _type) => {
+            setPushProgress(prev => [...prev, message].slice(-10));
+          }
+        );
+        const snapshotNameToFind = pushSnapshotName.trim();
+        setPushSnapshotName('');
+        setActiveTab('daytona');
+        await pollForSnapshot(snapshotNameToFind);
+      } else {
+        // Use new registry push flow
+        await api.pushImageToRegistry(
+          {
+            localImage: imageTag,
+            imageName: pushSnapshotName.trim(),
+            registryType: selectedRegistry,
+            acrLoginServer: selectedRegistry === 'acr' ? acrLoginServer.trim() : undefined,
+          },
+          (message, _type) => {
+            setPushProgress(prev => [...prev, message].slice(-10));
+          }
+        );
+        setPushSnapshotName('');
+        setActiveTab('push-history');
+        await loadPushHistory();
+      }
     } catch (error) {
-      console.error('Failed to push to Daytona:', error);
-      alert(`Failed to push to Daytona: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Failed to push:', error);
+      alert(`Failed to push: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
     setPushingImageId(null);
     setPushProgress([]);
@@ -284,6 +354,26 @@ export function ImageManager() {
     setLaunchingImageTag(null);
   };
 
+  // Push history operations
+  const handleDeletePushRecord = async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Push Record',
+      message: 'Delete this push history record?',
+      confirmText: 'Delete',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    setDeletingRecordId(id);
+    try {
+      await api.deletePushRecord(id);
+      await loadPushHistory();
+    } catch (error) {
+      console.error('Failed to delete push record:', error);
+    }
+    setDeletingRecordId(null);
+  };
+
   // Formatting helpers
   const formatSize = (bytes: number) => {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -294,6 +384,11 @@ export function ImageManager() {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString();
+  };
+
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString();
   };
 
   const getSnapshotStateColor = (state: api.DaytonaSnapshotState) => {
@@ -308,6 +403,8 @@ export function ImageManager() {
       default: return 'text-[hsl(var(--text-muted))]';
     }
   };
+
+  const configuredRegistries = availableRegistries.filter(r => r.configured);
 
   return (
     <div className="h-full flex flex-col">
@@ -339,6 +436,20 @@ export function ImageManager() {
           Daytona Snapshots
           {daytonaSnapshots.length > 0 && (
             <span className="px-1.5 py-0.5 text-[10px] bg-[hsl(var(--bg-elevated))] rounded">{daytonaSnapshots.length}</span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('push-history')}
+          className={`flex items-center gap-2 px-5 py-3 text-xs font-medium transition-colors ${
+            activeTab === 'push-history'
+              ? 'text-[hsl(var(--cyan))] border-b-2 border-[hsl(var(--cyan))]'
+              : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]'
+          }`}
+        >
+          <History className="h-4 w-4" />
+          Push History
+          {pushHistory.length > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] bg-[hsl(var(--bg-elevated))] rounded">{pushHistory.length}</span>
           )}
         </button>
       </div>
@@ -435,7 +546,7 @@ export function ImageManager() {
                             onClick={() => { setShowPushModal(tag); setPushSnapshotName(formatDisplayName(tag)); }}
                             disabled={isPushing}
                             className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-elevated))]"
-                            title="Push to Daytona"
+                            title="Push to Registry"
                           >
                             {isPushing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                           </button>
@@ -453,19 +564,48 @@ export function ImageManager() {
                       {/* Push Modal */}
                       {showPushModal === tag && (
                         <div className="mt-3 pt-3 border-t border-[hsl(var(--border))]">
-                          <p className="text-xs text-[hsl(var(--text-muted))] mb-2">Push to Daytona as:</p>
+                          <p className="text-xs text-[hsl(var(--text-muted))] mb-2">Push to registry:</p>
+
+                          {/* Registry selector */}
+                          <div className="mb-2">
+                            <select
+                              value={selectedRegistry}
+                              onChange={(e) => setSelectedRegistry(e.target.value as api.RegistryType)}
+                              className="w-full px-2.5 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
+                            >
+                              {availableRegistries.map((r) => (
+                                <option key={r.type} value={r.type} disabled={!r.configured}>
+                                  {r.label}{r.configured ? '' : ' (not configured)'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* ACR login server input */}
+                          {selectedRegistry === 'acr' && (
+                            <div className="mb-2">
+                              <input
+                                type="text"
+                                value={acrLoginServer}
+                                onChange={(e) => setAcrLoginServer(e.target.value)}
+                                placeholder="myregistry.azurecr.io"
+                                className="w-full px-2.5 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
+                              />
+                            </div>
+                          )}
+
                           <div className="flex gap-2">
                             <input
                               type="text"
                               value={pushSnapshotName}
                               onChange={(e) => setPushSnapshotName(e.target.value)}
-                              placeholder="Snapshot name"
+                              placeholder={selectedRegistry === 'daytona' ? 'Snapshot name' : 'Image name'}
                               className="flex-1 px-2.5 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
                               autoFocus
                             />
                             <button
-                              onClick={() => handlePushToDaytona(tag)}
-                              disabled={!pushSnapshotName.trim()}
+                              onClick={() => handlePushToRegistry(tag)}
+                              disabled={!pushSnapshotName.trim() || (selectedRegistry === 'acr' && !acrLoginServer.trim())}
                               className="px-3 py-1.5 text-xs bg-[hsl(var(--purple))] text-[hsl(var(--bg-base))] disabled:opacity-50"
                             >
                               Push
@@ -477,6 +617,12 @@ export function ImageManager() {
                               <X className="h-4 w-4" />
                             </button>
                           </div>
+
+                          {configuredRegistries.length === 0 && (
+                            <p className="text-[10px] text-[hsl(var(--amber))] mt-2">
+                              No registries configured. Configure backends in Settings.
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -485,7 +631,7 @@ export function ImageManager() {
                         <div className="mt-3 pt-3 border-t border-[hsl(var(--border))]">
                           <div className="flex items-center gap-2 mb-2">
                             <Loader2 className="h-3.5 w-3.5 animate-spin text-[hsl(var(--purple))]" />
-                            <span className="text-xs text-[hsl(var(--purple))]">Pushing to Daytona...</span>
+                            <span className="text-xs text-[hsl(var(--purple))]">Pushing to {REGISTRY_LABELS[selectedRegistry] || selectedRegistry}...</span>
                           </div>
                           <div className="p-2 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] max-h-32 overflow-y-auto font-mono text-[10px] text-[hsl(var(--text-muted))]">
                             {pushProgress.map((msg, i) => (
@@ -635,6 +781,74 @@ export function ImageManager() {
                             </button>
                           )}
                         </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'push-history' && (
+          <>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider">Push History</span>
+              <button
+                onClick={loadPushHistory}
+                disabled={isLoadingHistory}
+                className="flex items-center gap-1.5 px-2 py-1 text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] border border-[hsl(var(--border))]"
+                title="Refresh"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isLoadingHistory ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+
+            {isLoadingHistory && pushHistory.length === 0 ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-8 w-8 animate-spin text-[hsl(var(--text-muted))]" />
+              </div>
+            ) : pushHistory.length === 0 ? (
+              <div className="text-center py-16">
+                <History className="h-12 w-12 mx-auto mb-4 text-[hsl(var(--text-muted))] opacity-30" />
+                <p className="text-sm text-[hsl(var(--text-muted))]">No push history</p>
+                <p className="text-xs text-[hsl(var(--text-muted))] mt-1">Push an image to a registry to see it here</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pushHistory.map((record) => {
+                  const isDeleting = deletingRecordId === record.id;
+
+                  return (
+                    <div key={record.id} className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <Upload className="h-3.5 w-3.5 text-[hsl(var(--purple))] flex-shrink-0" />
+                            <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate" title={record.remoteImage}>
+                              {formatDisplayName(record.imageName)}
+                            </span>
+                            <span className="px-1 py-0.5 text-[8px] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))] border border-[hsl(var(--purple)/0.2)]">
+                              {REGISTRY_LABELS[record.registryType] || record.registryType}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-2 text-xs text-[hsl(var(--text-muted))]">
+                            <span>From: {formatDisplayName(record.localImage)}</span>
+                            <span>{formatDateTime(record.pushedAt)}</span>
+                          </div>
+                          <div className="mt-1.5 text-xs text-[hsl(var(--text-muted))] truncate font-mono" title={record.remoteImage}>
+                            {record.remoteImage}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeletePushRecord(record.id)}
+                          disabled={isDeleting}
+                          className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
+                          title="Delete record"
+                        >
+                          {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </button>
                       </div>
                     </div>
                   );

@@ -3220,3 +3220,163 @@ export async function createAwsVolume(request: {
 export async function deleteAwsVolume(volumeId: string): Promise<{ success: boolean }> {
   return fetchAPI(`/backends/aws/volumes/${volumeId}`, { method: 'DELETE' });
 }
+
+// ==================== Container Registry API ====================
+
+export type RegistryType = 'daytona' | 'ecr' | 'gcr' | 'acr' | 'dockerhub';
+
+export interface AvailableRegistry {
+  type: RegistryType;
+  label: string;
+  configured: boolean;
+}
+
+export interface PushRecord {
+  id: string;
+  localImage: string;
+  remoteImage: string;
+  imageName: string;
+  registryType: RegistryType;
+  registryUrl: string;
+  pushedAt: string;
+}
+
+export interface RegistryPushRequest {
+  localImage: string;
+  imageName: string;
+  registryType: RegistryType;
+  ecrRegion?: string;
+  gcrHostname?: string;
+  acrLoginServer?: string;
+  regionId?: string;
+}
+
+/**
+ * List available (configured) registries
+ */
+export async function listAvailableRegistries(): Promise<AvailableRegistry[]> {
+  return fetchAPI('/registry/available');
+}
+
+/**
+ * Push an image to a registry with SSE progress streaming
+ */
+export async function pushImageToRegistry(
+  request: RegistryPushRequest,
+  onProgress?: (message: string, type: 'info' | 'progress' | 'error' | 'done') => void
+): Promise<PushRecord> {
+  const apiBase = await getApiBase();
+
+  const response = await fetch(`${apiBase}/registry/push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const error = await response.json();
+    throw new Error(error.error || 'Push failed');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let record: PushRecord | null = null;
+  let lastError: string | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || '';
+
+    for (const event of events) {
+      if (!event.trim()) continue;
+
+      const lines = event.split('\n');
+      let eventType = '';
+      let eventData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+        else if (line.startsWith('data: ')) eventData = line.slice(6);
+      }
+
+      if (!eventType || !eventData) continue;
+
+      let parsedData: string;
+      try {
+        parsedData = JSON.parse(eventData);
+      } catch {
+        parsedData = eventData;
+      }
+
+      if (eventType === 'result') {
+        try {
+          record = typeof parsedData === 'string' ? JSON.parse(parsedData) : parsedData;
+        } catch {
+          console.error('Failed to parse push result:', parsedData);
+        }
+      } else if (eventType === 'error') {
+        lastError = parsedData;
+        if (onProgress) onProgress(parsedData, 'error');
+      } else if (onProgress && (eventType === 'info' || eventType === 'progress' || eventType === 'done')) {
+        onProgress(parsedData, eventType as 'info' | 'progress' | 'done');
+      }
+    }
+  }
+
+  if (lastError && !record) throw new Error(lastError);
+  if (!record) throw new Error('No result returned from push');
+
+  return record;
+}
+
+/**
+ * List push history records
+ */
+export async function listPushHistory(): Promise<PushRecord[]> {
+  return fetchAPI('/registry/push-history');
+}
+
+/**
+ * Delete a push history record
+ */
+export async function deletePushRecord(id: string): Promise<void> {
+  await fetchAPI(`/registry/push-history/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Test registry connectivity
+ */
+export async function testRegistryConnection(request: { registryType: RegistryType; acrLoginServer?: string }): Promise<{ success: boolean; message?: string; error?: string }> {
+  return fetchAPI('/registry/test', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+// ==================== Docker Hub Config API ====================
+
+/**
+ * Get Docker Hub configuration status
+ */
+export async function getDockerHubConfig(): Promise<{ username: string; hasPassword: boolean; enabled: boolean; configured: boolean }> {
+  return fetchAPI('/config/dockerhub');
+}
+
+/**
+ * Configure Docker Hub credentials
+ */
+export async function configureDockerHub(config: { username?: string; password?: string; enabled: boolean }): Promise<void> {
+  await fetchAPI('/config/dockerhub', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}
