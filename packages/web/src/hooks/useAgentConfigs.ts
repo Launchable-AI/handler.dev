@@ -31,7 +31,7 @@ export function useUpdateAgentConfig() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, ...input }: { id: string; name?: string; description?: string; mcpServers?: Record<string, api.MCPServerConfig>; claudeMd?: string; permissions?: api.AgentPermissions }) =>
+    mutationFn: ({ id, ...input }: { id: string; name?: string; description?: string; mcpServers?: Record<string, api.MCPServerConfig>; claudeMd?: string; permissions?: api.AgentPermissions; skills?: api.SkillConfig[]; rules?: api.RuleConfig[]; hooks?: Partial<Record<api.HookEvent, api.HookMatcher[]>>; env?: Record<string, string>; model?: string }) =>
       api.updateAgentConfig(id, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-configs'] });

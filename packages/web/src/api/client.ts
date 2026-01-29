@@ -941,6 +941,29 @@ export interface AgentPermissions {
   deny?: string[];
 }
 
+export interface SkillConfig {
+  name: string;
+  content: string;
+}
+
+export interface RuleConfig {
+  filename: string;
+  content: string;
+}
+
+export interface HookEntry {
+  type: 'command';
+  command: string;
+  timeout?: number;
+}
+
+export interface HookMatcher {
+  matcher?: string;
+  hooks: HookEntry[];
+}
+
+export type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'UserPromptSubmit' | 'Stop' | 'Notification' | 'SessionStart' | 'SessionEnd' | 'SubagentStart' | 'SubagentStop';
+
 export interface AgentConfigPreset {
   id: string;
   name: string;
@@ -948,6 +971,11 @@ export interface AgentConfigPreset {
   mcpServers: Record<string, MCPServerConfig>;
   claudeMd: string;
   permissions: AgentPermissions;
+  skills: SkillConfig[];
+  rules: RuleConfig[];
+  hooks: Partial<Record<HookEvent, HookMatcher[]>>;
+  env: Record<string, string>;
+  model: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -966,6 +994,11 @@ export async function createAgentConfig(input: {
   mcpServers?: Record<string, MCPServerConfig>;
   claudeMd?: string;
   permissions?: AgentPermissions;
+  skills?: SkillConfig[];
+  rules?: RuleConfig[];
+  hooks?: Partial<Record<HookEvent, HookMatcher[]>>;
+  env?: Record<string, string>;
+  model?: string;
 }): Promise<AgentConfigPreset> {
   return fetchAPI('/agent-configs', {
     method: 'POST',
@@ -979,6 +1012,11 @@ export async function updateAgentConfig(id: string, input: {
   mcpServers?: Record<string, MCPServerConfig>;
   claudeMd?: string;
   permissions?: AgentPermissions;
+  skills?: SkillConfig[];
+  rules?: RuleConfig[];
+  hooks?: Partial<Record<HookEvent, HookMatcher[]>>;
+  env?: Record<string, string>;
+  model?: string;
 }): Promise<AgentConfigPreset> {
   return fetchAPI(`/agent-configs/${encodeURIComponent(id)}`, {
     method: 'PATCH',

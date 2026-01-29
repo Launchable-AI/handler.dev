@@ -21,12 +21,45 @@ const PermissionsSchema = z.object({
   deny: z.array(z.string()).optional(),
 });
 
+const SkillSchema = z.object({
+  name: z.string().min(1),
+  content: z.string(),
+});
+
+const RuleSchema = z.object({
+  filename: z.string().min(1),
+  content: z.string(),
+});
+
+const HookEntrySchema = z.object({
+  type: z.literal('command'),
+  command: z.string().min(1),
+  timeout: z.number().optional(),
+});
+
+const HookMatcherSchema = z.object({
+  matcher: z.string().optional(),
+  hooks: z.array(HookEntrySchema),
+});
+
+const HookEventEnum = z.enum([
+  'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'UserPromptSubmit',
+  'Stop', 'Notification', 'SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop',
+]);
+
+const HooksSchema = z.record(HookEventEnum, z.array(HookMatcherSchema));
+
 const CreateSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   mcpServers: z.record(MCPServerSchema).optional(),
   claudeMd: z.string().optional(),
   permissions: PermissionsSchema.optional(),
+  skills: z.array(SkillSchema).optional(),
+  rules: z.array(RuleSchema).optional(),
+  hooks: HooksSchema.optional(),
+  env: z.record(z.string()).optional(),
+  model: z.string().optional(),
 });
 
 const UpdateSchema = z.object({
@@ -35,6 +68,11 @@ const UpdateSchema = z.object({
   mcpServers: z.record(MCPServerSchema).optional(),
   claudeMd: z.string().optional(),
   permissions: PermissionsSchema.optional(),
+  skills: z.array(SkillSchema).optional(),
+  rules: z.array(RuleSchema).optional(),
+  hooks: HooksSchema.optional(),
+  env: z.record(z.string()).optional(),
+  model: z.string().optional(),
 });
 
 // List all presets
@@ -150,13 +188,48 @@ agentConfig.post('/:id/inject/:sandboxId', async (c) => {
     });
   }
 
-  // 3. ~/.claude/settings.local.json
+  // 3. ~/.claude/settings.json (permissions + hooks + env + model)
+  const settingsJson: Record<string, unknown> = {};
   if (config.permissions.allow?.length || config.permissions.deny?.length) {
+    settingsJson.permissions = config.permissions;
+  }
+  if (config.hooks && Object.keys(config.hooks).length > 0) {
+    settingsJson.hooks = config.hooks;
+  }
+  if (config.env && Object.keys(config.env).length > 0) {
+    settingsJson.env = config.env;
+  }
+  if (config.model) {
+    settingsJson.model = config.model;
+  }
+  if (Object.keys(settingsJson).length > 0) {
     filesToInject.push({
-      content: JSON.stringify({ permissions: config.permissions }, null, 2),
+      content: JSON.stringify(settingsJson, null, 2),
       destPath: '/home/dev/.claude',
-      filename: 'settings.local.json',
+      filename: 'settings.json',
     });
+  }
+
+  // 4. ~/.claude/skills/<name>/SKILL.md
+  if (config.skills && config.skills.length > 0) {
+    for (const skill of config.skills) {
+      filesToInject.push({
+        content: skill.content,
+        destPath: `/home/dev/.claude/skills/${skill.name}`,
+        filename: 'SKILL.md',
+      });
+    }
+  }
+
+  // 5. ~/.claude/rules/<filename>
+  if (config.rules && config.rules.length > 0) {
+    for (const rule of config.rules) {
+      filesToInject.push({
+        content: rule.content,
+        destPath: '/home/dev/.claude/rules',
+        filename: rule.filename,
+      });
+    }
   }
 
   if (filesToInject.length === 0) {

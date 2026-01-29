@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, Loader2, X, Play, ChevronDown } from 'lucide-react';
 import { useAgentConfigs, useCreateAgentConfig, useUpdateAgentConfig, useDeleteAgentConfig, useInjectAgentConfig } from '../hooks/useAgentConfigs';
 import { useSandboxes } from '../hooks/useSandboxes';
-import type { MCPServerConfig, AgentPermissions } from '../api/client';
+import type { MCPServerConfig, AgentPermissions, SkillConfig, RuleConfig, HookMatcher, HookEvent } from '../api/client';
 
 export function AgentConfig() {
   const { data, isLoading } = useAgentConfigs();
@@ -21,6 +21,11 @@ export function AgentConfig() {
   const [editMcpServers, setEditMcpServers] = useState<Record<string, MCPServerConfig>>({});
   const [editClaudeMd, setEditClaudeMd] = useState('');
   const [editPermissions, setEditPermissions] = useState<AgentPermissions>({});
+  const [editSkills, setEditSkills] = useState<SkillConfig[]>([]);
+  const [editRules, setEditRules] = useState<RuleConfig[]>([]);
+  const [editHooks, setEditHooks] = useState<Partial<Record<HookEvent, HookMatcher[]>>>({});
+  const [editEnv, setEditEnv] = useState<Record<string, string>>({});
+  const [editModel, setEditModel] = useState('');
   const [isDirty, setIsDirty] = useState(false);
 
   const configs = data?.configs || [];
@@ -35,6 +40,11 @@ export function AgentConfig() {
       setEditMcpServers(JSON.parse(JSON.stringify(selected.mcpServers)));
       setEditClaudeMd(selected.claudeMd);
       setEditPermissions(JSON.parse(JSON.stringify(selected.permissions)));
+      setEditSkills(JSON.parse(JSON.stringify(selected.skills || [])));
+      setEditRules(JSON.parse(JSON.stringify(selected.rules || [])));
+      setEditHooks(JSON.parse(JSON.stringify(selected.hooks || {})));
+      setEditEnv(JSON.parse(JSON.stringify(selected.env || {})));
+      setEditModel(selected.model || '');
       setIsDirty(false);
     }
   }, [selected?.id, selected?.updatedAt]);
@@ -60,6 +70,11 @@ export function AgentConfig() {
         mcpServers: editMcpServers,
         claudeMd: editClaudeMd,
         permissions: editPermissions,
+        skills: editSkills,
+        rules: editRules,
+        hooks: editHooks,
+        env: editEnv,
+        model: editModel,
       });
       setIsDirty(false);
     } catch (err) {
@@ -387,6 +402,293 @@ export function AgentConfig() {
                     )}
                   </div>
                 </div>
+              </section>
+
+              {/* Skills */}
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider">Skills</h3>
+                  <button onClick={() => { setEditSkills([...editSkills, { name: '', content: '' }]); markDirty(); }} className="flex items-center gap-1 text-[10px] text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan-dim))]">
+                    <Plus className="h-3 w-3" /> Add Skill
+                  </button>
+                </div>
+                {editSkills.length === 0 ? (
+                  <div className="p-3 text-xs text-[hsl(var(--text-muted))] border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+                    No skills configured. Skills become custom slash commands.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {editSkills.map((skill, i) => (
+                      <div key={i} className="border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))] p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <input
+                            type="text"
+                            value={skill.name}
+                            onChange={(e) => { const copy = [...editSkills]; copy[i] = { ...copy[i], name: e.target.value }; setEditSkills(copy); markDirty(); }}
+                            placeholder="skill-name (becomes /skill-name)"
+                            className="text-xs font-medium px-2 py-1 bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none flex-1 mr-2"
+                          />
+                          <button onClick={() => { setEditSkills(editSkills.filter((_, j) => j !== i)); markDirty(); }} className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))]">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <textarea
+                          value={skill.content}
+                          onChange={(e) => { const copy = [...editSkills]; copy[i] = { ...copy[i], content: e.target.value }; setEditSkills(copy); markDirty(); }}
+                          placeholder={"---\ndescription: My custom skill\n---\n\nInstructions for the skill..."}
+                          rows={6}
+                          className="w-full px-3 py-2 text-xs font-mono bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none resize-y"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Rules */}
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider">Rules</h3>
+                  <button onClick={() => { setEditRules([...editRules, { filename: '', content: '' }]); markDirty(); }} className="flex items-center gap-1 text-[10px] text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan-dim))]">
+                    <Plus className="h-3 w-3" /> Add Rule
+                  </button>
+                </div>
+                {editRules.length === 0 ? (
+                  <div className="p-3 text-xs text-[hsl(var(--text-muted))] border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+                    No rules configured. Rules are modular instruction files.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {editRules.map((rule, i) => (
+                      <div key={i} className="border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))] p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <input
+                            type="text"
+                            value={rule.filename}
+                            onChange={(e) => { const copy = [...editRules]; copy[i] = { ...copy[i], filename: e.target.value }; setEditRules(copy); markDirty(); }}
+                            placeholder="api-conventions.md"
+                            className="text-xs font-medium px-2 py-1 bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none flex-1 mr-2"
+                          />
+                          <button onClick={() => { setEditRules(editRules.filter((_, j) => j !== i)); markDirty(); }} className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))]">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <textarea
+                          value={rule.content}
+                          onChange={(e) => { const copy = [...editRules]; copy[i] = { ...copy[i], content: e.target.value }; setEditRules(copy); markDirty(); }}
+                          placeholder="# Rule content in markdown..."
+                          rows={6}
+                          className="w-full px-3 py-2 text-xs font-mono bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none resize-y"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Hooks */}
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider">Hooks</h3>
+                  <button onClick={() => {
+                    const event: HookEvent = 'PreToolUse';
+                    const current = editHooks[event] || [];
+                    setEditHooks({ ...editHooks, [event]: [...current, { hooks: [{ type: 'command' as const, command: '' }] }] });
+                    markDirty();
+                  }} className="flex items-center gap-1 text-[10px] text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan-dim))]">
+                    <Plus className="h-3 w-3" /> Add Hook
+                  </button>
+                </div>
+                {Object.keys(editHooks).length === 0 ? (
+                  <div className="p-3 text-xs text-[hsl(var(--text-muted))] border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+                    No hooks configured. Hooks run shell commands on events.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {(Object.entries(editHooks) as [HookEvent, HookMatcher[]][]).map(([event, matchers]) => (
+                      matchers.map((matcher, mi) => (
+                        <div key={`${event}-${mi}`} className="border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))] p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <select
+                              value={event}
+                              onChange={(e) => {
+                                const newEvent = e.target.value as HookEvent;
+                                const copy = { ...editHooks };
+                                const arr = [...(copy[event] || [])];
+                                arr.splice(mi, 1);
+                                if (arr.length === 0) delete copy[event]; else copy[event] = arr;
+                                const target = [...(copy[newEvent] || []), matcher];
+                                copy[newEvent] = target;
+                                setEditHooks(copy);
+                                markDirty();
+                              }}
+                              className="text-xs px-2 py-1 bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:outline-none"
+                            >
+                              {(['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'UserPromptSubmit', 'Stop', 'Notification', 'SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop'] as HookEvent[]).map(ev => (
+                                <option key={ev} value={ev}>{ev}</option>
+                              ))}
+                            </select>
+                            <button onClick={() => {
+                              const copy = { ...editHooks };
+                              const arr = [...(copy[event] || [])];
+                              arr.splice(mi, 1);
+                              if (arr.length === 0) delete copy[event]; else copy[event] = arr;
+                              setEditHooks(copy);
+                              markDirty();
+                            }} className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))]">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-[hsl(var(--text-muted))] mb-0.5">Matcher (optional regex)</label>
+                            <input
+                              type="text"
+                              value={matcher.matcher || ''}
+                              onChange={(e) => {
+                                const copy = { ...editHooks };
+                                const arr = [...(copy[event] || [])];
+                                arr[mi] = { ...arr[mi], matcher: e.target.value || undefined };
+                                copy[event] = arr;
+                                setEditHooks(copy);
+                                markDirty();
+                              }}
+                              placeholder="e.g. Write|Edit"
+                              className="w-full px-2 py-1 text-xs font-mono bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:outline-none"
+                            />
+                          </div>
+                          {matcher.hooks.map((hook, hi) => (
+                            <div key={hi} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={hook.command}
+                                onChange={(e) => {
+                                  const copy = { ...editHooks };
+                                  const arr = [...(copy[event] || [])];
+                                  const hooks = [...arr[mi].hooks];
+                                  hooks[hi] = { ...hooks[hi], command: e.target.value };
+                                  arr[mi] = { ...arr[mi], hooks };
+                                  copy[event] = arr;
+                                  setEditHooks(copy);
+                                  markDirty();
+                                }}
+                                placeholder="shell command"
+                                className="flex-1 px-2 py-1 text-xs font-mono bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:outline-none"
+                              />
+                              <input
+                                type="number"
+                                value={hook.timeout || ''}
+                                onChange={(e) => {
+                                  const copy = { ...editHooks };
+                                  const arr = [...(copy[event] || [])];
+                                  const hooks = [...arr[mi].hooks];
+                                  hooks[hi] = { ...hooks[hi], timeout: e.target.value ? parseInt(e.target.value) : undefined };
+                                  arr[mi] = { ...arr[mi], hooks };
+                                  copy[event] = arr;
+                                  setEditHooks(copy);
+                                  markDirty();
+                                }}
+                                placeholder="timeout"
+                                className="w-20 px-2 py-1 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:outline-none"
+                              />
+                              {matcher.hooks.length > 1 && (
+                                <button onClick={() => {
+                                  const copy = { ...editHooks };
+                                  const arr = [...(copy[event] || [])];
+                                  const hooks = [...arr[mi].hooks];
+                                  hooks.splice(hi, 1);
+                                  arr[mi] = { ...arr[mi], hooks };
+                                  copy[event] = arr;
+                                  setEditHooks(copy);
+                                  markDirty();
+                                }} className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))]">
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button onClick={() => {
+                            const copy = { ...editHooks };
+                            const arr = [...(copy[event] || [])];
+                            const hooks = [...arr[mi].hooks, { type: 'command' as const, command: '' }];
+                            arr[mi] = { ...arr[mi], hooks };
+                            copy[event] = arr;
+                            setEditHooks(copy);
+                            markDirty();
+                          }} className="text-[10px] text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan-dim))]">
+                            + Add command
+                          </button>
+                        </div>
+                      ))
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Environment Variables */}
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider">Environment</h3>
+                  <button onClick={() => { setEditEnv({ ...editEnv, '': '' }); markDirty(); }} className="flex items-center gap-1 text-[10px] text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan-dim))]">
+                    <Plus className="h-3 w-3" /> Add
+                  </button>
+                </div>
+                {Object.keys(editEnv).length === 0 ? (
+                  <div className="p-3 text-xs text-[hsl(var(--text-muted))] border border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+                    No environment variables configured.
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {Object.entries(editEnv).map(([key, value], i) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={key}
+                          onChange={(e) => {
+                            const entries = Object.entries(editEnv);
+                            entries[i] = [e.target.value, value];
+                            setEditEnv(Object.fromEntries(entries));
+                            markDirty();
+                          }}
+                          placeholder="KEY"
+                          className="w-1/3 px-1.5 py-0.5 text-[10px] font-mono bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:outline-none"
+                        />
+                        <span className="text-[10px] text-[hsl(var(--text-muted))]">=</span>
+                        <input
+                          type="text"
+                          value={value}
+                          onChange={(e) => {
+                            const entries = Object.entries(editEnv);
+                            entries[i] = [key, e.target.value];
+                            setEditEnv(Object.fromEntries(entries));
+                            markDirty();
+                          }}
+                          placeholder="value"
+                          className="flex-1 px-1.5 py-0.5 text-[10px] font-mono bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:outline-none"
+                        />
+                        <button onClick={() => {
+                          const entries = Object.entries(editEnv);
+                          entries.splice(i, 1);
+                          setEditEnv(Object.fromEntries(entries));
+                          markDirty();
+                        }} className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))]">
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Model */}
+              <section>
+                <h3 className="text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-2">Model</h3>
+                <input
+                  type="text"
+                  value={editModel}
+                  onChange={(e) => { setEditModel(e.target.value); markDirty(); }}
+                  placeholder='e.g. "opus", "sonnet", or leave empty for default'
+                  className="w-full px-3 py-2 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--cyan-dim)/0.3)]"
+                />
               </section>
             </div>
           </>

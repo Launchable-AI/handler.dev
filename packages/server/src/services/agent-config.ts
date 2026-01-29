@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { AgentConfigPreset } from '../types/agent-config.js';
+import type { AgentConfigPreset, SkillConfig, RuleConfig, HookMatcher, HookEvent } from '../types/agent-config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
@@ -57,6 +57,11 @@ export async function createAgentConfig(input: {
   mcpServers?: Record<string, { command: string; args: string[]; env?: Record<string, string> }>;
   claudeMd?: string;
   permissions?: { allow?: string[]; deny?: string[] };
+  skills?: SkillConfig[];
+  rules?: RuleConfig[];
+  hooks?: Partial<Record<HookEvent, HookMatcher[]>>;
+  env?: Record<string, string>;
+  model?: string;
 }): Promise<AgentConfigPreset> {
   const data = await loadConfigs();
   const now = new Date().toISOString();
@@ -68,6 +73,11 @@ export async function createAgentConfig(input: {
     mcpServers: input.mcpServers || {},
     claudeMd: input.claudeMd || '',
     permissions: input.permissions || {},
+    skills: input.skills || [],
+    rules: input.rules || [],
+    hooks: input.hooks || {},
+    env: input.env || {},
+    model: input.model || '',
     createdAt: now,
     updatedAt: now,
   };
@@ -83,6 +93,11 @@ export async function updateAgentConfig(id: string, input: {
   mcpServers?: Record<string, { command: string; args: string[]; env?: Record<string, string> }>;
   claudeMd?: string;
   permissions?: { allow?: string[]; deny?: string[] };
+  skills?: SkillConfig[];
+  rules?: RuleConfig[];
+  hooks?: Partial<Record<HookEvent, HookMatcher[]>>;
+  env?: Record<string, string>;
+  model?: string;
 }): Promise<AgentConfigPreset | null> {
   const data = await loadConfigs();
   const index = data.configs.findIndex(c => c.id === id);
@@ -99,6 +114,11 @@ export async function updateAgentConfig(id: string, input: {
     ...(input.mcpServers !== undefined && { mcpServers: input.mcpServers }),
     ...(input.claudeMd !== undefined && { claudeMd: input.claudeMd }),
     ...(input.permissions !== undefined && { permissions: input.permissions }),
+    ...(input.skills !== undefined && { skills: input.skills }),
+    ...(input.rules !== undefined && { rules: input.rules }),
+    ...(input.hooks !== undefined && { hooks: input.hooks }),
+    ...(input.env !== undefined && { env: input.env }),
+    ...(input.model !== undefined && { model: input.model }),
     updatedAt: new Date().toISOString(),
   };
 
