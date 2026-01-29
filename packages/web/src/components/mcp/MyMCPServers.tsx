@@ -20,7 +20,7 @@ import {
 import { useMCPDeployments } from '../../hooks/useMCPDeployments';
 import { ConnectionInfo } from './ConnectionInfo';
 import * as api from '../../api/client';
-import type { MCPDeployment, MCPDeploymentStatus, MCPLocalServer, Sandbox } from '../../api/client';
+import type { MCPDeployment, MCPDeploymentStatus, MCPLocalServer, Sandbox, MCPPingResult } from '../../api/client';
 
 type FilterStatus = 'all' | MCPDeploymentStatus;
 
@@ -238,7 +238,8 @@ function DeploymentCard({
   const [isLoadingSandboxes, setIsLoadingSandboxes] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectingTo, setConnectingTo] = useState<string | null>(null);
-  const [connectedSandbox, setConnectedSandbox] = useState<string | null>(null);
+  const [pingResults, setPingResults] = useState<Record<string, MCPPingResult>>({});
+  const [pingingId, setPingingId] = useState<string | null>(null);
 
   const loadSandboxes = async () => {
     setIsLoadingSandboxes(true);
@@ -268,15 +269,23 @@ function DeploymentCard({
     setConnectError(null);
     try {
       await onConnect(deployment.id, sandboxId);
-      setConnectedSandbox(sandboxId);
-      setTimeout(() => {
-        setShowConnectPicker(false);
-        setConnectedSandbox(null);
-      }, 1500);
+      // Auto-ping after connecting
+      handlePing(sandboxId);
     } catch (err) {
       setConnectError(err instanceof Error ? err.message : 'Failed to connect');
     }
     setConnectingTo(null);
+  };
+
+  const handlePing = async (sandboxId: string) => {
+    setPingingId(sandboxId);
+    try {
+      const result = await api.pingMCPFromSandbox(deployment.id, sandboxId);
+      setPingResults(prev => ({ ...prev, [sandboxId]: result }));
+    } catch {
+      setPingResults(prev => ({ ...prev, [sandboxId]: { reachable: false, configured: false, error: 'Ping request failed' } }));
+    }
+    setPingingId(null);
   };
 
   const handleDisconnect = async (sandboxId: string) => {
@@ -461,11 +470,7 @@ function DeploymentCard({
                       {sandbox.backend} &middot; {sandbox.id}
                     </span>
                   </div>
-                  {connectedSandbox === sandbox.id ? (
-                    <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--green))]">
-                      <Check className="h-3 w-3" /> Connected
-                    </span>
-                  ) : connectingTo === sandbox.id ? (
+                  {connectingTo === sandbox.id ? (
                     <Loader2 className="h-3 w-3 animate-spin text-[hsl(var(--cyan))]" />
                   ) : (
                     <div className="flex items-center gap-1">
@@ -477,12 +482,37 @@ function DeploymentCard({
                         <Link className="h-3 w-3" />
                       </button>
                       <button
+                        onClick={() => handlePing(sandbox.id)}
+                        disabled={pingingId === sandbox.id}
+                        className="text-[10px] px-1.5 py-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]"
+                        title="Test connectivity from sandbox"
+                      >
+                        {pingingId === sandbox.id
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <Server className="h-3 w-3" />
+                        }
+                      </button>
+                      <button
                         onClick={() => handleDisconnect(sandbox.id)}
                         className="text-[10px] px-1.5 py-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--border))]"
                         title="Disconnect MCP server from this sandbox"
                       >
                         <Unlink className="h-3 w-3" />
                       </button>
+                    </div>
+                  )}
+                  {/* Ping result indicator */}
+                  {pingResults[sandbox.id] && (
+                    <div className={`flex items-center gap-1 text-[9px] mt-0.5 ${
+                      pingResults[sandbox.id].reachable
+                        ? 'text-[hsl(var(--green))]'
+                        : 'text-[hsl(var(--red))]'
+                    }`}>
+                      {pingResults[sandbox.id].reachable ? (
+                        <><Check className="h-2.5 w-2.5" /> Reachable{pingResults[sandbox.id].statusCode ? ` (${pingResults[sandbox.id].statusCode})` : ''}</>
+                      ) : (
+                        <><AlertCircle className="h-2.5 w-2.5" /> {pingResults[sandbox.id].error || 'Unreachable'}</>
+                      )}
                     </div>
                   )}
                 </div>
