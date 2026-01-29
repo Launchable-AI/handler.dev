@@ -565,13 +565,21 @@ async function main() {
   });
 
   // Start listening
-  server.listen(port, () => {
+  server.listen(port, async () => {
     // Write PID file after successful startup
     writePidFile();
     console.log(`\n🚀 Caisson API (PID: ${process.pid})`);
     console.log(`   Running on http://localhost:${port}`);
     console.log(`   WebSocket: ws://localhost:${port}/ws/terminal`);
     console.log(`   API docs: http://localhost:${port}/api/health\n`);
+
+    // Start MCP health monitor
+    try {
+      const { startHealthMonitor } = await import('./services/mcp-health.js');
+      startHealthMonitor();
+    } catch (err) {
+      console.warn('Failed to start MCP health monitor:', err);
+    }
   });
 
   // Track if shutdown is in progress to prevent duplicate handling
@@ -590,6 +598,11 @@ async function main() {
 
     // Remove PID file early to prevent race conditions on restart
     removePidFile();
+
+    // Stop MCP health monitor
+    try {
+      import('./services/mcp-health.js').then(({ stopHealthMonitor }) => stopHealthMonitor()).catch(() => {});
+    } catch { /* ignore */ }
 
     // Close all terminal sessions (kills SSH/docker exec processes)
     closeAllSessions();

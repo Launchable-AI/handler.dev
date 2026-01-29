@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog } from 'lucide-react';
 import { Settings } from './components/Settings';
-import { MCPRegistry } from './components/MCPRegistry';
+import { MCPPage } from './components/MCPPage';
 import { Notes } from './components/Notes';
 import { SandboxList, CreateSandboxForm } from './components/sandbox';
 import { UnifiedVolumeList } from './components/volume/UnifiedVolumeList';
@@ -51,7 +51,7 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
       {activeTab === 'dockerfiles' && <DockerfileEditor />}
       {activeTab === 'images' && <ImageManager />}
       {activeTab === 'snapshots' && <VMSnapshots />}
-      {activeTab === 'mcp' && <MCPRegistry />}
+      {activeTab === 'mcp' && <MCPPage />}
       {activeTab === 'notes' && <Notes />}
       {activeTab === 'agent-config' && <AgentConfig />}
       {activeTab === 'settings' && <Settings />}

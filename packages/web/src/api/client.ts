@@ -887,6 +887,148 @@ export async function removeManualMCPServer(name: string): Promise<{ success: bo
   });
 }
 
+// ============ MCP Deployments ============
+
+export type MCPDeploymentStatus =
+  | 'provisioning'
+  | 'installing'
+  | 'starting'
+  | 'running'
+  | 'stopped'
+  | 'error'
+  | 'unreachable';
+
+export type MCPTransport = 'stdio' | 'sse' | 'streamable-http';
+export type MCPInstallMethod = 'npm' | 'pip' | 'docker' | 'cargo' | 'git-clone';
+
+export interface MCPConnectionConfig {
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Record<string, string>;
+}
+
+export interface MCPDeploymentLogEntry {
+  timestamp: string;
+  message: string;
+  level: 'info' | 'error' | 'warn';
+}
+
+export interface MCPDeployment {
+  id: string;
+  serverName: string;
+  serverTitle: string;
+  status: MCPDeploymentStatus;
+  backend: string;
+  sandboxId: string;
+  installMethod: MCPInstallMethod;
+  transport: MCPTransport;
+  port?: number;
+  endpoint?: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  connectionConfig?: MCPConnectionConfig;
+  healthCheckFailures: number;
+  deployLog: MCPDeploymentLogEntry[];
+  createdAt: string;
+  startedAt?: string;
+  stoppedAt?: string;
+}
+
+export interface MCPLocalServer {
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  status: 'running' | 'stopped' | 'unknown';
+  source: 'claude-json' | 'process';
+  pid?: number;
+}
+
+export async function deployMCPServer(
+  serverName: string,
+  backend: string,
+  env?: Record<string, string>,
+  onProgress?: (event: { status: MCPDeploymentStatus; message: string; deployment?: MCPDeployment }) => void,
+  onComplete?: (deployment: MCPDeployment) => void,
+  onError?: (error: string) => void
+): Promise<void> {
+  const serverUrl = getServerUrl();
+
+  const response = await fetch(`${serverUrl}/api/mcp/deploy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ serverName, backend, env }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Deploy failed' }));
+    throw new Error(error.error || 'Deploy failed');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split('\n\n');
+    buffer = blocks.pop() || '';
+
+    for (const block of blocks) {
+      const eventMatch = block.match(/event: (\w+)/);
+      const dataMatch = block.match(/data: (.+)/s);
+
+      if (eventMatch && dataMatch) {
+        const event = eventMatch[1];
+        const data = dataMatch[1];
+
+        if (event === 'progress') {
+          onProgress?.(JSON.parse(data));
+        } else if (event === 'done') {
+          onComplete?.(JSON.parse(data));
+        } else if (event === 'error') {
+          onError?.(data);
+        }
+      }
+    }
+  }
+}
+
+export async function listMCPDeployments(): Promise<{ deployments: MCPDeployment[] }> {
+  return fetchAPI('/mcp/deployments');
+}
+
+export async function getMCPDeployment(id: string): Promise<MCPDeployment> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(id)}`);
+}
+
+export async function stopMCPDeployment(id: string): Promise<MCPDeployment> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(id)}/stop`, { method: 'POST' });
+}
+
+export async function restartMCPDeployment(id: string): Promise<MCPDeployment> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(id)}/restart`, { method: 'POST' });
+}
+
+export async function deleteMCPDeployment(id: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function getMCPDeploymentLogs(id: string): Promise<{ logs: MCPDeploymentLogEntry[] }> {
+  return fetchAPI(`/mcp/deployments/${encodeURIComponent(id)}/logs`);
+}
+
+export async function discoverLocalMCPServers(): Promise<{ servers: MCPLocalServer[] }> {
+  return fetchAPI('/mcp/local');
+}
+
 // ============ Notes ============
 
 export interface Note {

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import * as mcpRegistry from '../services/mcp-registry.js';
 import { streamMCPInstallInstructions, isAIConfigured, searchMCPServersWithAI } from '../services/ai.js';
+import * as mcpDeploy from '../services/mcp-deploy.js';
 
 const mcp = new Hono();
 
@@ -269,6 +270,113 @@ mcp.delete('/manual/:name{.+}', async (c) => {
 
   await mcpRegistry.removeManualServer(name);
   return c.json({ success: true });
+});
+
+// ============ MCP Deployments ============
+
+// Deploy an MCP server (SSE stream for progress)
+mcp.post('/deploy', async (c) => {
+  const body = await c.req.json();
+  const { serverName, backend, env } = body;
+
+  if (!serverName || !backend) {
+    return c.json({ error: 'serverName and backend are required' }, 400);
+  }
+
+  return streamSSE(c, async (stream) => {
+    try {
+      const deployment = await mcpDeploy.deploy(
+        { serverName, backend, env },
+        async (event) => {
+          await stream.writeSSE({
+            event: 'progress',
+            data: JSON.stringify(event),
+          });
+        }
+      );
+
+      await stream.writeSSE({
+        event: 'done',
+        data: JSON.stringify(deployment),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      await stream.writeSSE({
+        event: 'error',
+        data: message,
+      });
+    }
+  });
+});
+
+// List all deployments
+mcp.get('/deployments', async (c) => {
+  const deployments = await mcpDeploy.listDeployments();
+  return c.json({ deployments });
+});
+
+// Get deployment details
+mcp.get('/deployments/:id', async (c) => {
+  const id = c.req.param('id');
+  const deployment = await mcpDeploy.getDeployment(id);
+  if (!deployment) {
+    return c.json({ error: 'Deployment not found' }, 404);
+  }
+  return c.json(deployment);
+});
+
+// Stop deployment
+mcp.post('/deployments/:id/stop', async (c) => {
+  const id = c.req.param('id');
+  try {
+    const deployment = await mcpDeploy.stopDeployment(id);
+    return c.json(deployment);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: message }, 400);
+  }
+});
+
+// Restart deployment
+mcp.post('/deployments/:id/restart', async (c) => {
+  const id = c.req.param('id');
+  try {
+    const deployment = await mcpDeploy.restartDeployment(id);
+    return c.json(deployment);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: message }, 400);
+  }
+});
+
+// Delete deployment
+mcp.delete('/deployments/:id', async (c) => {
+  const id = c.req.param('id');
+  try {
+    await mcpDeploy.deleteDeployment(id);
+    return c.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: message }, 400);
+  }
+});
+
+// Get deployment logs
+mcp.get('/deployments/:id/logs', async (c) => {
+  const id = c.req.param('id');
+  try {
+    const logs = await mcpDeploy.getDeploymentLogs(id);
+    return c.json({ logs });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: message }, 404);
+  }
+});
+
+// Discover local MCP servers
+mcp.get('/local', async (c) => {
+  const servers = await mcpDeploy.discoverLocalServers();
+  return c.json({ servers });
 });
 
 export default mcp;
