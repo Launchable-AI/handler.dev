@@ -52,9 +52,7 @@ export function createTerminalSession(
   // Handle process output → WebSocket
   process.stdout?.on('data', (data: Buffer) => {
     if (ws.readyState === WebSocket.OPEN) {
-      // Convert LF to CRLF for proper terminal display
-      const output = data.toString().replace(/\n/g, '\r\n');
-      ws.send(JSON.stringify({ type: 'output', data: output }));
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
     }
   });
 
@@ -96,12 +94,7 @@ export function createTerminalSession(
 export function writeToSession(sessionId: string, data: string): boolean {
   const session = sessions.get(sessionId);
   if (session && session.process.stdin?.writable) {
-    // Convert CR to LF for bash (xterm sends CR on Enter)
-    let input = data;
-    if (input === '\r') {
-      input = '\n';
-    }
-    session.process.stdin.write(input);
+    session.process.stdin.write(data);
     return true;
   }
   return false;

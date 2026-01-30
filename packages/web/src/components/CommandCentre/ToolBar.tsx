@@ -120,74 +120,88 @@ export function ToolBar({ className = '' }: ToolBarProps) {
         </span>
       </div>
 
-      {/* Center: Layout controls & font size */}
+      {/* Center: View-specific controls */}
       <div className="flex items-center gap-3">
-        {/* Split layout buttons */}
+        {/* View mode toggle */}
         <div className="flex items-center gap-0.5 bg-[hsl(var(--bg-elevated))] p-0.5 rounded">
           <LayoutButton
             icon={<LayoutGrid className="h-3.5 w-3.5" />}
-            active={splitLayout === 'grid'}
-            onClick={() => setSplitLayout('grid')}
-            title="Grid layout"
+            active={viewMode === 'grid'}
+            onClick={() => setViewMode('grid')}
+            title="Terminal grid view"
           />
           <LayoutButton
-            icon={<Columns3 className="h-3.5 w-3.5" />}
-            active={splitLayout === 'horizontal'}
-            onClick={() => setSplitLayout('horizontal')}
-            title="Horizontal split"
-          />
-          <LayoutButton
-            icon={<Rows3 className="h-3.5 w-3.5" />}
-            active={splitLayout === 'vertical'}
-            onClick={() => setSplitLayout('vertical')}
-            title="Vertical split"
+            icon={<Network className="h-3.5 w-3.5" />}
+            active={viewMode === 'canvas'}
+            onClick={() => setViewMode('canvas')}
+            title="Canvas node view"
           />
         </div>
 
         {/* Separator */}
         <div className="w-px h-5 bg-[hsl(var(--border))]" />
 
-        {/* Canvas view toggle */}
-        <LayoutButton
-          icon={<Network className="h-3.5 w-3.5" />}
-          active={viewMode === 'canvas'}
-          onClick={() => setViewMode(viewMode === 'canvas' ? 'grid' : 'canvas')}
-          title={viewMode === 'canvas' ? 'Switch to grid view' : 'Switch to canvas view'}
-        />
+        {viewMode === 'grid' ? (
+          <>
+            {/* Grid-specific: Split layout buttons */}
+            <div className="flex items-center gap-0.5 bg-[hsl(var(--bg-elevated))] p-0.5 rounded">
+              <LayoutButton
+                icon={<LayoutGrid className="h-3.5 w-3.5" />}
+                active={splitLayout === 'grid'}
+                onClick={() => setSplitLayout('grid')}
+                title="Grid layout"
+              />
+              <LayoutButton
+                icon={<Columns3 className="h-3.5 w-3.5" />}
+                active={splitLayout === 'horizontal'}
+                onClick={() => setSplitLayout('horizontal')}
+                title="Horizontal split"
+              />
+              <LayoutButton
+                icon={<Rows3 className="h-3.5 w-3.5" />}
+                active={splitLayout === 'vertical'}
+                onClick={() => setSplitLayout('vertical')}
+                title="Vertical split"
+              />
+            </div>
 
-        {/* Workspace switcher (only in canvas mode) */}
-        {viewMode === 'canvas' && <WorkspaceSwitcher />}
+            {/* Separator */}
+            <div className="w-px h-5 bg-[hsl(var(--border))]" />
+
+            {/* Grid-specific: Font size controls */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={decreaseFontSize}
+                disabled={fontSize <= 8}
+                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] transition-colors disabled:opacity-50 rounded"
+                title="Decrease font size"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-[10px] text-[hsl(var(--text-secondary))] min-w-[28px] text-center font-mono">
+                {fontSize}px
+              </span>
+              <button
+                onClick={increaseFontSize}
+                disabled={fontSize >= 24}
+                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] transition-colors disabled:opacity-50 rounded"
+                title="Increase font size"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Canvas-specific: Workspace switcher */}
+            <WorkspaceSwitcher />
+          </>
+        )}
 
         {/* Separator */}
         <div className="w-px h-5 bg-[hsl(var(--border))]" />
 
-        {/* Font size controls */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={decreaseFontSize}
-            disabled={fontSize <= 8}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] transition-colors disabled:opacity-50 rounded"
-            title="Decrease font size"
-          >
-            <ZoomOut className="h-3.5 w-3.5" />
-          </button>
-          <span className="text-[10px] text-[hsl(var(--text-secondary))] min-w-[28px] text-center font-mono">
-            {fontSize}px
-          </span>
-          <button
-            onClick={increaseFontSize}
-            disabled={fontSize >= 24}
-            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] transition-colors disabled:opacity-50 rounded"
-            title="Increase font size"
-          >
-            <ZoomIn className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        {/* Separator */}
-        <div className="w-px h-5 bg-[hsl(var(--border))]" />
-
-        {/* Fullscreen toggle */}
+        {/* Fullscreen toggle (shared) */}
         <button
           onClick={toggleFullscreen}
           className={`flex items-center gap-1.5 px-2 py-1 text-xs transition-colors rounded ${

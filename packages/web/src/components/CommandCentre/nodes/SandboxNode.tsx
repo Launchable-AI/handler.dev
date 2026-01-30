@@ -18,7 +18,8 @@ const statusColors: Record<WorktreeNode['status'], string> = {
   error: 'hsl(var(--red))',
 };
 
-const DEFAULT_FONT_SIZE = 13;
+const DEFAULT_NODE_FONT_SIZE = 8;
+const DEFAULT_FOCUS_FONT_SIZE = 13;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
@@ -31,9 +32,11 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
   const [isDeleting, setIsDeleting] = useState(false);
   const [connState, setConnState] = useState<ConnectionState>('connecting');
   const [termReady, setTermReady] = useState(false);
-  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const [nodeFontSize, setNodeFontSize] = useState(DEFAULT_NODE_FONT_SIZE);
+  const [focusFontSize, setFocusFontSize] = useState(DEFAULT_FOCUS_FONT_SIZE);
   const [isFocused, setIsFocused] = useState(false);
   const [currentCwd, setCurrentCwd] = useState<string>('/home/dev/workspace');
+  const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'off'>('off');
   const termContainerRef = useRef<HTMLDivElement>(null);
 
   // Wait for the terminal container to have non-zero dimensions before mounting xterm
@@ -64,6 +67,9 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
   // Real-time shell state tracking via OSC 7337
   const handleShellState = useCallback((state: ShellState) => {
     setCurrentCwd(state.cwd);
+    if (state.claudeStatus) {
+      setClaudeStatus(state.claudeStatus);
+    }
     if (state.branch && state.branch !== data.branch) {
       updateNode(data.id, { branch: state.branch });
     }
@@ -172,19 +178,19 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
             {/* Font size controls */}
             <div className="flex items-center gap-0.5 shrink-0">
               <button
-                onClick={() => setFontSize(s => Math.max(MIN_FONT_SIZE, s - 1))}
-                disabled={fontSize <= MIN_FONT_SIZE}
+                onClick={() => setFocusFontSize(s => Math.max(MIN_FONT_SIZE, s - 1))}
+                disabled={focusFontSize <= MIN_FONT_SIZE}
                 className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
                 title="Decrease font size"
               >
                 <ZoomOut className="h-3 w-3" />
               </button>
               <span className="text-[9px] text-[hsl(var(--text-muted))] min-w-[24px] text-center font-mono">
-                {fontSize}px
+                {focusFontSize}px
               </span>
               <button
-                onClick={() => setFontSize(s => Math.min(MAX_FONT_SIZE, s + 1))}
-                disabled={fontSize >= MAX_FONT_SIZE}
+                onClick={() => setFocusFontSize(s => Math.min(MAX_FONT_SIZE, s + 1))}
+                disabled={focusFontSize >= MAX_FONT_SIZE}
                 className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
                 title="Increase font size"
               >
@@ -208,7 +214,7 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
               onStateChange={handleTerminalStateChange}
               onShellState={handleShellState}
               showStatusBar={false}
-              fontSize={fontSize}
+              fontSize={focusFontSize}
               className="h-full"
             />
           </div>
@@ -274,6 +280,20 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
           </span>
         )}
 
+        {/* Claude Code status indicator */}
+        {claudeStatus !== 'off' && (
+          <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 flex items-center gap-1 ${
+            claudeStatus === 'processing'
+              ? 'bg-[hsl(var(--purple)/0.15)] text-[hsl(var(--purple))]'
+              : 'bg-[hsl(var(--text-muted)/0.1)] text-[hsl(var(--text-muted))]'
+          }`}>
+            {claudeStatus === 'processing' && (
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[hsl(var(--purple))] animate-pulse" />
+            )}
+            claude
+          </span>
+        )}
+
         {/* Connection state indicator */}
         <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 ${
           connState === 'connected'
@@ -289,16 +309,24 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
         <div className="flex items-center gap-0.5 shrink-0">
           {/* Font size controls */}
           <button
-            onClick={() => setFontSize(s => Math.max(MIN_FONT_SIZE, s - 1))}
-            disabled={fontSize <= MIN_FONT_SIZE}
+            onClick={() => setNodeFontSize(s => Math.max(MIN_FONT_SIZE, s - 1))}
+            disabled={nodeFontSize <= MIN_FONT_SIZE}
             className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
             title="Decrease font size"
           >
             <ZoomOut className="h-3 w-3" />
           </button>
           <button
-            onClick={() => setFontSize(s => Math.min(MAX_FONT_SIZE, s + 1))}
-            disabled={fontSize >= MAX_FONT_SIZE}
+            onClick={() => setNodeFontSize(DEFAULT_NODE_FONT_SIZE)}
+            disabled={nodeFontSize === DEFAULT_NODE_FONT_SIZE}
+            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 text-[9px] font-mono min-w-[24px] text-center"
+            title="Reset font size"
+          >
+            {nodeFontSize}px
+          </button>
+          <button
+            onClick={() => setNodeFontSize(s => Math.min(MAX_FONT_SIZE, s + 1))}
+            disabled={nodeFontSize >= MAX_FONT_SIZE}
             className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
             title="Increase font size"
           >
@@ -412,7 +440,7 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
             onStateChange={handleTerminalStateChange}
             onShellState={handleShellState}
             showStatusBar={false}
-            fontSize={fontSize}
+            fontSize={nodeFontSize}
             className="h-full [&_.xterm]:!h-full [&_.xterm-viewport]:!overflow-hidden"
           />
         )}

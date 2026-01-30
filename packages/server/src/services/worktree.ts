@@ -70,7 +70,7 @@ export async function forkWorktree(options: {
 }): Promise<WorktreeRecord> {
   const { sandboxId, branchName, baseBranch, cwd } = options;
   const id = `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const worktreePath = `/worktrees/${branchName}`;
+  const worktreePath = `/home/dev/worktrees/${branchName}`;
 
   // Resolve the git toplevel from the provided cwd (or default workspace)
   const startDir = cwd || '/home/dev/workspace';
@@ -97,7 +97,7 @@ export async function forkWorktree(options: {
   try {
 
     // Ensure /worktrees directory exists
-    await execInContainer(sandboxId, ['mkdir', '-p', '/worktrees']);
+    await execInContainer(sandboxId, ['mkdir', '-p', '/home/dev/worktrees']);
 
     // Create the worktree (run from the git root)
     const base = baseBranch || 'HEAD';

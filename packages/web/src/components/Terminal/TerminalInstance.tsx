@@ -19,6 +19,7 @@ export interface TerminalTarget {
 export interface ShellState {
   cwd: string;
   branch: string;
+  claudeStatus?: 'processing' | 'idle' | 'off';
 }
 
 export interface TerminalInstanceProps {
