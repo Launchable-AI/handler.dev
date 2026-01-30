@@ -43,7 +43,7 @@ export function TerminalInstance({
 }: TerminalInstanceProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [errorMessage, setErrorMessage] = useState<string>();
-  const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string; row: number; col: number }>>([]);
+  const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -129,6 +129,7 @@ export function TerminalInstance({
 
     // Web links addon - underline detection only, no click handler
     const webLinksAddon = new WebLinksAddon((_event, _uri) => {});
+    term.loadAddon(webLinksAddon);
 
     // Open terminal
     term.open(containerEl);

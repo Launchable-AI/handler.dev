@@ -1,4 +1,3 @@
-import { createPortal } from 'react-dom';
 import { CommandCentreProvider, useCommandCentre } from '../../context/CommandCentreContext';
 import { CanvasProvider } from '../../context/CanvasContext';
 import { ToolBar } from './ToolBar';
@@ -9,7 +8,7 @@ function CommandCentreContent() {
   const { state } = useCommandCentre();
   const { isFullscreen, viewMode } = state;
 
-  const content = (
+  return (
     <div className={`flex flex-col bg-[hsl(var(--bg-base))] ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
       <ToolBar />
       {viewMode === 'canvas' ? (
@@ -19,13 +18,6 @@ function CommandCentreContent() {
       )}
     </div>
   );
-
-  // When fullscreen, render via portal to overlay everything
-  if (isFullscreen) {
-    return createPortal(content, document.body);
-  }
-
-  return content;
 }
 
 export function CommandCentre() {

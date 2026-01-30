@@ -511,6 +511,11 @@ async function main() {
 
   // Create HTTP server
   const server = createServer(async (req, res) => {
+    // Skip Hono for WebSocket upgrade paths — handled by ws library
+    if (req.url === '/ws/terminal' && req.headers.upgrade) {
+      return;
+    }
+
     // Collect request body for non-GET/HEAD methods
     let body: Buffer | undefined;
     if (req.method !== 'GET' && req.method !== 'HEAD') {

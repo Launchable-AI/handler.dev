@@ -99,6 +99,13 @@ export async function forkWorktree(options: {
     // Ensure /worktrees directory exists
     await execInContainer(sandboxId, ['mkdir', '-p', '/home/dev/worktrees']);
 
+    // Check if the repo has any commits (HEAD must be valid)
+    try {
+      await execInContainer(sandboxId, ['git', 'rev-parse', 'HEAD'], gitRoot);
+    } catch {
+      throw new Error('Cannot fork: repository has no commits yet. Make at least one commit first.');
+    }
+
     // Create the worktree (run from the git root)
     const base = baseBranch || 'HEAD';
     await execInContainer(sandboxId, [
@@ -147,10 +154,14 @@ export async function forkWorktree(options: {
     }
 
     // Create child container that shares the parent's filesystem via volumes-from
+    // Override entrypoint/cmd to just keep the container alive for docker exec.
+    // The parent image's entrypoint (e.g. sshd) may fail or conflict in the child.
     const childContainer = await docker.createContainer({
       name: `caisson-wt-${branchName}-${Date.now()}`,
       Hostname: branchName,
       Image: parentImage,
+      Entrypoint: ['sleep'],
+      Cmd: ['infinity'],
       Labels: {
         caisson: 'true',
         'caisson.worktree': 'true',
@@ -168,6 +179,13 @@ export async function forkWorktree(options: {
     });
 
     await childContainer.start();
+
+    // Wait for container to be fully running and ready for docker exec
+    for (let i = 0; i < 10; i++) {
+      const info = await childContainer.inspect();
+      if (info.State.Running) break;
+      await new Promise(r => setTimeout(r, 300));
+    }
 
     record.childContainerId = childContainer.id;
     record.ports = childPorts;
@@ -287,9 +305,47 @@ export async function mergeWorktree(options: {
  * Delete a worktree and its child container.
  */
 export async function deleteWorktree(worktreeId: string): Promise<void> {
-  const record = worktrees.get(worktreeId);
+  let record = worktrees.get(worktreeId);
+
+  // If record not in memory (e.g. server restarted), try to recover from Docker labels
   if (!record) {
-    throw new Error(`Worktree ${worktreeId} not found`);
+    try {
+      const containers = await docker.listContainers({
+        all: true,
+        filters: { label: [`caisson.worktree.id=${worktreeId}`] },
+      });
+      if (containers.length > 0) {
+        const info = containers[0];
+        record = {
+          id: worktreeId,
+          parentContainerId: info.Labels['caisson.worktree.parent'] || '',
+          childContainerId: info.Id,
+          branch: info.Labels['caisson.worktree.branch'] || '',
+          worktreePath: `/home/dev/worktrees/${info.Labels['caisson.worktree.branch'] || ''}`,
+          gitRoot: '',
+          ports: [],
+          status: 'ready',
+        };
+        // Try to resolve gitRoot from parent
+        if (record.parentContainerId) {
+          try {
+            record.gitRoot = (await execInContainer(record.parentContainerId, [
+              'git', 'rev-parse', '--show-toplevel',
+            ], '/home/dev/workspace')).trim();
+          } catch {
+            // Parent may be gone too
+          }
+        }
+      }
+    } catch {
+      // Docker query failed
+    }
+  }
+
+  if (!record) {
+    // Nothing to clean up — just remove from map if present
+    worktrees.delete(worktreeId);
+    return;
   }
 
   // Stop and remove child container
@@ -304,21 +360,27 @@ export async function deleteWorktree(worktreeId: string): Promise<void> {
   }
 
   // Remove git worktree from parent
-  try {
-    await execInContainer(record.parentContainerId, [
-      'git', 'worktree', 'remove', record.worktreePath, '--force',
-    ], record.gitRoot);
-  } catch {
-    // Worktree may already be removed
+  if (record.parentContainerId && record.worktreePath) {
+    try {
+      const workdir = record.gitRoot || '/home/dev/workspace';
+      await execInContainer(record.parentContainerId, [
+        'git', 'worktree', 'remove', record.worktreePath, '--force',
+      ], workdir);
+    } catch {
+      // Worktree may already be removed
+    }
   }
 
   // Delete the branch
-  try {
-    await execInContainer(record.parentContainerId, [
-      'git', 'branch', '-D', record.branch,
-    ], record.gitRoot);
-  } catch {
-    // Branch may already be deleted
+  if (record.parentContainerId && record.branch) {
+    try {
+      const workdir = record.gitRoot || '/home/dev/workspace';
+      await execInContainer(record.parentContainerId, [
+        'git', 'branch', '-D', record.branch,
+      ], workdir);
+    } catch {
+      // Branch may already be deleted
+    }
   }
 
   worktrees.delete(worktreeId);

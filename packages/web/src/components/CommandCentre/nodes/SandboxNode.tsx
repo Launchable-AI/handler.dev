@@ -37,7 +37,7 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
   const [isFocused, setIsFocused] = useState(false);
   const [currentCwd, setCurrentCwd] = useState<string>('/home/dev/workspace');
   const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'off'>('off');
-  const [hasUrls, setHasUrls] = useState(false);
+  const [inGitRepo, setInGitRepo] = useState(false);
   const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termWrapperRef = useRef<HTMLDivElement>(null);
@@ -74,14 +74,16 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
     if (state.claudeStatus) {
       setClaudeStatus(state.claudeStatus);
     }
-    if (state.branch && state.branch !== data.branch) {
-      updateNode(data.id, { branch: state.branch });
+    if (state.branch) {
+      setInGitRepo(true);
+      if (state.branch !== data.branch) {
+        updateNode(data.id, { branch: state.branch });
+      }
     }
   }, [data.id, data.branch, updateNode]);
 
   const handleUrlsDetected = useCallback((urls: string[]) => {
     const has = urls.length > 0;
-    setHasUrls(has);
     // Grow node height when URL bar first appears so it's visible without manual resize
     if (has && !prevHasUrlsRef.current) {
       updateSize(data.id, { width: data.size.width, height: data.size.height + 28 });
@@ -368,14 +370,16 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
           {/* Separator */}
           <div className="w-px h-3 bg-[hsl(var(--border))] mx-0.5" />
 
-          <button
-            onClick={() => setShowForkInput(!showForkInput)}
-            disabled={data.status !== 'ready'}
-            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
-            title="Fork worktree"
-          >
-            <GitFork className="h-3 w-3" />
-          </button>
+          {inGitRepo && (
+            <button
+              onClick={() => setShowForkInput(!showForkInput)}
+              disabled={data.status !== 'ready'}
+              className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
+              title="Fork worktree"
+            >
+              <GitFork className="h-3 w-3" />
+            </button>
+          )}
 
           {!isRoot && data.status === 'ready' && (
             <button
