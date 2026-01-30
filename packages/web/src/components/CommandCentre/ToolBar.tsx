@@ -219,8 +219,8 @@ export function ToolBar({ className = '' }: ToolBarProps) {
         </button>
       </div>
 
-      {/* Right: Quick actions */}
-      <div className="flex items-center gap-2">
+      {/* Right: Quick actions (grid view only) */}
+      {viewMode !== 'grid' ? <div /> : <div className="flex items-center gap-2">
         {/* Open All Running button */}
         <button
           onClick={handleOpenAllRunning}
@@ -251,7 +251,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
             <SessionPicker onClose={() => setShowPicker(false)} />
           )}
         </div>
-      </div>
+      </div>}
       </div>
 
       {/* Collapsible Resource Overview */}

@@ -7,6 +7,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { WebSocket } from 'ws';
 import { injectShellInit } from './shell-init.js';
 
+
 interface TerminalSession {
   process: ChildProcess;
   ws: WebSocket;

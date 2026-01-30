@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Copy, Check } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 
 // Connection state type
@@ -26,6 +26,7 @@ export interface TerminalInstanceProps {
   target: TerminalTarget;
   onStateChange?: (state: ConnectionState, errorMessage?: string) => void;
   onShellState?: (state: ShellState) => void;
+  onUrlsDetected?: (urls: string[]) => void;
   showStatusBar?: boolean;
   className?: string;
   fontSize?: number;
@@ -35,12 +36,15 @@ export function TerminalInstance({
   target,
   onStateChange,
   onShellState,
+  onUrlsDetected,
   showStatusBar = true,
   className = '',
   fontSize = 13,
 }: TerminalInstanceProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string; row: number; col: number }>>([]);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -61,6 +65,8 @@ export function TerminalInstance({
   onStateChangeRef.current = onStateChange;
   const onShellStateRef = useRef(onShellState);
   onShellStateRef.current = onShellState;
+  const onUrlsDetectedRef = useRef(onUrlsDetected);
+  onUrlsDetectedRef.current = onUrlsDetected;
 
   const updateState = useCallback((state: ConnectionState, error?: string) => {
     setConnectionState(state);
@@ -121,9 +127,8 @@ export function TerminalInstance({
     term.loadAddon(fitAddon);
     fitAddonRef.current = fitAddon;
 
-    // Add web links addon
-    const webLinksAddon = new WebLinksAddon();
-    term.loadAddon(webLinksAddon);
+    // Web links addon - underline detection only, no click handler
+    const webLinksAddon = new WebLinksAddon((_event, _uri) => {});
 
     // Open terminal
     term.open(containerEl);
@@ -139,6 +144,44 @@ export function TerminalInstance({
       }
       return true; // Suppress display
     });
+
+    // Scan visible buffer for URLs. Lines are joined without separators so that
+    // URLs broken across line boundaries (by the program, not terminal wrapping)
+    // are reassembled. Since URLs can't contain spaces, this is safe.
+    const URL_SCAN_RE = /https?:\/\/[^\s)\]}>,"'`\x1b]+/g;
+    let scanTimeout: ReturnType<typeof setTimeout> | null = null;
+    const scanUrlsDebounced = () => {
+      if (scanTimeout) clearTimeout(scanTimeout);
+      scanTimeout = setTimeout(() => {
+        if (isDisposedRef.current) return;
+        const buf = term.buffer.active;
+        const viewportTop = buf.viewportY;
+        // Join all visible lines with no separator — URL fragments on adjacent
+        // lines will concatenate, and the \S+ in the regex handles the rest.
+        let combined = '';
+        for (let i = 0; i < term.rows; i++) {
+          const line = buf.getLine(viewportTop + i);
+          if (!line) continue;
+          combined += line.translateToString(true);
+        }
+        const urls: Array<{ url: string }> = [];
+        const seen = new Set<string>();
+        let m;
+        while ((m = URL_SCAN_RE.exec(combined)) !== null) {
+          const url = m[0];
+          if (!seen.has(url)) {
+            seen.add(url);
+            urls.push({ url });
+          }
+        }
+        URL_SCAN_RE.lastIndex = 0;
+        setDetectedUrls(urls);
+        onUrlsDetectedRef.current?.(urls.map(u => u.url));
+      }, 300);
+    };
+
+    // Also rescan on scroll
+    const scrollDisposable = term.onScroll(() => scanUrlsDebounced());
 
     // Connect WebSocket first
     const ws = new WebSocket(getWsUrl());
@@ -214,6 +257,7 @@ export function TerminalInstance({
             break;
           case 'output':
             term.write(msg.data);
+            scanUrlsDebounced();
             break;
           case 'exit':
             updateState('disconnected');
@@ -279,6 +323,8 @@ export function TerminalInstance({
       cancelAnimationFrame(rafId);
       if (resizeTimeout) clearTimeout(resizeTimeout);
       resizeObserver.disconnect();
+      if (scanTimeout) clearTimeout(scanTimeout);
+      scrollDisposable.dispose();
       dataDisposable.dispose();
       oscDisposable.dispose();
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
@@ -356,6 +402,32 @@ export function TerminalInstance({
         className="flex-1 p-1"
         style={{ backgroundColor: 'hsl(220 20% 6%)' }}
       />
+
+      {/* Detected URLs bar */}
+      {detectedUrls.length > 0 && (
+        <div className="flex items-center gap-1 px-2 py-1 bg-[hsl(var(--bg-surface))] border-t border-[hsl(var(--border))] overflow-x-auto shrink-0">
+          <span className="text-[9px] text-[hsl(var(--text-muted))] uppercase tracking-wider shrink-0">Links</span>
+          {[...new Map(detectedUrls.map(u => [u.url, u])).values()].map(({ url }) => (
+            <button
+              key={url}
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(url).then(() => {
+                  setCopiedUrl(url);
+                  setTimeout(() => setCopiedUrl(null), 1500);
+                });
+              }}
+              onMouseDown={e => e.stopPropagation()}
+              onPointerDown={e => e.stopPropagation()}
+              className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-mono bg-[hsl(var(--bg-elevated))] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.15)] rounded truncate max-w-[300px] transition-colors"
+              title={url}
+            >
+              {copiedUrl === url ? <Check className="h-2.5 w-2.5 text-[hsl(var(--green))] shrink-0" /> : <Copy className="h-2.5 w-2.5 shrink-0" />}
+              <span className="truncate">{url.replace(/^https?:\/\//, '')}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Error overlay */}
       {connectionState === 'error' && errorMessage && (

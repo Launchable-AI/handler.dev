@@ -37,7 +37,11 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
   const [isFocused, setIsFocused] = useState(false);
   const [currentCwd, setCurrentCwd] = useState<string>('/home/dev/workspace');
   const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'off'>('off');
+  const [hasUrls, setHasUrls] = useState(false);
+  const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
+  const termWrapperRef = useRef<HTMLDivElement>(null);
+  const focusTermContainerRef = useRef<HTMLDivElement>(null);
 
   // Wait for the terminal container to have non-zero dimensions before mounting xterm
   useEffect(() => {
@@ -74,6 +78,18 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
       updateNode(data.id, { branch: state.branch });
     }
   }, [data.id, data.branch, updateNode]);
+
+  const handleUrlsDetected = useCallback((urls: string[]) => {
+    const has = urls.length > 0;
+    setHasUrls(has);
+    // Grow node height when URL bar first appears so it's visible without manual resize
+    if (has && !prevHasUrlsRef.current) {
+      updateSize(data.id, { width: data.size.width, height: data.size.height + 28 });
+    } else if (!has && prevHasUrlsRef.current) {
+      updateSize(data.id, { width: data.size.width, height: data.size.height - 28 });
+    }
+    prevHasUrlsRef.current = has;
+  }, [data.id, data.size.width, data.size.height, updateSize]);
 
   const handleFork = async () => {
     if (!forkBranch.trim()) return;
@@ -150,6 +166,22 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
     return () => window.removeEventListener('keydown', handleKey);
   }, [isFocused]);
 
+  // Reparent terminal DOM between node and focus overlay to preserve session
+  useEffect(() => {
+    const wrapper = termWrapperRef.current;
+    if (!wrapper) return;
+
+    if (isFocused && focusTermContainerRef.current) {
+      focusTermContainerRef.current.appendChild(wrapper);
+    } else if (!isFocused && termContainerRef.current) {
+      termContainerRef.current.appendChild(wrapper);
+    }
+
+    // Trigger xterm refit after reparenting
+    const fitEvent = new Event('resize');
+    window.dispatchEvent(fitEvent);
+  }, [isFocused]);
+
   // Focus mode overlay rendered via portal so it escapes ReactFlow transforms
   const focusOverlay = isFocused
     ? createPortal(
@@ -207,17 +239,8 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
             </button>
           </div>
 
-          {/* Full-screen terminal */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <TerminalInstance
-              target={{ type: 'container', id: data.sandboxId }}
-              onStateChange={handleTerminalStateChange}
-              onShellState={handleShellState}
-              showStatusBar={false}
-              fontSize={focusFontSize}
-              className="h-full"
-            />
-          </div>
+          {/* Full-screen terminal - reuses the same instance via DOM reparenting */}
+          <div ref={focusTermContainerRef} className="flex-1 min-h-0 overflow-hidden" onKeyDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()} />
         </div>,
         document.body
       )
@@ -231,12 +254,12 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
       style={{ willChange: 'transform' }}
     >
       <NodeResizer
-        isVisible={selected}
+        isVisible
         minWidth={300}
         minHeight={200}
         onResize={handleResize}
-        lineClassName="!border-[hsl(var(--cyan)/0.5)]"
-        handleClassName="!w-2.5 !h-2.5 !bg-[hsl(var(--cyan))] !border-[hsl(var(--bg-surface))]"
+        lineClassName="!border-transparent hover:!border-[hsl(var(--cyan)/0.5)] !border-[4px]"
+        handleClassName="!w-3.5 !h-3.5 !bg-transparent hover:!bg-[hsl(var(--cyan))] !border-2 !border-transparent hover:!border-[hsl(var(--bg-surface))] !rounded-sm"
       />
 
       {/* Source handle (bottom) */}
@@ -433,16 +456,19 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
       )}
 
       {/* Terminal body - takes remaining space, clips overflow */}
-      <div ref={termContainerRef} className="flex-1 min-h-0 overflow-hidden" onKeyDown={e => e.stopPropagation()}>
+      <div ref={termContainerRef} className="flex-1 min-h-0 overflow-hidden" onKeyDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
         {termReady && (
-          <TerminalInstance
-            target={{ type: 'container', id: data.sandboxId }}
-            onStateChange={handleTerminalStateChange}
-            onShellState={handleShellState}
-            showStatusBar={false}
-            fontSize={nodeFontSize}
-            className="h-full [&_.xterm]:!h-full [&_.xterm-viewport]:!overflow-hidden"
-          />
+          <div ref={termWrapperRef} className="h-full">
+            <TerminalInstance
+              target={{ type: 'container', id: data.sandboxId }}
+              onStateChange={handleTerminalStateChange}
+              onShellState={handleShellState}
+              onUrlsDetected={handleUrlsDetected}
+              showStatusBar={false}
+              fontSize={isFocused ? focusFontSize : nodeFontSize}
+              className="h-full [&_.xterm]:!h-full [&_.xterm-viewport]:!overflow-hidden"
+            />
+          </div>
         )}
       </div>
     </div>
