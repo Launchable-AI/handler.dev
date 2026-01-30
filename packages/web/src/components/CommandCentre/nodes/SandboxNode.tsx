@@ -111,7 +111,7 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
         worktreePath: result.worktreePath,
         parentNodeId: data.id,
         status: 'ready',
-        ports: result.ports,
+        ports: [],
         position: { x: data.position.x + 550, y: data.position.y + 50 },
         size: { width: 500, height: 350 },
       });
@@ -424,12 +424,14 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
         <div className="flex gap-1 px-2 py-1.5 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))] shrink-0">
           <input
             type="text"
+            ref={(el) => { if (el) requestAnimationFrame(() => el.focus()); }}
             value={forkBranch}
             onChange={(e) => setForkBranch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleFork()}
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFork(); if (e.key === 'Escape') setShowForkInput(false); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
             placeholder="branch-name"
             className="flex-1 px-2 py-1 text-[10px] bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:outline-none focus:border-[hsl(var(--cyan))]"
-            autoFocus
           />
           <button
             onClick={handleFork}
@@ -464,7 +466,7 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
         {termReady && (
           <div ref={termWrapperRef} className="h-full">
             <TerminalInstance
-              target={{ type: 'container', id: data.sandboxId }}
+              target={{ type: 'container', id: data.sandboxId, ...(data.worktreePath && !isRoot ? { workdir: data.worktreePath } : {}) }}
               onStateChange={handleTerminalStateChange}
               onShellState={handleShellState}
               onUrlsDetected={handleUrlsDetected}

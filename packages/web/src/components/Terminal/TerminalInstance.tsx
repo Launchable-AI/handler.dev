@@ -14,6 +14,8 @@ export interface TerminalTarget {
   ip?: string;
   /** For containers: connect as 'dev' user in /home/dev/workspace instead of root */
   isDevNode?: boolean;
+  /** Override the working directory for the shell session */
+  workdir?: string;
 }
 
 export interface ShellState {
@@ -241,6 +243,7 @@ export function TerminalInstance({
           cols: term.cols,
           rows: term.rows,
           isDevNode: target.isDevNode ?? true, // Default to dev user for containers
+          ...(target.workdir ? { workdir: target.workdir } : {}),
         }));
       }
     };

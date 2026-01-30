@@ -1,17 +1,15 @@
 import Docker from 'dockerode';
 import { PassThrough } from 'stream';
-import { findAvailablePort, findAvailableSshPort } from '../utils/port.js';
 
 const docker = new Docker();
 
+
 interface WorktreeRecord {
   id: string;
-  parentContainerId: string;
-  childContainerId?: string;
+  containerId: string;
   branch: string;
   worktreePath: string;
   gitRoot: string;
-  ports: Array<{ container: number; host: number }>;
   status: 'creating' | 'ready' | 'merging' | 'merged' | 'error';
 }
 
@@ -85,17 +83,15 @@ export async function forkWorktree(options: {
 
   const record: WorktreeRecord = {
     id,
-    parentContainerId: sandboxId,
+    containerId: sandboxId,
     branch: branchName,
     worktreePath,
     gitRoot,
-    ports: [],
     status: 'creating',
   };
   worktrees.set(id, record);
 
   try {
-
     // Ensure /worktrees directory exists
     await execInContainer(sandboxId, ['mkdir', '-p', '/home/dev/worktrees']);
 
@@ -112,86 +108,8 @@ export async function forkWorktree(options: {
       'git', 'worktree', 'add', '-b', branchName, worktreePath, base,
     ], gitRoot);
 
-    // Get parent container info for image and port configuration
-    const parentContainer = docker.getContainer(sandboxId);
-    const parentInfo = await parentContainer.inspect();
-    const parentImage = parentInfo.Config.Image;
-
-    // Determine port offsets from parent's ports
-    const parentPorts: Array<{ container: number; host: number }> = [];
-    for (const [key, bindings] of Object.entries(parentInfo.NetworkSettings.Ports)) {
-      if (!bindings) continue;
-      const containerPort = parseInt(key.split('/')[0], 10);
-      if (containerPort === 22) continue;
-      const hostPort = parseInt(bindings[0]?.HostPort, 10);
-      if (containerPort && hostPort) {
-        parentPorts.push({ container: containerPort, host: hostPort });
-      }
-    }
-
-    // Find available ports for the child container
-    const childPorts: Array<{ container: number; host: number }> = [];
-    for (const pp of parentPorts) {
-      const newHostPort = await findAvailablePort(pp.host + 1);
-      childPorts.push({ container: pp.container, host: newHostPort });
-    }
-
-    // Find SSH port for child
-    const childSshPort = await findAvailableSshPort();
-
-    // Get the host path of the worktree from the parent container's mounts
-    // The worktree is inside the parent container, so we need to share it via a volume
-    // Strategy: use the parent container's ID to create a volumes-from relationship
-    const exposedPorts: Record<string, object> = { '22/tcp': {} };
-    const portBindings: Record<string, Array<{ HostPort: string }>> = {
-      '22/tcp': [{ HostPort: childSshPort.toString() }],
-    };
-
-    for (const port of childPorts) {
-      const key = `${port.container}/tcp`;
-      exposedPorts[key] = {};
-      portBindings[key] = [{ HostPort: port.host.toString() }];
-    }
-
-    // Create child container that shares the parent's filesystem via volumes-from
-    // Override entrypoint/cmd to just keep the container alive for docker exec.
-    // The parent image's entrypoint (e.g. sshd) may fail or conflict in the child.
-    const childContainer = await docker.createContainer({
-      name: `caisson-wt-${branchName}-${Date.now()}`,
-      Hostname: branchName,
-      Image: parentImage,
-      Entrypoint: ['sleep'],
-      Cmd: ['infinity'],
-      Labels: {
-        caisson: 'true',
-        'caisson.worktree': 'true',
-        'caisson.worktree.id': id,
-        'caisson.worktree.parent': sandboxId,
-        'caisson.worktree.branch': branchName,
-      },
-      ExposedPorts: exposedPorts,
-      WorkingDir: worktreePath,
-      HostConfig: {
-        PortBindings: portBindings,
-        VolumesFrom: [`${parentInfo.Id}`],
-        RestartPolicy: { Name: 'unless-stopped' },
-      },
-    });
-
-    await childContainer.start();
-
-    // Wait for container to be fully running and ready for docker exec
-    for (let i = 0; i < 10; i++) {
-      const info = await childContainer.inspect();
-      if (info.State.Running) break;
-      await new Promise(r => setTimeout(r, 300));
-    }
-
-    record.childContainerId = childContainer.id;
-    record.ports = childPorts;
     record.status = 'ready';
     worktrees.set(id, record);
-
     return record;
   } catch (err) {
     record.status = 'error';
@@ -305,65 +223,18 @@ export async function mergeWorktree(options: {
  * Delete a worktree and its child container.
  */
 export async function deleteWorktree(worktreeId: string): Promise<void> {
-  let record = worktrees.get(worktreeId);
-
-  // If record not in memory (e.g. server restarted), try to recover from Docker labels
+  const record = worktrees.get(worktreeId);
   if (!record) {
-    try {
-      const containers = await docker.listContainers({
-        all: true,
-        filters: { label: [`caisson.worktree.id=${worktreeId}`] },
-      });
-      if (containers.length > 0) {
-        const info = containers[0];
-        record = {
-          id: worktreeId,
-          parentContainerId: info.Labels['caisson.worktree.parent'] || '',
-          childContainerId: info.Id,
-          branch: info.Labels['caisson.worktree.branch'] || '',
-          worktreePath: `/home/dev/worktrees/${info.Labels['caisson.worktree.branch'] || ''}`,
-          gitRoot: '',
-          ports: [],
-          status: 'ready',
-        };
-        // Try to resolve gitRoot from parent
-        if (record.parentContainerId) {
-          try {
-            record.gitRoot = (await execInContainer(record.parentContainerId, [
-              'git', 'rev-parse', '--show-toplevel',
-            ], '/home/dev/workspace')).trim();
-          } catch {
-            // Parent may be gone too
-          }
-        }
-      }
-    } catch {
-      // Docker query failed
-    }
-  }
-
-  if (!record) {
-    // Nothing to clean up — just remove from map if present
+    // Record lost (e.g. server restart) — nothing to clean up server-side
     worktrees.delete(worktreeId);
     return;
   }
 
-  // Stop and remove child container
-  if (record.childContainerId) {
-    try {
-      const container = docker.getContainer(record.childContainerId);
-      await container.stop().catch(() => {});
-      await container.remove({ force: true });
-    } catch {
-      // Container may already be removed
-    }
-  }
-
-  // Remove git worktree from parent
-  if (record.parentContainerId && record.worktreePath) {
+  // Remove git worktree
+  if (record.containerId && record.worktreePath) {
     try {
       const workdir = record.gitRoot || '/home/dev/workspace';
-      await execInContainer(record.parentContainerId, [
+      await execInContainer(record.containerId, [
         'git', 'worktree', 'remove', record.worktreePath, '--force',
       ], workdir);
     } catch {
@@ -372,10 +243,10 @@ export async function deleteWorktree(worktreeId: string): Promise<void> {
   }
 
   // Delete the branch
-  if (record.parentContainerId && record.branch) {
+  if (record.containerId && record.branch) {
     try {
       const workdir = record.gitRoot || '/home/dev/workspace';
-      await execInContainer(record.parentContainerId, [
+      await execInContainer(record.containerId, [
         'git', 'branch', '-D', record.branch,
       ], workdir);
     } catch {
@@ -399,7 +270,7 @@ export async function getWorktreeStatus(worktreeId: string): Promise<{
     throw new Error(`Worktree ${worktreeId} not found`);
   }
 
-  const containerId = record.childContainerId || record.parentContainerId;
+  const containerId = record.containerId;
 
   try {
     const statusOutput = await execInContainer(containerId, [

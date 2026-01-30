@@ -22,10 +22,9 @@ worktrees.post('/fork', async (c) => {
 
     return c.json({
       id: result.id,
-      sandboxId: result.childContainerId || result.parentContainerId,
+      sandboxId: result.containerId,
       worktreePath: result.worktreePath,
       branch: result.branch,
-      ports: result.ports,
     });
   } catch (err) {
     console.error('Failed to fork worktree:', err);

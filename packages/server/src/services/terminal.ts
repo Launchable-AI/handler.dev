@@ -22,16 +22,17 @@ export function createTerminalSession(
   shell: string = '/bin/bash',
   cols: number = 80,
   rows: number = 24,
-  isDevNode: boolean = false
+  isDevNode: boolean = false,
+  customWorkdir?: string
 ): string {
   const sessionId = `${containerId}-${Date.now()}`;
 
-  console.log(`🔧 Creating terminal session: ${sessionId} (isDevNode: ${isDevNode})`);
+  console.log(`🔧 Creating terminal session: ${sessionId} (isDevNode: ${isDevNode}, workdir: ${customWorkdir || 'default'})`);
 
   // For dev-node containers: connect as 'dev' user in /home/dev/workspace
   // For other containers: connect as 'root' in /root
   const user = isDevNode ? 'dev' : 'root';
-  const workdir = isDevNode ? '/home/dev/workspace' : '/root';
+  const workdir = customWorkdir || (isDevNode ? '/home/dev/workspace' : '/root');
 
   // Use docker exec with 'script' to create a pseudo-TTY
   // This avoids needing node-pty native module

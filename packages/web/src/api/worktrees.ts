@@ -12,7 +12,6 @@ export interface ForkWorktreeResponse {
   sandboxId: string;
   worktreePath: string;
   branch: string;
-  ports: Array<{ container: number; host: number }>;
 }
 
 export interface MergeWorktreeRequest {
