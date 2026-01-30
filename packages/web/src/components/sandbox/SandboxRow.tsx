@@ -303,8 +303,10 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
     }
   };
 
-  // Get connection command (SSH or docker exec)
-  const connectionCommand = sandbox.sshCommand || sandbox.dockerExecCommand;
+  // Get connection command (docker exec for Docker backend, SSH for others)
+  const connectionCommand = sandbox.backend === 'docker'
+    ? (sandbox.dockerExecCommand || sandbox.sshCommand)
+    : (sandbox.sshCommand || sandbox.dockerExecCommand);
 
   const handleCopyCommand = async () => {
     if (!connectionCommand) return;

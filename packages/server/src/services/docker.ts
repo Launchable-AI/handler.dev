@@ -90,6 +90,8 @@ export async function createContainer(options: {
     Image: image,
     Labels: { [CONTAINER_LABEL]: 'true' },
     Env: envArray,
+    Tty: true,
+    OpenStdin: true,
     ExposedPorts: exposedPorts,
     HostConfig: {
       PortBindings: portBindings,
