@@ -416,7 +416,7 @@ export function Settings() {
           {activeTab === 'backends' && (
             <div className="space-y-6">
               {/* Local/Cloud Toggle */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-center relative">
                 <div className="flex items-center gap-1 p-1 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">
                   <button
                     onClick={() => setBackendsView('local')}
@@ -445,7 +445,7 @@ export function Settings() {
                   <button
                     onClick={loadBackends}
                     disabled={backendsLoading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]"
+                    className="absolute right-0 flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${backendsLoading ? 'animate-spin' : ''}`} />
                     Refresh

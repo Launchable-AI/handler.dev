@@ -573,7 +573,7 @@ export function SandboxList({ onCreateClick }: SandboxListProps) {
             )}
 
             {viewMode === 'detailed' && (
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                 {sandboxes.map((sandbox) => (
                   <SandboxCard key={sandbox.id} sandbox={sandbox} highlight={highlightId === sandbox.id} />
                 ))}
