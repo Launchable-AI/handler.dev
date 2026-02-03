@@ -150,6 +150,7 @@ async function cleanupBeforeStart(port: number): Promise<void> {
 }
 import {
   createTerminalSession,
+  resumeTerminalSession,
   writeToSession,
   resizeSession,
   closeSessionByWebSocket,
@@ -298,6 +299,40 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
               isVmSession = false;
             } else {
               ws.send(JSON.stringify({ type: 'error', message: 'containerId is required' }));
+            }
+            break;
+
+          case 'resume':
+            // Resume an existing terminal session (container with tmux)
+            if (msg.sessionId) {
+              try {
+                const result = await resumeTerminalSession(
+                  ws,
+                  msg.sessionId,
+                  msg.cols || 80,
+                  msg.rows || 24
+                );
+                if (result) {
+                  sessionId = result.sessionId;
+                  isVmSession = false;
+                  // Send scrollback to client if available
+                  if (result.scrollback) {
+                    ws.send(JSON.stringify({ type: 'scrollback', data: result.scrollback }));
+                  }
+                } else {
+                  // Session not found or tmux session died
+                  ws.send(JSON.stringify({ type: 'session-not-found', oldSessionId: msg.sessionId }));
+                }
+              } catch (err) {
+                console.error('[WS Terminal] Failed to resume session:', err);
+                ws.send(JSON.stringify({
+                  type: 'session-not-found',
+                  oldSessionId: msg.sessionId,
+                  message: err instanceof Error ? err.message : 'Failed to resume session'
+                }));
+              }
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'sessionId is required for resume' }));
             }
             break;
 

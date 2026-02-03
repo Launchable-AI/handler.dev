@@ -62,10 +62,26 @@ Adapters live in `packages/server/src/services/sandbox/` (docker, vm, daytona, a
   - Canvas workspace uses ReactFlow for draggable terminal nodes
 - **Path alias**: `@/*` maps to `packages/web/src/*`
 
+### Terminal Session Persistence
+
+Terminal sessions for Docker containers use **tmux** for persistence:
+- Sessions survive WebSocket disconnects and server restarts
+- Clients automatically reconnect to existing tmux sessions
+- Scrollback history is restored on reconnection
+- Session metadata stored in `data/terminal-sessions.json`
+
+Key files:
+- `packages/server/src/services/terminal.ts` — tmux-based terminal sessions
+- `packages/server/src/services/session-store.ts` — session persistence
+- `packages/web/src/components/Terminal/TerminalInstance.tsx` — auto-reconnection logic
+
+For tmux persistence to work, containers must have `tmux` installed (the default.dockerfile includes it).
+
 ### Key tech choices
 
 - Tailwind CSS v4 (beta) for styling
 - Monaco editor for Dockerfile editing
 - xterm.js with fit/webgl/web-links addons for terminal
+- tmux for terminal session persistence (Docker containers)
 - ReactFlow for canvas workspace visualization
 - WebSocket for real-time terminal I/O and shell state
