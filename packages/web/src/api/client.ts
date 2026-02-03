@@ -1632,6 +1632,21 @@ export async function deleteVmFile(vmId: string, filePath: string): Promise<void
   await fetchAPI(`/vms/${vmId}/files?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' });
 }
 
+// ============ Firecracker Install Status ============
+
+export interface FirecrackerInstallStatus {
+  binaryInstalled: boolean;
+  binaryVersion?: string;
+  imageDownloaded: boolean;
+  imagePath?: string;
+  kvmAvailable: boolean;
+  kvmError?: string;
+}
+
+export async function getFirecrackerInstallStatus(): Promise<FirecrackerInstallStatus> {
+  return fetchAPI('/backends/firecracker/install-status');
+}
+
 // ============ Backend Status ============
 
 export interface BackendInfo {
@@ -3379,4 +3394,166 @@ export async function configureDockerHub(config: { username?: string; password?:
     method: 'PUT',
     body: JSON.stringify(config),
   });
+}
+
+// ==================== GitHub API ====================
+
+export interface GitHubStatus {
+  connected: boolean;
+  username?: string;
+  clientConfigured: boolean;
+  visibleRepos?: 'all' | string[];
+}
+
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  html_url: string;
+  description: string | null;
+  clone_url: string;
+  ssh_url: string;
+  default_branch: string;
+  updated_at: string;
+  pushed_at: string;
+  language: string | null;
+  stargazers_count: number;
+  forks_count: number;
+  owner: {
+    login: string;
+    avatar_url: string;
+  };
+}
+
+export interface GitHubUser {
+  login: string;
+  id: number;
+  avatar_url: string;
+  name: string | null;
+  email: string | null;
+}
+
+/**
+ * Get GitHub connection status
+ */
+export async function getGitHubStatus(): Promise<GitHubStatus> {
+  return fetchAPI('/github/status');
+}
+
+/**
+ * Configure GitHub OAuth credentials
+ */
+export async function configureGitHub(clientId: string, clientSecret: string): Promise<void> {
+  await fetchAPI('/github/configure', {
+    method: 'POST',
+    body: JSON.stringify({ clientId, clientSecret }),
+  });
+}
+
+/**
+ * Get GitHub OAuth authorization URL
+ */
+export async function getGitHubOAuthUrl(redirectUri: string): Promise<{ url: string }> {
+  return fetchAPI(`/github/oauth-url?redirect_uri=${encodeURIComponent(redirectUri)}`);
+}
+
+/**
+ * Exchange OAuth code for access token
+ */
+export async function exchangeGitHubCode(code: string, redirectUri: string): Promise<{ accessToken: string; username: string }> {
+  return fetchAPI('/github/callback', {
+    method: 'POST',
+    body: JSON.stringify({ code, redirectUri }),
+  });
+}
+
+/**
+ * Disconnect GitHub account
+ */
+export async function disconnectGitHub(): Promise<void> {
+  await fetchAPI('/github/disconnect', { method: 'POST' });
+}
+
+/**
+ * Clear all GitHub credentials (OAuth app + access token)
+ */
+export async function clearGitHubCredentials(): Promise<void> {
+  await fetchAPI('/github/clear-credentials', { method: 'POST' });
+}
+
+/**
+ * List user's GitHub repositories
+ */
+export async function listGitHubRepos(options?: {
+  page?: number;
+  perPage?: number;
+  sort?: 'updated' | 'pushed' | 'full_name';
+  type?: 'all' | 'owner' | 'member';
+}): Promise<{ repos: GitHubRepo[]; hasMore: boolean }> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set('page', options.page.toString());
+  if (options?.perPage) params.set('per_page', options.perPage.toString());
+  if (options?.sort) params.set('sort', options.sort);
+  if (options?.type) params.set('type', options.type);
+
+  const query = params.toString();
+  return fetchAPI(`/github/repos${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get a specific GitHub repository
+ */
+export async function getGitHubRepo(owner: string, repo: string): Promise<GitHubRepo> {
+  return fetchAPI(`/github/repos/${owner}/${repo}`);
+}
+
+/**
+ * Get current GitHub user
+ */
+export async function getGitHubUser(): Promise<GitHubUser> {
+  return fetchAPI('/github/user');
+}
+
+/**
+ * Set visible repos ('all' or array of repo full_names)
+ */
+export async function setGitHubVisibleRepos(visibleRepos: 'all' | string[]): Promise<void> {
+  await fetchAPI('/github/visible-repos', {
+    method: 'POST',
+    body: JSON.stringify({ visibleRepos }),
+  });
+}
+
+// ==================== Work API ====================
+
+export interface WorkResult {
+  sandboxId: string;
+  repoName: string;
+  branch: string;
+  clonePath: string;
+}
+
+export interface StartWorkOptions {
+  repoFullName: string;
+  branch?: string;
+  backend: SandboxBackend;
+  agentConfigId?: string;
+}
+
+/**
+ * Start work on a GitHub repository
+ */
+export async function startWork(options: StartWorkOptions): Promise<WorkResult> {
+  return fetchAPI('/work/start', {
+    method: 'POST',
+    body: JSON.stringify(options),
+  });
+}
+
+/**
+ * Get work session status
+ */
+export async function getWorkStatus(sandboxId: string): Promise<{ status: string; ready: boolean }> {
+  return fetchAPI(`/work/status/${sandboxId}`);
 }

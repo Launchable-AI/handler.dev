@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle, ChevronDown, ChevronRight, Store } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle, ChevronDown, ChevronRight, Store, Github } from 'lucide-react';
+import { useExchangeGitHubCode } from './hooks/useGitHub';
 import { Settings } from './components/Settings';
 import { MCPPage } from './components/MCPPage';
 import { Notes } from './components/Notes';
@@ -11,6 +12,7 @@ import { DockerfileEditor } from './components/DockerfileEditor';
 import { ImageManager } from './components/ImageManager';
 import { AgentConfig } from './components/AgentConfig';
 import { PluginMarketplace } from './components/PluginMarketplace';
+import { Repos } from './components/Repos';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
@@ -18,10 +20,10 @@ import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPa
 import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
 
 // All possible tabs
-type Tab = 'agents' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'settings';
+type Tab = 'agents' | 'repos' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'settings';
 
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['agents', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'settings'];
+const VALID_TABS: Tab[] = ['agents', 'repos', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'settings'];
 
 interface NavItemDef {
   id: Tab;
@@ -66,6 +68,7 @@ const navStructure: NavEntry[] = [
     label: 'Extensions',
     icon: Puzzle,
     children: [
+      { id: 'repos', label: 'Repos', icon: Github },
       { id: 'mcp', label: 'MCP Servers', icon: Package },
       { id: 'plugins', label: 'Plugins', icon: Store },
     ],
@@ -109,6 +112,7 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
   return (
     <div className="flex-1 overflow-hidden" style={style}>
       {activeTab === 'agents' && <CommandCentre />}
+      {activeTab === 'repos' && <Repos />}
       {activeTab === 'sandboxes' && <SandboxList onCreateClick={onCreateClick} />}
       {activeTab === 'volumes' && <UnifiedVolumeList />}
       {activeTab === 'dockerfiles' && <DockerfileEditor />}
@@ -173,6 +177,39 @@ function App() {
     return () => {
       window.removeEventListener('caisson-navigate-tab', handleTabChange as EventListener);
     };
+  }, []);
+
+  // GitHub OAuth callback handling
+  const exchangeGitHubCode = useExchangeGitHubCode();
+  const oauthHandledRef = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+
+    // Check if this is a GitHub OAuth callback
+    if (code && !oauthHandledRef.current) {
+      oauthHandledRef.current = true;
+
+      // Get the redirect URI (current URL without query params)
+      const redirectUri = `${window.location.origin}${window.location.pathname}`;
+
+      // Exchange the code for an access token
+      exchangeGitHubCode.mutate(
+        { code, redirectUri },
+        {
+          onSuccess: () => {
+            // Clear the URL params and navigate to settings
+            window.history.replaceState({}, '', window.location.pathname);
+            setActiveTab('settings');
+          },
+          onError: (err) => {
+            console.error('GitHub OAuth failed:', err);
+            window.history.replaceState({}, '', window.location.pathname);
+          },
+        }
+      );
+    }
   }, []);
 
   const dockerConnected = health?.docker === 'connected';

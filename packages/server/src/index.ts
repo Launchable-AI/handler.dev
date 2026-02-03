@@ -195,6 +195,8 @@ import digitaloceanRoutes from './routes/digitalocean.js';
 import linodeRoutes from './routes/linode.js';
 import worktreeRoutes from './routes/worktrees.js';
 import registryRoutes from './routes/registry.js';
+import githubRoutes from './routes/github.js';
+import workRoutes from './routes/work.js';
 
 const app = new Hono();
 
@@ -260,6 +262,8 @@ app.route('/api/backends/digitalocean', digitaloceanRoutes);
 app.route('/api/backends/linode', linodeRoutes);
 app.route('/api/worktrees', worktreeRoutes);
 app.route('/api/registry', registryRoutes);
+app.route('/api/github', githubRoutes);
+app.route('/api/work', workRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {

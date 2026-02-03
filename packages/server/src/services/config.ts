@@ -62,6 +62,16 @@ export interface LinodeConfig {
   rootPassword?: string;      // Generated root password
 }
 
+export interface GitHubConfig {
+  clientId: string;
+  clientSecret: string;
+  accessToken?: string;
+  username?: string;
+  enabled: boolean;
+  // Repo visibility: 'all' shows all repos, array of full_names (e.g., 'owner/repo') shows only selected
+  visibleRepos?: 'all' | string[];
+}
+
 export interface CloudBackendsConfig {
   daytona?: DaytonaConfig;
   aws?: AwsConfig;
@@ -69,6 +79,7 @@ export interface CloudBackendsConfig {
   gcp?: GcpConfig;
   digitalocean?: DigitalOceanConfig;
   linode?: LinodeConfig;
+  github?: GitHubConfig;
 }
 
 export interface DockerHubConfig {

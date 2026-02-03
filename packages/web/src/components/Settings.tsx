@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown } from 'lucide-react';
+import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe } from 'lucide-react';
 import { useConfig, useUpdateConfig } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
 import type { ModelOption, BackendStatus } from '../api/client';
 import { CloudBackendsSettings } from './settings/CloudBackendsSettings';
+import { FirecrackerInstallModal } from './settings/FirecrackerInstallModal';
+import { GitHubSettings } from './settings/GitHubSettings';
 
-type SettingsTab = 'general' | 'ai' | 'backends';
+type SettingsTab = 'general' | 'self-hosting' | 'ai' | 'backends' | 'github';
 type BackendsView = 'local' | 'cloud';
 
 export function Settings() {
@@ -46,6 +48,7 @@ export function Settings() {
   const [backendsLoading, setBackendsLoading] = useState(false);
   const [backendsError, setBackendsError] = useState<string | null>(null);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const [showFirecrackerInstall, setShowFirecrackerInstall] = useState(false);
 
 
   useEffect(() => {
@@ -201,6 +204,17 @@ export function Settings() {
           Backends
         </button>
         <button
+          onClick={() => setActiveTab('self-hosting')}
+          className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
+            activeTab === 'self-hosting'
+              ? 'border-[hsl(var(--amber))] text-[hsl(var(--amber))]'
+              : 'border-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+          }`}
+        >
+          <Globe className="h-3.5 w-3.5" />
+          Self-Hosting
+        </button>
+        <button
           onClick={() => setActiveTab('ai')}
           className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
             activeTab === 'ai'
@@ -211,13 +225,99 @@ export function Settings() {
           <Sparkles className="h-3.5 w-3.5" />
           AI Prompts
         </button>
+        <button
+          onClick={() => setActiveTab('github')}
+          className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
+            activeTab === 'github'
+              ? 'border-[hsl(var(--text-primary))] text-[hsl(var(--text-primary))]'
+              : 'border-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+          }`}
+        >
+          <Github className="h-3.5 w-3.5" />
+          GitHub
+        </button>
       </div>
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className={activeTab === 'backends' && backendsView === 'cloud' ? '' : 'max-w-3xl mx-auto'}>
+        <div className={activeTab === 'backends' && backendsView === 'cloud' ? '' : activeTab === 'github' ? 'max-w-2xl mx-auto' : 'max-w-3xl mx-auto'}>
           {activeTab === 'general' && (
             <div className="space-y-6">
+              {/* Data Directory */}
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  Data Directory
+                </label>
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
+                  Where volumes, SSH keys, and dockerfiles are stored on the server.
+                </p>
+                <div className="flex border border-[hsl(var(--border))] overflow-hidden">
+                  <div className="flex-1 px-3 py-2 text-xs bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))] truncate">
+                    {dataDirectory || <span className="text-[hsl(var(--text-muted))]">Default (project/data)</span>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDataDirPicker(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] border-l border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    Browse
+                  </button>
+                </div>
+              </div>
+
+              {/* SSH Keys Display Path */}
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                  <Key className="h-3.5 w-3.5" />
+                  SSH Keys Display Path
+                </label>
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
+                  The path shown in SSH commands for finding the private key on your local machine.
+                </p>
+                <input
+                  type="text"
+                  value={sshKeysDisplayPath}
+                  onChange={(e) => setSshKeysDisplayPath(e.target.value)}
+                  placeholder="~/.ssh"
+                  className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                />
+              </div>
+
+              {/* Preview */}
+              <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
+                <div>
+                  <p className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider mb-1">Server Volumes Path</p>
+                  <code className="text-[10px] text-[hsl(var(--text-secondary))] block break-all">
+                    {dataDirectory ? `${dataDirectory}/volumes/` : '(default)'}
+                  </code>
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex justify-end pt-4 border-t border-[hsl(var(--border))]">
+                <button
+                  onClick={handleSave}
+                  disabled={updateMutation.isPending}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-[hsl(var(--cyan))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50"
+                >
+                  {updateMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Save Settings
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'self-hosting' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Remote Access Configuration</h3>
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
+                  Configure SSH settings for accessing Caisson when running on a remote server
+                </p>
+              </div>
+
               {/* SSH Host */}
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
@@ -274,48 +374,6 @@ export function Settings() {
                 </div>
               )}
 
-              {/* SSH Keys Display Path */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
-                  <Key className="h-3.5 w-3.5" />
-                  SSH Keys Display Path
-                </label>
-                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
-                  The path shown in SSH commands for finding the private key on your local machine.
-                </p>
-                <input
-                  type="text"
-                  value={sshKeysDisplayPath}
-                  onChange={(e) => setSshKeysDisplayPath(e.target.value)}
-                  placeholder="~/.ssh"
-                  className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
-                />
-              </div>
-
-              {/* Data Directory */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  Data Directory
-                </label>
-                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
-                  Where volumes, SSH keys, and dockerfiles are stored on the server.
-                </p>
-                <div className="flex border border-[hsl(var(--border))] overflow-hidden">
-                  <div className="flex-1 px-3 py-2 text-xs bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))] truncate">
-                    {dataDirectory || <span className="text-[hsl(var(--text-muted))]">Default (project/data)</span>}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowDataDirPicker(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] border-l border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                    Browse
-                  </button>
-                </div>
-              </div>
-
               {/* Preview */}
               <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-3">
                 <div>
@@ -335,16 +393,10 @@ export function Settings() {
                   </div>
                 )}
                 {sshJumpHost && !sshJumpHostKeyPath && (
-                  <div className="text-[10px] text-[#06B6D4]">
+                  <div className="text-[10px] text-[hsl(var(--amber))]">
                     Add Jump Host SSH Key Path to enable remote access
                   </div>
                 )}
-                <div>
-                  <p className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider mb-1">Server Volumes Path</p>
-                  <code className="text-[10px] text-[hsl(var(--text-secondary))] block break-all">
-                    {dataDirectory ? `${dataDirectory}/volumes/` : '(default)'}
-                  </code>
-                </div>
               </div>
 
               {/* Save Button */}
@@ -352,7 +404,7 @@ export function Settings() {
                 <button
                   onClick={handleSave}
                   disabled={updateMutation.isPending}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-[hsl(var(--cyan))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-[hsl(var(--amber))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--amber)/0.9)] disabled:opacity-50"
                 >
                   {updateMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
                   Save Settings
@@ -451,6 +503,7 @@ export function Settings() {
                         icon={<Cpu className="h-5 w-5" />}
                         onAction={(action) => handleBackendAction('firecracker', action)}
                         actionInProgress={actionInProgress?.startsWith('firecracker-') ? actionInProgress : null}
+                        customInstallHandler={() => setShowFirecrackerInstall(true)}
                       />
                     </div>
                   ) : null}
@@ -598,6 +651,10 @@ export function Settings() {
             </div>
           )}
 
+          {activeTab === 'github' && (
+            <GitHubSettings />
+          )}
+
         </div>
       </div>
 
@@ -647,6 +704,16 @@ export function Settings() {
           </div>
         </div>
       )}
+
+      {/* Firecracker Install Modal */}
+      {showFirecrackerInstall && (
+        <FirecrackerInstallModal
+          onClose={() => {
+            setShowFirecrackerInstall(false);
+            loadBackends();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -667,9 +734,10 @@ interface BackendCardProps {
   icon: React.ReactNode;
   onAction: (action: 'enable' | 'disable' | 'install' | 'uninstall') => void;
   actionInProgress: string | null;
+  customInstallHandler?: () => void;
 }
 
-function BackendCard({ name, description, status, icon, onAction, actionInProgress }: BackendCardProps) {
+function BackendCard({ name, description, status, icon, onAction, actionInProgress, customInstallHandler }: BackendCardProps) {
   const getStatusIcon = () => {
     if (!status.installed) return <XCircle className="h-4 w-4 text-[hsl(var(--text-muted))]" />;
     if (status.error) return <AlertCircle className="h-4 w-4 text-[hsl(var(--red))]" />;
@@ -762,7 +830,7 @@ function BackendCard({ name, description, status, icon, onAction, actionInProgre
             </>
           ) : (
             <button
-              onClick={() => onAction('install')}
+              onClick={() => customInstallHandler ? customInstallHandler() : onAction('install')}
               disabled={isLoading}
               className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-[10px] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] disabled:opacity-50"
             >
