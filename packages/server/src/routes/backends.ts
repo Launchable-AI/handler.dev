@@ -634,6 +634,68 @@ backends.post('/:backend/uninstall', async (c) => {
   }
 });
 
+// ============ Firecracker Install Status ============
+
+// GET /backends/firecracker/install-status - Get detailed Firecracker installation status
+backends.get('/firecracker/install-status', async (c) => {
+  const info = {
+    binaryInstalled: false,
+    binaryVersion: undefined as string | undefined,
+    imageDownloaded: false,
+    imagePath: undefined as string | undefined,
+    kvmAvailable: false,
+    kvmError: undefined as string | undefined,
+  };
+
+  // Check binary
+  const fcPath = await findBinary('firecracker');
+  if (fcPath) {
+    info.binaryInstalled = true;
+    info.binaryVersion = await getBinaryVersion(fcPath);
+  }
+
+  // Check KVM
+  if (existsSync('/dev/kvm')) {
+    info.kvmAvailable = true;
+  } else {
+    info.kvmError = 'KVM not available - check virtualization support';
+  }
+
+  // Check for VM image
+  // Look in common locations for Firecracker images
+  const imageLocations = [
+    `${process.cwd()}/data/fc-images/ubuntu-22.04.ext4`,
+    `${process.cwd()}/data/fc-images/rootfs.ext4`,
+    `${process.cwd()}/data/images/fc-rootfs.ext4`,
+  ];
+
+  for (const imagePath of imageLocations) {
+    if (existsSync(imagePath)) {
+      info.imageDownloaded = true;
+      info.imagePath = imagePath;
+      break;
+    }
+  }
+
+  // Also check if there's any .ext4 file in fc-images directory
+  if (!info.imageDownloaded) {
+    try {
+      const fcImagesDir = `${process.cwd()}/data/fc-images`;
+      if (existsSync(fcImagesDir)) {
+        const { stdout } = await execAsync(`ls ${fcImagesDir}/*.ext4 2>/dev/null | head -1 || true`);
+        if (stdout.trim()) {
+          info.imageDownloaded = true;
+          info.imagePath = stdout.trim();
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  return c.json(info);
+});
+
 // ============ Cloud Backends ============
 
 // POST /backends/daytona/configure - Configure Daytona cloud backend
