@@ -351,10 +351,17 @@ containers.get('/:id/branch', async (c) => {
   const workdir = c.req.query('cwd') || '/home/dev/workspace';
 
   try {
+    // Find the git repo root first, then get branch
+    const repoRoot = await dockerService.execInContainer(id, [
+      'sh', '-c', 'git rev-parse --show-toplevel 2>/dev/null || echo ""',
+    ], workdir);
+
+    const gitDir = repoRoot.trim() || workdir;
+
     const branch = await dockerService.execInContainer(id, [
       'sh', '-c', 'git rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""',
-    ], workdir);
-    return c.json({ branch: branch || '' });
+    ], gitDir);
+    return c.json({ branch: branch.trim() || '' });
   } catch {
     return c.json({ branch: '' });
   }
@@ -367,14 +374,21 @@ containers.get('/:id/git-log', async (c) => {
   const workdir = c.req.query('cwd') || '/home/dev/workspace';
 
   try {
+    // First, find the git repo root (handles cases where cwd isn't tracked correctly)
+    const repoRoot = await dockerService.execInContainer(id, [
+      'sh', '-c', 'git rev-parse --show-toplevel 2>/dev/null || echo ""',
+    ], workdir);
+
+    const gitDir = repoRoot.trim() || workdir;
+
     const [logOutput, branch] = await Promise.all([
       dockerService.execInContainer(id, [
         'sh', '-c',
         `git log --pretty=format:'%H|%h|%s|%an|%ae|%aI' -n ${limit} 2>/dev/null || echo ""`,
-      ], workdir),
+      ], gitDir),
       dockerService.execInContainer(id, [
         'sh', '-c', 'git rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""',
-      ], workdir),
+      ], gitDir),
     ]);
 
     const commits = logOutput
@@ -385,7 +399,7 @@ containers.get('/:id/git-log', async (c) => {
         return { hash, shortHash, subject, author, email, date };
       });
 
-    return c.json({ commits, branch: branch || '' });
+    return c.json({ commits, branch: branch.trim() || '' });
   } catch {
     return c.json({ commits: [], branch: '' });
   }
@@ -398,9 +412,16 @@ containers.get('/:id/git-show/:hash', async (c) => {
   const workdir = c.req.query('cwd') || '/home/dev/workspace';
 
   try {
+    // Find the git repo root first
+    const repoRoot = await dockerService.execInContainer(id, [
+      'sh', '-c', 'git rev-parse --show-toplevel 2>/dev/null || echo ""',
+    ], workdir);
+
+    const gitDir = repoRoot.trim() || workdir;
+
     const output = await dockerService.execInContainer(id, [
       'sh', '-c', `git show ${hash} --stat 2>/dev/null || echo ""`,
-    ], workdir);
+    ], gitDir);
     return c.json({ output });
   } catch {
     return c.json({ output: '' });
