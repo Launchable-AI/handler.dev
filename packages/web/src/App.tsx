@@ -97,7 +97,7 @@ const tabLabelMap = getTabLabelMap();
 
 // Content area that adjusts for terminal panel
 function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; onCreateClick: () => void }) {
-  const { isOpen, position, size } = useTerminalPanel();
+  const { isOpen, position, size, isResizing } = useTerminalPanel();
 
   // Calculate style adjustments based on terminal panel
   const style: React.CSSProperties = {};
@@ -110,7 +110,7 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
   }
 
   return (
-    <div className="flex-1 overflow-hidden" style={style}>
+    <div className={`flex-1 overflow-hidden ${!isResizing ? 'transition-[padding] duration-200 ease-out' : ''}`} style={style}>
       {activeTab === 'agents' && <CommandCentre />}
       {activeTab === 'repos' && <Repos />}
       {activeTab === 'sandboxes' && <SandboxList onCreateClick={onCreateClick} />}
