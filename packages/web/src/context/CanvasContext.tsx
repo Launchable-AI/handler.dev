@@ -7,6 +7,7 @@ interface CanvasState {
   workspaces: Workspace[];
   activeWorkspaceId: string;
   slimToolbar: boolean;
+  minimizedNodeIds: string[];
 }
 
 interface CanvasContextValue {
@@ -26,6 +27,10 @@ interface CanvasContextValue {
   setActiveWorkspace: (id: string) => void;
   // Toolbar density
   toggleSlimToolbar: () => void;
+  // Minimize to sidebar
+  minimizeNode: (id: string) => void;
+  restoreNode: (id: string) => void;
+  isNodeMinimized: (id: string) => boolean;
 }
 
 const DEFAULT_WORKSPACE_ID = 'default';
@@ -36,17 +41,20 @@ type Action =
   | { type: 'UPDATE_NODE'; payload: { id: string; updates: Partial<WorktreeNode> } }
   | { type: 'UPDATE_POSITION'; payload: { id: string; position: { x: number; y: number } } }
   | { type: 'UPDATE_SIZE'; payload: { id: string; size: { width: number; height: number } } }
-  | { type: 'LOAD_STATE'; payload: { nodes: WorktreeNode[]; workspaces: Workspace[]; activeWorkspaceId: string; slimToolbar: boolean } }
+  | { type: 'LOAD_STATE'; payload: { nodes: WorktreeNode[]; workspaces: Workspace[]; activeWorkspaceId: string; slimToolbar: boolean; minimizedNodeIds: string[] } }
   | { type: 'CREATE_WORKSPACE'; payload: Workspace }
   | { type: 'RENAME_WORKSPACE'; payload: { id: string; name: string } }
   | { type: 'DELETE_WORKSPACE'; payload: string }
   | { type: 'SET_ACTIVE_WORKSPACE'; payload: string }
-  | { type: 'TOGGLE_SLIM_TOOLBAR' };
+  | { type: 'TOGGLE_SLIM_TOOLBAR' }
+  | { type: 'MINIMIZE_NODE'; payload: string }
+  | { type: 'RESTORE_NODE'; payload: string };
 
 const STORAGE_KEY = 'caisson-canvas-nodes';
 const WORKSPACES_KEY = 'caisson-canvas-workspaces';
 const ACTIVE_WS_KEY = 'caisson-canvas-active-workspace';
 const SLIM_TOOLBAR_KEY = 'caisson-canvas-slim-toolbar';
+const MINIMIZED_KEY = 'caisson-canvas-minimized';
 
 function loadPersistedNodes(): WorktreeNode[] {
   try {
@@ -89,11 +97,21 @@ function loadSlimToolbar(): boolean {
   }
 }
 
+function loadMinimizedNodeIds(): string[] {
+  try {
+    const saved = localStorage.getItem(MINIMIZED_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
 function persistState(state: CanvasState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.worktreeNodes));
   localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces));
   localStorage.setItem(ACTIVE_WS_KEY, state.activeWorkspaceId);
   localStorage.setItem(SLIM_TOOLBAR_KEY, String(state.slimToolbar));
+  localStorage.setItem(MINIMIZED_KEY, JSON.stringify(state.minimizedNodeIds));
 }
 
 function canvasReducer(state: CanvasState, action: Action): CanvasState {
@@ -157,6 +175,7 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
         workspaces: action.payload.workspaces,
         activeWorkspaceId: action.payload.activeWorkspaceId,
         slimToolbar: action.payload.slimToolbar,
+        minimizedNodeIds: action.payload.minimizedNodeIds || [],
       };
       break;
     case 'CREATE_WORKSPACE':
@@ -188,6 +207,20 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
     case 'TOGGLE_SLIM_TOOLBAR':
       newState = { ...state, slimToolbar: !state.slimToolbar };
       break;
+    case 'MINIMIZE_NODE':
+      newState = {
+        ...state,
+        minimizedNodeIds: state.minimizedNodeIds.includes(action.payload)
+          ? state.minimizedNodeIds
+          : [...state.minimizedNodeIds, action.payload],
+      };
+      break;
+    case 'RESTORE_NODE':
+      newState = {
+        ...state,
+        minimizedNodeIds: state.minimizedNodeIds.filter(id => id !== action.payload),
+      };
+      break;
     default:
       return state;
   }
@@ -196,9 +229,9 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
   return newState;
 }
 
-function buildReactFlowNodes(worktreeNodes: WorktreeNode[], visibleIds: Set<string>): Node[] {
+function buildReactFlowNodes(worktreeNodes: WorktreeNode[], visibleIds: Set<string>, minimizedIds: Set<string>): Node[] {
   return worktreeNodes
-    .filter(wn => visibleIds.has(wn.id))
+    .filter(wn => visibleIds.has(wn.id) && !minimizedIds.has(wn.id))
     .map(wn => ({
       id: wn.id,
       type: 'sandbox',
@@ -230,6 +263,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     workspaces: [{ id: DEFAULT_WORKSPACE_ID, name: 'Default', nodeIds: [] }],
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
     slimToolbar: false,
+    minimizedNodeIds: [],
   });
 
   // Load persisted state on mount
@@ -238,6 +272,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     let savedWorkspaces = loadPersistedWorkspaces();
     const savedActiveWs = loadActiveWorkspaceId();
     const savedSlimToolbar = loadSlimToolbar();
+    const savedMinimizedIds = loadMinimizedNodeIds();
 
     // Ensure default workspace exists
     if (savedWorkspaces.length === 0) {
@@ -246,12 +281,13 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
 
     dispatch({
       type: 'LOAD_STATE',
-      payload: { nodes: savedNodes, workspaces: savedWorkspaces, activeWorkspaceId: savedActiveWs, slimToolbar: savedSlimToolbar },
+      payload: { nodes: savedNodes, workspaces: savedWorkspaces, activeWorkspaceId: savedActiveWs, slimToolbar: savedSlimToolbar, minimizedNodeIds: savedMinimizedIds },
     });
   }, []);
 
   const activeWorkspace = state.workspaces.find(ws => ws.id === state.activeWorkspaceId);
   const visibleIds = new Set(activeWorkspace?.nodeIds || []);
+  const minimizedIds = new Set(state.minimizedNodeIds);
 
   const addNode = useCallback((node: WorktreeNode) => {
     dispatch({ type: 'ADD_NODE', payload: node });
@@ -296,7 +332,19 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'TOGGLE_SLIM_TOOLBAR' });
   }, []);
 
-  const nodes = buildReactFlowNodes(state.worktreeNodes, visibleIds);
+  const minimizeNode = useCallback((id: string) => {
+    dispatch({ type: 'MINIMIZE_NODE', payload: id });
+  }, []);
+
+  const restoreNode = useCallback((id: string) => {
+    dispatch({ type: 'RESTORE_NODE', payload: id });
+  }, []);
+
+  const isNodeMinimized = useCallback((id: string) => {
+    return state.minimizedNodeIds.includes(id);
+  }, [state.minimizedNodeIds]);
+
+  const nodes = buildReactFlowNodes(state.worktreeNodes, visibleIds, minimizedIds);
   const edges = buildReactFlowEdges(state.worktreeNodes, visibleIds);
 
   const value: CanvasContextValue = {
@@ -314,6 +362,9 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     deleteWorkspace,
     setActiveWorkspace,
     toggleSlimToolbar,
+    minimizeNode,
+    restoreNode,
+    isNodeMinimized,
   };
 
   return (

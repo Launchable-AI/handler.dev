@@ -17,6 +17,7 @@ import { useContainers } from '../../hooks/useContainers';
 import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
 import { GitLogPanel } from './GitLogPanel';
+import { MinimizedNodesSidebar, type MinimizedNodeInfo } from './MinimizedNodesSidebar';
 import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
 
@@ -34,7 +35,7 @@ interface CanvasViewProps {
 
 // Inner component that has access to useReactFlow
 function CanvasViewInner({ className = '' }: CanvasViewProps) {
-  const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar } = useCanvas();
+  const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar, restoreNode } = useCanvas();
   const { data: containers } = useContainers();
   const { setCenter } = useReactFlow();
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -87,6 +88,21 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     const activeNodeIds = new Set(activeWorkspace?.nodeIds || []);
     return state.worktreeNodes.filter(n => activeNodeIds.has(n.id));
   }, [state.worktreeNodes, activeWorkspace]);
+
+  // Minimized nodes info for the sidebar
+  const minimizedNodesInfo = useMemo((): MinimizedNodeInfo[] => {
+    const minimizedSet = new Set(state.minimizedNodeIds);
+    const activeNodeIds = new Set(activeWorkspace?.nodeIds || []);
+    return state.worktreeNodes
+      .filter(n => minimizedSet.has(n.id) && activeNodeIds.has(n.id))
+      .map(n => ({
+        id: n.id,
+        sandboxId: n.sandboxId,
+        branch: n.branch,
+        status: n.status,
+        claudeStatus: 'off' as const, // Will be updated by monitors
+      }));
+  }, [state.worktreeNodes, state.minimizedNodeIds, activeWorkspace]);
 
   const getDescendantIds = useCallback((parentId: string): string[] => {
     const descendants: string[] = [];
@@ -404,6 +420,12 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
           </div>
         )}
       </div>
+
+      {/* Minimized nodes sidebar */}
+      <MinimizedNodesSidebar
+        nodes={minimizedNodesInfo}
+        onRestore={restoreNode}
+      />
     </div>
   );
 }

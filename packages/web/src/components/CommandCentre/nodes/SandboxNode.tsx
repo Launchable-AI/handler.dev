@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
-import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, X, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose } from 'lucide-react';
 import type { WorktreeNode } from '../../../types/command-centre';
 import { useCanvas } from '../../../context/CanvasContext';
 import { TerminalInstance } from '../../Terminal/TerminalInstance';
@@ -24,7 +24,7 @@ const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
 function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
-  const { addNode, removeNode, updateNode, updateSize, state } = useCanvas();
+  const { addNode, removeNode, updateNode, updateSize, state, minimizeNode } = useCanvas();
   const slimToolbar = state.slimToolbar;
   const [showForkInput, setShowForkInput] = useState(false);
   const [forkBranch, setForkBranch] = useState('');
@@ -37,7 +37,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [focusFontSize, setFocusFontSize] = useState(DEFAULT_FOCUS_FONT_SIZE);
   const [isFocused, setIsFocused] = useState(false);
   const [currentCwd, setCurrentCwd] = useState<string>('/home/dev/workspace');
-  const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'off'>('off');
+  const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'waiting' | 'off'>('off');
   const [inGitRepo, setInGitRepo] = useState(false);
   const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
@@ -392,6 +392,15 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
             title="Focus terminal"
           >
             <Maximize2 className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+          </button>
+
+          {/* Minimize to sidebar */}
+          <button
+            onClick={() => minimizeNode(data.id)}
+            className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors ${slimToolbar ? 'p-0.5' : 'p-1'}`}
+            title="Minimize to sidebar"
+          >
+            <PanelBottomClose className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
           </button>
 
           {/* Separator - hidden in slim mode */}
