@@ -45,6 +45,7 @@ interface TerminalPanelContextType {
   tabs: TerminalTab[];
   activeTabId: string | null;
   size: number;
+  isResizing: boolean;
   openTerminal: (vmId: string, vmName: string, vmIp: string) => void;
   openContainerTerminal: (containerId: string, containerName: string, isDevNode?: boolean) => void;
   openDaytonaTerminal: (sandboxId: string, sandboxName: string) => void;
@@ -86,6 +87,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   // Default size: 700 for right panel, 350 for bottom
   const [size, setSize] = useState(() => getDefaultPosition() === 'right' ? 700 : 350);
+  const [isResizing, setIsResizing] = useState(false);
 
   // Persist position changes to localStorage and adjust size for new position
   const setPosition = useCallback((newPosition: PanelPosition) => {
@@ -214,6 +216,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
       tabs,
       activeTabId,
       size,
+      isResizing,
       openTerminal,
       openContainerTerminal,
       openDaytonaTerminal,
@@ -230,7 +233,9 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
           activeTabId={activeTabId}
           position={position}
           size={size}
+          isResizing={isResizing}
           onSizeChange={setSize}
+          onResizingChange={setIsResizing}
           onTabClose={closeTerminal}
           onTabSelect={setActiveTabId}
           onClose={closePanel}
@@ -248,7 +253,9 @@ interface TerminalPanelUIProps {
   activeTabId: string | null;
   position: PanelPosition;
   size: number;
+  isResizing: boolean;
   onSizeChange: (size: number) => void;
+  onResizingChange: (isResizing: boolean) => void;
   onTabClose: (tabId: string) => void;
   onTabSelect: (tabId: string) => void;
   onClose: () => void;
@@ -261,21 +268,22 @@ function TerminalPanelUI({
   activeTabId,
   position,
   size,
+  isResizing,
   onSizeChange,
+  onResizingChange,
   onTabClose,
   onTabSelect,
   onClose,
   onPositionChange,
   onTabStateChange,
 }: TerminalPanelUIProps) {
-  const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Handle resize
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    setIsResizing(true);
-  }, []);
+    onResizingChange(true);
+  }, [onResizingChange]);
 
   useEffect(() => {
     if (!isResizing) return;
@@ -291,7 +299,7 @@ function TerminalPanelUI({
     };
 
     const handleMouseUp = () => {
-      setIsResizing(false);
+      onResizingChange(false);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -301,7 +309,7 @@ function TerminalPanelUI({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, position, onSizeChange]);
+  }, [isResizing, position, onSizeChange, onResizingChange]);
 
   const panelClasses = position === 'bottom'
     ? 'fixed bottom-0 left-52 right-0 border-t'
@@ -312,7 +320,7 @@ function TerminalPanelUI({
       ref={panelRef}
       className={`${panelClasses} z-40 bg-[hsl(var(--bg-base))] border-[hsl(var(--border))] ${
         position === 'bottom' ? 'flex flex-col' : 'flex flex-row'
-      }`}
+      } ${!isResizing ? 'transition-[width,height] duration-200 ease-out' : ''}`}
       style={position === 'bottom' ? { height: size } : { width: size }}
     >
       {/* Resize handle - full edge with visual separation */}
@@ -408,11 +416,12 @@ function TerminalPanelUI({
         </div>
 
         {/* Terminal content */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative" style={{ contain: 'strict' }}>
           {tabs.map(tab => (
             <div
               key={tab.id}
               className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
+              style={{ contain: 'layout paint' }}
             >
               <TerminalInstance
                 tab={tab}
@@ -714,7 +723,7 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
         } catch (e) {
           console.warn('[Terminal] Resize failed:', e);
         }
-      }, 50);
+      }, 100);
     };
 
     const resizeObserver = new ResizeObserver(() => handleResize());
