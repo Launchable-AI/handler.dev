@@ -71,9 +71,9 @@ const navStructure: NavEntry[] = [
     ],
   },
   { id: 'agent-config', label: 'Agent Config', icon: Cog },
-  'spacer',
   { id: 'notes', label: 'Notes', icon: StickyNote },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
+  'spacer',
 ];
 
 // Build a flat lookup of tab id -> label (including group children)
