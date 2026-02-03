@@ -3525,6 +3525,137 @@ export async function setGitHubVisibleRepos(visibleRepos: 'all' | string[]): Pro
   });
 }
 
+// ==================== GitHub App API ====================
+
+export interface GitHubAppStatus {
+  configured: boolean;
+  installed: boolean;
+  username?: string;
+  installationId?: string;
+  repositorySelection?: 'all' | 'selected';
+  visibleRepos?: 'all' | string[];
+}
+
+export interface GitHubAppInstallation {
+  id: number;
+  account: {
+    login: string;
+    id: number;
+    avatar_url: string;
+    type: string;
+  };
+  repository_selection: 'all' | 'selected';
+  permissions: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitHubAppRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  html_url: string;
+  description: string | null;
+  clone_url: string;
+  ssh_url: string;
+  default_branch: string;
+  updated_at: string;
+  pushed_at: string;
+  language: string | null;
+  stargazers_count: number;
+  forks_count: number;
+  owner: {
+    login: string;
+    avatar_url: string;
+  };
+  permissions?: {
+    admin: boolean;
+    push: boolean;
+    pull: boolean;
+  };
+}
+
+/**
+ * Get GitHub App status
+ */
+export async function getGitHubAppStatus(): Promise<GitHubAppStatus> {
+  return fetchAPI('/github-app/status');
+}
+
+/**
+ * Configure GitHub App (App ID and Private Key)
+ */
+export async function configureGitHubApp(appId: string, privateKey: string): Promise<void> {
+  await fetchAPI('/github-app/configure', {
+    method: 'POST',
+    body: JSON.stringify({ appId, privateKey }),
+  });
+}
+
+/**
+ * List GitHub App installations
+ */
+export async function listGitHubAppInstallations(): Promise<{ installations: GitHubAppInstallation[] }> {
+  return fetchAPI('/github-app/installations');
+}
+
+/**
+ * Select a GitHub App installation
+ */
+export async function selectGitHubAppInstallation(installationId: string, username: string): Promise<void> {
+  await fetchAPI('/github-app/select-installation', {
+    method: 'POST',
+    body: JSON.stringify({ installationId, username }),
+  });
+}
+
+/**
+ * Disconnect GitHub App
+ */
+export async function disconnectGitHubApp(): Promise<void> {
+  await fetchAPI('/github-app/disconnect', { method: 'POST' });
+}
+
+/**
+ * Clear all GitHub App credentials
+ */
+export async function clearGitHubAppCredentials(): Promise<void> {
+  await fetchAPI('/github-app/clear-credentials', { method: 'POST' });
+}
+
+/**
+ * List GitHub App repositories
+ */
+export async function listGitHubAppRepos(options?: {
+  page?: number;
+  perPage?: number;
+}): Promise<{ repos: GitHubAppRepo[]; hasMore: boolean; totalCount: number }> {
+  const params = new URLSearchParams();
+  if (options?.page) params.set('page', options.page.toString());
+  if (options?.perPage) params.set('per_page', options.perPage.toString());
+
+  const query = params.toString();
+  return fetchAPI(`/github-app/repos${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get a specific GitHub App repository
+ */
+export async function getGitHubAppRepo(owner: string, repo: string): Promise<GitHubAppRepo> {
+  return fetchAPI(`/github-app/repos/${owner}/${repo}`);
+}
+
+/**
+ * Set visible repos for GitHub App
+ */
+export async function setGitHubAppVisibleRepos(visibleRepos: 'all' | string[]): Promise<void> {
+  await fetchAPI('/github-app/visible-repos', {
+    method: 'POST',
+    body: JSON.stringify({ visibleRepos }),
+  });
+}
+
 // ==================== Work API ====================
 
 export interface WorkResult {
