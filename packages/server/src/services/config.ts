@@ -62,6 +62,7 @@ export interface LinodeConfig {
   rootPassword?: string;      // Generated root password
 }
 
+// OAuth App config (broad permissions)
 export interface GitHubConfig {
   clientId: string;
   clientSecret: string;
@@ -72,6 +73,17 @@ export interface GitHubConfig {
   visibleRepos?: 'all' | string[];
 }
 
+// GitHub App config (fine-grained permissions)
+export interface GitHubAppConfig {
+  appId: string;
+  privateKey: string;           // PEM-encoded private key
+  installationId?: string;      // Set after app is installed
+  username?: string;            // GitHub username (from installation)
+  enabled: boolean;
+  // Repo visibility: 'all' shows all repos, array of full_names shows only selected
+  visibleRepos?: 'all' | string[];
+}
+
 export interface CloudBackendsConfig {
   daytona?: DaytonaConfig;
   aws?: AwsConfig;
@@ -79,7 +91,8 @@ export interface CloudBackendsConfig {
   gcp?: GcpConfig;
   digitalocean?: DigitalOceanConfig;
   linode?: LinodeConfig;
-  github?: GitHubConfig;
+  github?: GitHubConfig;         // OAuth App (legacy)
+  githubApp?: GitHubAppConfig;   // GitHub App (fine-grained permissions)
 }
 
 export interface DockerHubConfig {
