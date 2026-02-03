@@ -23,8 +23,9 @@ const DEFAULT_FOCUS_FONT_SIZE = 13;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
-function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNode>) {
-  const { addNode, removeNode, updateNode, updateSize } = useCanvas();
+function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
+  const { addNode, removeNode, updateNode, updateSize, state } = useCanvas();
+  const slimToolbar = state.slimToolbar;
   const [showForkInput, setShowForkInput] = useState(false);
   const [forkBranch, setForkBranch] = useState('');
   const [isForking, setIsForking] = useState(false);
@@ -281,9 +282,9 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
       )}
 
       {/* Title bar - drag handle */}
-      <div className="terminal-node-drag-handle flex items-center gap-2 px-3 py-1.5 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))] cursor-grab active:cursor-grabbing shrink-0 select-none">
+      <div className={`terminal-node-drag-handle flex items-center gap-1.5 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))] cursor-grab active:cursor-grabbing shrink-0 select-none ${slimToolbar ? 'px-1.5 py-0.5' : 'px-3 py-1.5 gap-2'}`}>
         <div
-          className="w-2 h-2 rounded-full shrink-0"
+          className={`rounded-full shrink-0 ${slimToolbar ? 'w-1.5 h-1.5' : 'w-2 h-2'}`}
           style={{ backgroundColor: statusColor }}
           title={data.status}
         />
@@ -292,14 +293,14 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
           className="flex items-center gap-1 min-w-0 hover:text-[hsl(var(--cyan))] transition-colors"
           title="View git history"
         >
-          <GitBranch className="h-3 w-3 text-[hsl(var(--cyan))] shrink-0" />
-          <span className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
+          <GitBranch className={`text-[hsl(var(--cyan))] shrink-0 ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
+          <span className={`font-medium text-[hsl(var(--text-primary))] truncate ${slimToolbar ? 'text-[9px]' : 'text-[11px]'}`}>
             {data.branch}
           </span>
         </button>
         <div className="flex-1" />
 
-        {isRoot && (
+        {isRoot && !slimToolbar && (
           <span className="px-1.5 py-0.5 text-[9px] font-medium bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded shrink-0">
             MAIN
           </span>
@@ -307,77 +308,103 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
 
         {/* Claude Code status indicator */}
         {claudeStatus !== 'off' && (
-          <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 flex items-center gap-1 ${
-            claudeStatus === 'processing'
-              ? 'bg-[hsl(var(--purple)/0.15)] text-[hsl(var(--purple))]'
-              : 'bg-[hsl(var(--text-muted)/0.1)] text-[hsl(var(--text-muted))]'
-          }`}>
-            {claudeStatus === 'processing' && (
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[hsl(var(--purple))] animate-pulse" />
-            )}
-            claude
-          </span>
+          slimToolbar ? (
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                claudeStatus === 'processing' ? 'bg-[hsl(var(--purple))] animate-pulse' : 'bg-[hsl(var(--text-muted)/0.3)]'
+              }`}
+              title={`Claude: ${claudeStatus}`}
+            />
+          ) : (
+            <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 flex items-center gap-1 ${
+              claudeStatus === 'processing'
+                ? 'bg-[hsl(var(--purple)/0.15)] text-[hsl(var(--purple))]'
+                : 'bg-[hsl(var(--text-muted)/0.1)] text-[hsl(var(--text-muted))]'
+            }`}>
+              {claudeStatus === 'processing' && (
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-[hsl(var(--purple))] animate-pulse" />
+              )}
+              claude
+            </span>
+          )
         )}
 
         {/* Connection state indicator */}
-        <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 ${
-          connState === 'connected'
-            ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
-            : connState === 'connecting'
-            ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
-            : 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
-        }`}>
-          {connState}
-        </span>
+        {slimToolbar ? (
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              connState === 'connected'
+                ? 'bg-[hsl(var(--green))]'
+                : connState === 'connecting'
+                ? 'bg-[hsl(var(--amber))]'
+                : 'bg-[hsl(var(--red))]'
+            }`}
+            title={connState}
+          />
+        ) : (
+          <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 ${
+            connState === 'connected'
+              ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
+              : connState === 'connecting'
+              ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
+              : 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
+          }`}>
+            {connState}
+          </span>
+        )}
 
         {/* Action buttons */}
         <div className="flex items-center gap-0.5 shrink-0">
-          {/* Font size controls */}
-          <button
-            onClick={() => setNodeFontSize(s => Math.max(MIN_FONT_SIZE, s - 1))}
-            disabled={nodeFontSize <= MIN_FONT_SIZE}
-            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
-            title="Decrease font size"
-          >
-            <ZoomOut className="h-3 w-3" />
-          </button>
-          <button
-            onClick={() => setNodeFontSize(DEFAULT_NODE_FONT_SIZE)}
-            disabled={nodeFontSize === DEFAULT_NODE_FONT_SIZE}
-            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 text-[9px] font-mono min-w-[24px] text-center"
-            title="Reset font size"
-          >
-            {nodeFontSize}px
-          </button>
-          <button
-            onClick={() => setNodeFontSize(s => Math.min(MAX_FONT_SIZE, s + 1))}
-            disabled={nodeFontSize >= MAX_FONT_SIZE}
-            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
-            title="Increase font size"
-          >
-            <ZoomIn className="h-3 w-3" />
-          </button>
+          {/* Font size controls - hidden in slim mode */}
+          {!slimToolbar && (
+            <>
+              <button
+                onClick={() => setNodeFontSize(s => Math.max(MIN_FONT_SIZE, s - 1))}
+                disabled={nodeFontSize <= MIN_FONT_SIZE}
+                className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
+                title="Decrease font size"
+              >
+                <ZoomOut className="h-3 w-3" />
+              </button>
+              <button
+                onClick={() => setNodeFontSize(DEFAULT_NODE_FONT_SIZE)}
+                disabled={nodeFontSize === DEFAULT_NODE_FONT_SIZE}
+                className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 text-[9px] font-mono min-w-[24px] text-center"
+                title="Reset font size"
+              >
+                {nodeFontSize}px
+              </button>
+              <button
+                onClick={() => setNodeFontSize(s => Math.min(MAX_FONT_SIZE, s + 1))}
+                disabled={nodeFontSize >= MAX_FONT_SIZE}
+                className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
+                title="Increase font size"
+              >
+                <ZoomIn className="h-3 w-3" />
+              </button>
+            </>
+          )}
 
           {/* Focus/maximize */}
           <button
             onClick={() => setIsFocused(true)}
-            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors"
+            className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors ${slimToolbar ? 'p-0.5' : 'p-1'}`}
             title="Focus terminal"
           >
-            <Maximize2 className="h-3 w-3" />
+            <Maximize2 className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
           </button>
 
-          {/* Separator */}
-          <div className="w-px h-3 bg-[hsl(var(--border))] mx-0.5" />
+          {/* Separator - hidden in slim mode */}
+          {!slimToolbar && <div className="w-px h-3 bg-[hsl(var(--border))] mx-0.5" />}
 
           {inGitRepo && (
             <button
               onClick={() => setShowForkInput(!showForkInput)}
               disabled={data.status !== 'ready'}
-              className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
+              className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 ${slimToolbar ? 'p-0.5' : 'p-1'}`}
               title="Fork worktree"
             >
-              <GitFork className="h-3 w-3" />
+              <GitFork className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
             </button>
           )}
 
@@ -385,10 +412,10 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
             <button
               onClick={handleMerge}
               disabled={isMerging}
-              className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
+              className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 ${slimToolbar ? 'p-0.5' : 'p-1'}`}
               title="Merge to parent"
             >
-              {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitMerge className="h-3 w-3" />}
+              {isMerging ? <Loader2 className={`animate-spin ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} /> : <GitMerge className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />}
             </button>
           )}
 
@@ -396,25 +423,25 @@ function SandboxNodeComponent({ data, selected, dragging }: NodeProps<WorktreeNo
             <button
               onClick={handleDelete}
               disabled={isDeleting || data.status === 'merging'}
-              className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50"
+              className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 ${slimToolbar ? 'p-0.5' : 'p-1'}`}
               title="Delete worktree"
             >
-              {isDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              {isDeleting ? <Loader2 className={`animate-spin ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} /> : <Trash2 className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />}
             </button>
           )}
 
           {isRoot && (
             <button
               onClick={() => removeNode(data.id)}
-              className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors"
+              className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors ${slimToolbar ? 'p-0.5' : 'p-1'}`}
               title="Remove from canvas"
             >
-              <X className="h-3 w-3" />
+              <X className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
             </button>
           )}
 
           {data.status === 'error' && (
-            <AlertCircle className="h-3 w-3 text-[hsl(var(--red))]" />
+            <AlertCircle className={`text-[hsl(var(--red))] ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
           )}
         </div>
       </div>

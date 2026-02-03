@@ -53,7 +53,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
   const { fontSize, splitLayout, focusedSessionIds, isFullscreen, maximizedSessionId, viewMode } = state;
   const unfocusedCount = sessionCount - focusedSessionIds.length;
 
-  // Keyboard shortcut for fullscreen (Escape to exit, F11 or Ctrl+Shift+F to toggle)
+  // Keyboard shortcut for fullscreen (Escape to exit, Ctrl+Shift+F to toggle)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Escape exits fullscreen or maximized
@@ -64,8 +64,8 @@ export function ToolBar({ className = '' }: ToolBarProps) {
           toggleFullscreen();
         }
       }
-      // F11 or Ctrl+Shift+F toggles fullscreen
-      if (e.key === 'F11' || (e.ctrlKey && e.shiftKey && e.key === 'F')) {
+      // Ctrl+Shift+F toggles fullscreen
+      if (e.ctrlKey && e.shiftKey && e.key === 'F') {
         e.preventDefault();
         toggleFullscreen();
       }
@@ -209,7 +209,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
               ? 'bg-[hsl(var(--purple)/0.15)] text-[hsl(var(--purple))]'
               : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
           }`}
-          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F11)'}
+          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (Ctrl+Shift+F)'}
         >
           {isFullscreen ? (
             <Minimize2 className="h-3.5 w-3.5" />

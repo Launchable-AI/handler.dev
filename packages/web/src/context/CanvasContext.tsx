@@ -6,6 +6,7 @@ interface CanvasState {
   worktreeNodes: WorktreeNode[];
   workspaces: Workspace[];
   activeWorkspaceId: string;
+  slimToolbar: boolean;
 }
 
 interface CanvasContextValue {
@@ -23,6 +24,8 @@ interface CanvasContextValue {
   renameWorkspace: (id: string, name: string) => void;
   deleteWorkspace: (id: string) => void;
   setActiveWorkspace: (id: string) => void;
+  // Toolbar density
+  toggleSlimToolbar: () => void;
 }
 
 const DEFAULT_WORKSPACE_ID = 'default';
@@ -33,15 +36,17 @@ type Action =
   | { type: 'UPDATE_NODE'; payload: { id: string; updates: Partial<WorktreeNode> } }
   | { type: 'UPDATE_POSITION'; payload: { id: string; position: { x: number; y: number } } }
   | { type: 'UPDATE_SIZE'; payload: { id: string; size: { width: number; height: number } } }
-  | { type: 'LOAD_STATE'; payload: { nodes: WorktreeNode[]; workspaces: Workspace[]; activeWorkspaceId: string } }
+  | { type: 'LOAD_STATE'; payload: { nodes: WorktreeNode[]; workspaces: Workspace[]; activeWorkspaceId: string; slimToolbar: boolean } }
   | { type: 'CREATE_WORKSPACE'; payload: Workspace }
   | { type: 'RENAME_WORKSPACE'; payload: { id: string; name: string } }
   | { type: 'DELETE_WORKSPACE'; payload: string }
-  | { type: 'SET_ACTIVE_WORKSPACE'; payload: string };
+  | { type: 'SET_ACTIVE_WORKSPACE'; payload: string }
+  | { type: 'TOGGLE_SLIM_TOOLBAR' };
 
 const STORAGE_KEY = 'caisson-canvas-nodes';
 const WORKSPACES_KEY = 'caisson-canvas-workspaces';
 const ACTIVE_WS_KEY = 'caisson-canvas-active-workspace';
+const SLIM_TOOLBAR_KEY = 'caisson-canvas-slim-toolbar';
 
 function loadPersistedNodes(): WorktreeNode[] {
   try {
@@ -76,10 +81,19 @@ function loadActiveWorkspaceId(): string {
   }
 }
 
+function loadSlimToolbar(): boolean {
+  try {
+    return localStorage.getItem(SLIM_TOOLBAR_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 function persistState(state: CanvasState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.worktreeNodes));
   localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces));
   localStorage.setItem(ACTIVE_WS_KEY, state.activeWorkspaceId);
+  localStorage.setItem(SLIM_TOOLBAR_KEY, String(state.slimToolbar));
 }
 
 function canvasReducer(state: CanvasState, action: Action): CanvasState {
@@ -142,6 +156,7 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
         worktreeNodes: action.payload.nodes,
         workspaces: action.payload.workspaces,
         activeWorkspaceId: action.payload.activeWorkspaceId,
+        slimToolbar: action.payload.slimToolbar,
       };
       break;
     case 'CREATE_WORKSPACE':
@@ -169,6 +184,9 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
     }
     case 'SET_ACTIVE_WORKSPACE':
       newState = { ...state, activeWorkspaceId: action.payload };
+      break;
+    case 'TOGGLE_SLIM_TOOLBAR':
+      newState = { ...state, slimToolbar: !state.slimToolbar };
       break;
     default:
       return state;
@@ -211,6 +229,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     worktreeNodes: [],
     workspaces: [{ id: DEFAULT_WORKSPACE_ID, name: 'Default', nodeIds: [] }],
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
+    slimToolbar: false,
   });
 
   // Load persisted state on mount
@@ -218,6 +237,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     const savedNodes = loadPersistedNodes();
     let savedWorkspaces = loadPersistedWorkspaces();
     const savedActiveWs = loadActiveWorkspaceId();
+    const savedSlimToolbar = loadSlimToolbar();
 
     // Ensure default workspace exists
     if (savedWorkspaces.length === 0) {
@@ -226,7 +246,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
 
     dispatch({
       type: 'LOAD_STATE',
-      payload: { nodes: savedNodes, workspaces: savedWorkspaces, activeWorkspaceId: savedActiveWs },
+      payload: { nodes: savedNodes, workspaces: savedWorkspaces, activeWorkspaceId: savedActiveWs, slimToolbar: savedSlimToolbar },
     });
   }, []);
 
@@ -272,6 +292,10 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_ACTIVE_WORKSPACE', payload: id });
   }, []);
 
+  const toggleSlimToolbar = useCallback(() => {
+    dispatch({ type: 'TOGGLE_SLIM_TOOLBAR' });
+  }, []);
+
   const nodes = buildReactFlowNodes(state.worktreeNodes, visibleIds);
   const edges = buildReactFlowEdges(state.worktreeNodes, visibleIds);
 
@@ -289,6 +313,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     renameWorkspace,
     deleteWorkspace,
     setActiveWorkspace,
+    toggleSlimToolbar,
   };
 
   return (

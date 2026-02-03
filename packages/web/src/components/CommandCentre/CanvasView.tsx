@@ -17,7 +17,7 @@ import { useContainers } from '../../hooks/useContainers';
 import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
 import { GitLogPanel } from './GitLogPanel';
-import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2 } from 'lucide-react';
+import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
 
 const nodeTypes = {
@@ -34,7 +34,7 @@ interface CanvasViewProps {
 
 // Inner component that has access to useReactFlow
 function CanvasViewInner({ className = '' }: CanvasViewProps) {
-  const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace } = useCanvas();
+  const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar } = useCanvas();
   const { data: containers } = useContainers();
   const { setCenter } = useReactFlow();
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -312,8 +312,26 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
           />
         </ReactFlow>
 
-        {/* Add sandbox to canvas button */}
-        <div className="absolute top-3 right-3 z-10">
+        {/* Canvas controls */}
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+          {/* Slim toolbar toggle */}
+          <button
+            onClick={toggleSlimToolbar}
+            className={`p-1.5 bg-[hsl(var(--bg-surface))] border rounded shadow-lg transition-colors ${
+              state.slimToolbar
+                ? 'border-[hsl(var(--cyan)/0.5)] text-[hsl(var(--cyan))]'
+                : 'border-[hsl(var(--border))] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]'
+            }`}
+            title={state.slimToolbar ? 'Switch to normal toolbar' : 'Switch to slim toolbar'}
+          >
+            {state.slimToolbar ? (
+              <AlignVerticalSpaceBetween className="h-3.5 w-3.5" />
+            ) : (
+              <AlignVerticalSpaceAround className="h-3.5 w-3.5" />
+            )}
+          </button>
+
+          {/* Add sandbox to canvas button */}
           <div className="relative">
             <button
               onClick={() => setShowAddMenu(!showAddMenu)}
