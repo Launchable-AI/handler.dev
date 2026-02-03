@@ -8,7 +8,7 @@ export interface TerminalSession {
   targetIp?: string;          // For VMs
   shell: string;
   createdAt: Date;
-  status: 'connecting' | 'connected' | 'disconnected' | 'error';
+  status: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
   errorMessage?: string;
   // Future: agent status
   agentStatus?: {

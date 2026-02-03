@@ -156,7 +156,7 @@ export function SessionTile({
     }
   }, [session.id, index, onReorder, onSwap, onInsertAt, getDropZone]);
 
-  const handleStateChange = useCallback((state: 'connecting' | 'connected' | 'disconnected' | 'error', errorMessage?: string) => {
+  const handleStateChange = useCallback((state: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting', errorMessage?: string) => {
     updateSessionStatus(session.id, state, errorMessage);
   }, [session.id, updateSessionStatus]);
 
@@ -207,6 +207,7 @@ export function SessionTile({
     connected: 'text-[hsl(var(--green))]',
     disconnected: 'text-[hsl(var(--text-muted))]',
     error: 'text-[hsl(var(--red))]',
+    reconnecting: 'text-[hsl(var(--amber))]',
   }[session.status];
 
   const statusDot = {
@@ -214,6 +215,7 @@ export function SessionTile({
     connected: 'bg-[hsl(var(--green))]',
     disconnected: 'bg-[hsl(var(--text-muted))]',
     error: 'bg-[hsl(var(--red))]',
+    reconnecting: 'bg-[hsl(var(--amber))]',
   }[session.status];
 
   // Can unfocus only if there's more than one focused session (need at least one in main area)

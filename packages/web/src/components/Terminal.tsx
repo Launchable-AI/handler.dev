@@ -12,7 +12,7 @@ interface TerminalProps {
   isDevNode?: boolean;
 }
 
-type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
+type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
 
 export function Terminal({ containerId, containerName, onClose, isDevNode = false }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);

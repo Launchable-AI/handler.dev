@@ -2,11 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Loader2, Copy, Check } from 'lucide-react';
+import { Loader2, Copy, Check, RefreshCw } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 
 // Connection state type
-export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
+export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
 
 export interface TerminalTarget {
   type: 'vm' | 'container';
@@ -33,6 +33,9 @@ export interface TerminalInstanceProps {
   className?: string;
   fontSize?: number;
 }
+
+// Session storage key prefix
+const SESSION_STORAGE_KEY = 'caisson-terminal-session-';
 
 export function TerminalInstance({
   target,
@@ -75,6 +78,47 @@ export function TerminalInstance({
     setErrorMessage(error);
     onStateChangeRef.current?.(state, error);
   }, []);
+
+  // Session ID ref for reconnection
+  const sessionIdRef = useRef<string | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxReconnectAttempts = 5;
+  const reconnectDelay = 2000;
+
+  // Get storage key for this target
+  const getStorageKey = useCallback(() => {
+    return `${SESSION_STORAGE_KEY}${target.type}-${target.id}`;
+  }, [target.type, target.id]);
+
+  // Save session to localStorage
+  const saveSession = useCallback((sessionId: string) => {
+    try {
+      localStorage.setItem(getStorageKey(), sessionId);
+      sessionIdRef.current = sessionId;
+    } catch {
+      // localStorage may be unavailable
+    }
+  }, [getStorageKey]);
+
+  // Get saved session from localStorage
+  const getSavedSession = useCallback((): string | null => {
+    try {
+      return localStorage.getItem(getStorageKey());
+    } catch {
+      return null;
+    }
+  }, [getStorageKey]);
+
+  // Clear saved session
+  const clearSavedSession = useCallback(() => {
+    try {
+      localStorage.removeItem(getStorageKey());
+      sessionIdRef.current = null;
+    } catch {
+      // Ignore
+    }
+  }, [getStorageKey]);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -186,17 +230,16 @@ export function TerminalInstance({
     // Also rescan on scroll
     const scrollDisposable = term.onScroll(() => scanUrlsDebounced());
 
-    // Connect WebSocket first
-    const ws = new WebSocket(getWsUrl());
-    wsRef.current = ws;
+    // Track current WebSocket for reconnection
+    let currentWs: WebSocket | null = null;
 
     // Initial fit and resize helpers
     const fitAndResize = () => {
       if (isDisposedRef.current) return;
       try {
         fitAddon.fit();
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
+        if (currentWs?.readyState === WebSocket.OPEN) {
+          currentWs.send(JSON.stringify({
             type: 'resize',
             cols: term.cols,
             rows: term.rows,
@@ -205,6 +248,141 @@ export function TerminalInstance({
       } catch (e) {
         console.warn('[Terminal] Fit failed:', e);
       }
+    };
+
+    // Connect or reconnect to WebSocket
+    const connect = (attemptResume: boolean = false) => {
+      if (isDisposedRef.current) return;
+
+      const ws = new WebSocket(getWsUrl());
+      currentWs = ws;
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (isDisposedRef.current) return;
+        reconnectAttemptRef.current = 0; // Reset reconnect counter on successful connect
+
+        try {
+          fitAddon.fit();
+        } catch {
+          // Ignore fit errors on startup
+        }
+
+        // Check for existing session to resume (only for containers)
+        const savedSessionId = getSavedSession();
+        if (attemptResume && savedSessionId && target.type === 'container') {
+          // Try to resume the session
+          updateState('reconnecting');
+          ws.send(JSON.stringify({
+            type: 'resume',
+            sessionId: savedSessionId,
+            cols: term.cols,
+            rows: term.rows,
+          }));
+        } else if (target.type === 'vm') {
+          // VM terminal - no session persistence yet
+          ws.send(JSON.stringify({
+            type: 'start-vm',
+            vmId: target.id,
+            vmIp: target.ip,
+            shell: '/bin/bash',
+            cols: term.cols,
+            rows: term.rows,
+          }));
+        } else {
+          // Container terminal - start new session
+          ws.send(JSON.stringify({
+            type: 'start',
+            containerId: target.id,
+            shell: '/bin/bash',
+            cols: term.cols,
+            rows: term.rows,
+            isDevNode: target.isDevNode ?? true,
+            ...(target.workdir ? { workdir: target.workdir } : {}),
+          }));
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (isDisposedRef.current) return;
+        try {
+          const msg = JSON.parse(event.data);
+          switch (msg.type) {
+            case 'connected':
+              updateState('connected');
+              term.focus();
+              setTimeout(fitAndResize, 50);
+              setTimeout(fitAndResize, 200);
+              // Save session ID for future reconnection
+              if (msg.sessionId) {
+                saveSession(msg.sessionId);
+              }
+              if (msg.resumed) {
+                term.write('\r\n\x1b[32m[Session resumed]\x1b[0m\r\n');
+              }
+              break;
+            case 'scrollback':
+              // Restore scrollback history on resume
+              if (msg.data) {
+                term.write(msg.data);
+              }
+              break;
+            case 'session-not-found':
+              // Session no longer exists, start fresh
+              clearSavedSession();
+              term.write('\r\n\x1b[33m[Previous session expired, starting new session...]\x1b[0m\r\n');
+              // Start a new session
+              ws.send(JSON.stringify({
+                type: 'start',
+                containerId: target.id,
+                shell: '/bin/bash',
+                cols: term.cols,
+                rows: term.rows,
+                isDevNode: target.isDevNode ?? true,
+                ...(target.workdir ? { workdir: target.workdir } : {}),
+              }));
+              break;
+            case 'output':
+              term.write(msg.data);
+              scanUrlsDebounced();
+              break;
+            case 'exit':
+              updateState('disconnected');
+              term.write('\r\n\x1b[33m[Session ended]\x1b[0m\r\n');
+              clearSavedSession(); // Session ended, clear saved state
+              break;
+            case 'error':
+              updateState('error', msg.message);
+              term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
+              break;
+          }
+        } catch {
+          // Handle non-JSON messages
+        }
+      };
+
+      ws.onclose = () => {
+        if (isDisposedRef.current) return;
+
+        // Attempt reconnection if we have a saved session
+        const savedSessionId = getSavedSession();
+        if (savedSessionId && reconnectAttemptRef.current < maxReconnectAttempts) {
+          reconnectAttemptRef.current++;
+          updateState('reconnecting');
+          term.write(`\r\n\x1b[33m[Connection lost, reconnecting... (${reconnectAttemptRef.current}/${maxReconnectAttempts})]\x1b[0m\r\n`);
+
+          reconnectTimerRef.current = setTimeout(() => {
+            connect(true); // Attempt to resume
+          }, reconnectDelay);
+        } else {
+          updateState('disconnected');
+        }
+      };
+
+      ws.onerror = () => {
+        if (isDisposedRef.current) return;
+        // onclose will handle reconnection
+      };
     };
 
     // Schedule multiple fit attempts
@@ -216,81 +394,14 @@ export function TerminalInstance({
       requestAnimationFrame(fitAndResize);
     });
 
-    ws.onopen = () => {
-      if (isDisposedRef.current) return;
-      try {
-        fitAddon.fit();
-      } catch {
-        // Ignore fit errors on startup
-      }
-
-      // Send appropriate start message based on target type
-      if (target.type === 'vm') {
-        ws.send(JSON.stringify({
-          type: 'start-vm',
-          vmId: target.id,
-          vmIp: target.ip,
-          shell: '/bin/bash',
-          cols: term.cols,
-          rows: term.rows,
-        }));
-      } else {
-        // Container terminal
-        ws.send(JSON.stringify({
-          type: 'start',
-          containerId: target.id,
-          shell: '/bin/bash',
-          cols: term.cols,
-          rows: term.rows,
-          isDevNode: target.isDevNode ?? true, // Default to dev user for containers
-          ...(target.workdir ? { workdir: target.workdir } : {}),
-        }));
-      }
-    };
-
-    ws.onmessage = (event) => {
-      if (isDisposedRef.current) return;
-      try {
-        const msg = JSON.parse(event.data);
-        switch (msg.type) {
-          case 'connected':
-            updateState('connected');
-            term.focus();
-            setTimeout(fitAndResize, 50);
-            setTimeout(fitAndResize, 200);
-            break;
-          case 'output':
-            term.write(msg.data);
-            scanUrlsDebounced();
-            break;
-          case 'exit':
-            updateState('disconnected');
-            term.write('\r\n\x1b[33m[Session ended]\x1b[0m\r\n');
-            break;
-          case 'error':
-            updateState('error', msg.message);
-            term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
-            break;
-        }
-      } catch {
-        // Handle non-JSON messages
-      }
-    };
-
-    ws.onclose = () => {
-      if (isDisposedRef.current) return;
-      updateState('disconnected');
-    };
-
-    ws.onerror = () => {
-      if (isDisposedRef.current) return;
-      updateState('error', 'Connection failed');
-    };
+    // Check for saved session and attempt resume on initial connect
+    const savedSession = getSavedSession();
+    connect(!!savedSession && target.type === 'container');
 
     // Handle terminal input
     const dataDisposable = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'input', data }));
+      if (currentWs?.readyState === WebSocket.OPEN) {
+        currentWs.send(JSON.stringify({ type: 'input', data }));
       }
     });
 
@@ -303,8 +414,8 @@ export function TerminalInstance({
         if (isDisposedRef.current) return;
         try {
           fitAddon.fit();
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
+          if (currentWs?.readyState === WebSocket.OPEN) {
+            currentWs.send(JSON.stringify({
               type: 'resize',
               cols: term.cols,
               rows: term.rows,
@@ -326,13 +437,14 @@ export function TerminalInstance({
       clearTimeout(fitTimeout3);
       cancelAnimationFrame(rafId);
       if (resizeTimeout) clearTimeout(resizeTimeout);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       resizeObserver.disconnect();
       if (scanTimeout) clearTimeout(scanTimeout);
       scrollDisposable.dispose();
       dataDisposable.dispose();
       oscDisposable.dispose();
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
+      if (currentWs?.readyState === WebSocket.OPEN || currentWs?.readyState === WebSocket.CONNECTING) {
+        currentWs.close();
       }
       term.dispose();
       xtermRef.current = null;
@@ -345,12 +457,13 @@ export function TerminalInstance({
     return () => {
       isDisposedRef.current = true;
       clearTimeout(initTimeout);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (cleanupRef.current) {
         cleanupRef.current();
         cleanupRef.current = null;
       }
     };
-  }, [target.type, target.id, target.ip, target.isDevNode, getWsUrl, updateState]);
+  }, [target.type, target.id, target.ip, target.isDevNode, target.workdir, getWsUrl, updateState, saveSession, getSavedSession, clearSavedSession]);
 
   // Update font size when prop changes
   useEffect(() => {
@@ -385,10 +498,11 @@ export function TerminalInstance({
         <div className="flex items-center gap-2 px-3 py-1.5 bg-[hsl(var(--bg-surface))] border-b border-[hsl(var(--border))] text-[10px]">
           <span className={`flex items-center gap-1.5 ${
             connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
-            connectionState === 'connecting' ? 'text-[hsl(var(--amber))]' :
+            connectionState === 'connecting' || connectionState === 'reconnecting' ? 'text-[hsl(var(--amber))]' :
             'text-[hsl(var(--red))]'
           }`}>
-            {connectionState === 'connecting' && <Loader2 className="h-3 w-3 animate-spin" />}
+            {(connectionState === 'connecting' || connectionState === 'reconnecting') && <Loader2 className="h-3 w-3 animate-spin" />}
+            {connectionState === 'reconnecting' && <RefreshCw className="h-3 w-3" />}
             <span className="uppercase tracking-wider">{connectionState}</span>
           </span>
           {target.ip && (
