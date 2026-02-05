@@ -10,9 +10,9 @@ export interface ThemeConfig {
 }
 
 export const THEMES: ThemeConfig[] = [
+  { id: 'handler',   name: 'Handler',    mode: 'dark',  description: 'Covert ops, gold/amber accents' },
   { id: 'terminal',  name: 'Terminal',   mode: 'dark',  description: 'Industrial control panel, cyan accents' },
   { id: 'midnight',  name: 'Midnight',   mode: 'dark',  description: 'Deep navy with blue accents' },
-  { id: 'handler',   name: 'Handler',    mode: 'dark',  description: 'Covert ops, gold/amber accents' },
   { id: 'ember',     name: 'Ember',      mode: 'dark',  description: 'Warm dark, red/orange accents' },
   { id: 'void',      name: 'Void',       mode: 'dark',  description: 'Ultra-minimal, desaturated' },
   { id: 'blueprint', name: 'Blueprint',  mode: 'light', description: 'Engineering blueprint, warm paper' },
@@ -29,7 +29,7 @@ const STORAGE_KEY = 'handler-theme';
 const PREFERRED_DARK_KEY = 'handler-preferred-dark';
 const PREFERRED_LIGHT_KEY = 'handler-preferred-light';
 
-const DEFAULT_DARK: Theme = 'terminal';
+const DEFAULT_DARK: Theme = 'handler';
 const DEFAULT_LIGHT: Theme = 'blueprint';
 
 function isValidTheme(id: string | null): id is Theme {

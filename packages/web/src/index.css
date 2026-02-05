@@ -18,12 +18,57 @@
 }
 
 /* ============================================
-   TERMINAL THEME (Dark - Default)
-   Industrial control panel aesthetic
+   HANDLER THEME (Dark - Default)
+   Covert ops: matte black, gold/amber accents, teal secondary
    ============================================ */
 :root,
+[data-theme="handler"] {
+  --bg-base: 200 10% 6%;
+  --bg-surface: 200 8% 9%;
+  --bg-elevated: 200 7% 12%;
+  --bg-overlay: 200 6% 15%;
+  --bg-gradient-start: 200 10% 6%;
+  --bg-gradient-end: 200 12% 4%;
+
+  --text-primary: 40 15% 90%;
+  --text-secondary: 40 8% 55%;
+  --text-muted: 40 5% 36%;
+
+  --cyan: 175 50% 42%;
+  --cyan-dim: 175 35% 30%;
+  --amber: 42 90% 50%;
+  --amber-dim: 42 65% 38%;
+  --green: 150 45% 42%;
+  --green-dim: 150 30% 28%;
+  --red: 0 60% 50%;
+  --red-dim: 0 40% 33%;
+  --purple: 270 40% 55%;
+  --purple-dim: 270 28% 38%;
+  --blue: 210 55% 50%;
+  --blue-dim: 210 40% 38%;
+
+  --border: 200 8% 16%;
+  --border-highlight: 42 30% 22%;
+  --input-bg: 200 10% 8%;
+  --ring: 42 90% 50%;
+
+  --scrollbar-track: 200 10% 6%;
+  --scrollbar-thumb: 200 8% 22%;
+  --scrollbar-thumb-hover: 40 10% 32%;
+
+  --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.4);
+  --shadow-md: 0 4px 6px hsl(0 0% 0% / 0.4);
+  --shadow-lg: 0 10px 15px hsl(0 0% 0% / 0.5);
+
+  --glow-opacity: 0.15;
+  --glow-inset-opacity: 0.04;
+}
+
+/* ============================================
+   TERMINAL THEME (Dark)
+   Industrial control panel aesthetic
+   ============================================ */
 [data-theme="terminal"] {
-  /* Backgrounds - Deep industrial grays */
   --bg-base: 220 20% 8%;
   --bg-surface: 220 18% 11%;
   --bg-elevated: 220 16% 14%;
@@ -31,12 +76,10 @@
   --bg-gradient-start: 220 20% 8%;
   --bg-gradient-end: 220 22% 6%;
 
-  /* Text - Cool whites */
   --text-primary: 210 20% 92%;
   --text-secondary: 215 15% 60%;
   --text-muted: 215 10% 40%;
 
-  /* Accent Colors - Vibrant on dark */
   --cyan: 185 70% 50%;
   --cyan-dim: 185 50% 35%;
   --amber: 38 90% 55%;
@@ -50,23 +93,19 @@
   --blue: 210 80% 55%;
   --blue-dim: 210 60% 40%;
 
-  /* Functional */
   --border: 220 15% 20%;
   --border-highlight: 220 15% 28%;
   --input-bg: 220 20% 12%;
   --ring: 185 70% 50%;
 
-  /* Scrollbar */
   --scrollbar-track: 220 20% 8%;
   --scrollbar-thumb: 220 15% 28%;
   --scrollbar-thumb-hover: 215 10% 40%;
 
-  /* Shadows */
   --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.3);
   --shadow-md: 0 4px 6px hsl(0 0% 0% / 0.3);
   --shadow-lg: 0 10px 15px hsl(0 0% 0% / 0.4);
 
-  /* Glow intensity */
   --glow-opacity: 0.2;
   --glow-inset-opacity: 0.05;
 }
@@ -168,52 +207,6 @@
 
   --glow-opacity: 0.18;
   --glow-inset-opacity: 0.05;
-}
-
-/* ============================================
-   HANDLER THEME (Dark)
-   Covert ops: matte black, gold/amber accents, teal secondary
-   ============================================ */
-[data-theme="handler"] {
-  --bg-base: 200 10% 6%;
-  --bg-surface: 200 8% 9%;
-  --bg-elevated: 200 7% 12%;
-  --bg-overlay: 200 6% 15%;
-  --bg-gradient-start: 200 10% 6%;
-  --bg-gradient-end: 200 12% 4%;
-
-  --text-primary: 40 15% 90%;
-  --text-secondary: 40 8% 55%;
-  --text-muted: 40 5% 36%;
-
-  --cyan: 175 50% 42%;
-  --cyan-dim: 175 35% 30%;
-  --amber: 42 90% 50%;
-  --amber-dim: 42 65% 38%;
-  --green: 150 45% 42%;
-  --green-dim: 150 30% 28%;
-  --red: 0 60% 50%;
-  --red-dim: 0 40% 33%;
-  --purple: 270 40% 55%;
-  --purple-dim: 270 28% 38%;
-  --blue: 210 55% 50%;
-  --blue-dim: 210 40% 38%;
-
-  --border: 200 8% 16%;
-  --border-highlight: 42 30% 22%;
-  --input-bg: 200 10% 8%;
-  --ring: 42 90% 50%;
-
-  --scrollbar-track: 200 10% 6%;
-  --scrollbar-thumb: 200 8% 22%;
-  --scrollbar-thumb-hover: 40 10% 32%;
-
-  --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.4);
-  --shadow-md: 0 4px 6px hsl(0 0% 0% / 0.4);
-  --shadow-lg: 0 10px 15px hsl(0 0% 0% / 0.5);
-
-  --glow-opacity: 0.15;
-  --glow-inset-opacity: 0.04;
 }
 
 /* ============================================
