@@ -976,10 +976,24 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[10px] text-[hsl(var(--text-muted))] italic">
-                      No snapshots yet. Take a snapshot while the sandbox is running.
+                    <p className="text-[10px] text-[hsl(var(--text-muted))] italic mb-2">
+                      No snapshots yet.
                     </p>
                   )}
+                  {/* Take Snapshot button */}
+                  <button
+                    onClick={handleCreateSnapshot}
+                    disabled={!canSnapshot || isCreatingSnapshot}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={canSnapshot ? "Take a snapshot of the current state" : "Sandbox must be running to take a snapshot"}
+                  >
+                    {isCreatingSnapshot ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Camera className="h-3 w-3" />
+                    )}
+                    <span>Take Snapshot</span>
+                  </button>
                 </div>
               )}
             </div>

@@ -161,9 +161,10 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
     return port;
   };
 
-  // Set default ports when Docker is selected
+  // Set default ports when Docker or VM is selected
   useEffect(() => {
-    if (backend === 'docker' && ports.length === 0) {
+    const needsDefaultPorts = backend === 'docker' || backend === 'firecracker' || backend === 'cloud-hypervisor';
+    if (needsDefaultPorts && ports.length === 0) {
       const defaultPort1 = findNextAvailablePort(9999);
       const defaultPort2 = findNextAvailablePort(9998, new Set([defaultPort1]));
       setPorts([

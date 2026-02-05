@@ -525,7 +525,7 @@ export function usePromoteSnapshotToImage() {
       api.promoteSnapshotToImage(vmId, snapshotId, imageName),
     onSuccess: () => {
       // Invalidate base images list when a new image is created
-      queryClient.invalidateQueries({ queryKey: ['base-images'] });
+      queryClient.invalidateQueries({ queryKey: ['vms', 'base-images'] });
     },
   });
 }

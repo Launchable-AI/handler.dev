@@ -219,6 +219,7 @@ const CreateSandboxSchema = z.object({
   // AWS-specific options
   awsOptions: z.object({
     sizeClass: z.enum(['small', 'medium', 'large']).optional(),
+    purchaseType: z.enum(['spot', 'on-demand']).optional(),
     instanceType: z.string().optional(),
     amiId: z.string().optional(),
     volumeId: z.string().optional(),

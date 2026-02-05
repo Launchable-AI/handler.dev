@@ -248,6 +248,13 @@ export function VMSnapshots() {
         imageName,
       });
       setPromoteDialogSnapshot(null);
+
+      // Navigate to Images tab and highlight the new base image
+      window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'images' } }));
+      // Small delay to let the tab switch, then trigger highlight
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('caisson-highlight-image', { detail: { imageName } }));
+      }, 100);
     } catch (error) {
       console.error('Failed to promote snapshot:', error);
     }

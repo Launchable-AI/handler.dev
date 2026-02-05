@@ -32,8 +32,10 @@ import {
   Pencil,
   Terminal,
   History,
+  Server,
+  Box,
 } from 'lucide-react';
-import { useImages } from '../hooks/useContainers';
+import { useImages, useVmBaseImages, useDeleteVmBaseImage, useTriggerVmWarmup } from '../hooks/useContainers';
 import { useConfirm } from './ConfirmModal';
 import * as api from '../api/client';
 
@@ -108,12 +110,31 @@ export function ImageManager() {
   };
 
   const { data: images, refetch: refetchImages } = useImages();
+  const { data: vmBaseImages, refetch: refetchVmBaseImages } = useVmBaseImages();
+  const deleteVmBaseImage = useDeleteVmBaseImage();
+  const triggerWarmup = useTriggerVmWarmup();
   const confirm = useConfirm();
+
+  // Highlighted image (for navigation after promotion)
+  const [highlightedImage, setHighlightedImage] = useState<string | null>(null);
 
   // Load available registries on mount
   useEffect(() => {
     loadAvailableRegistries();
   }, []);
+
+  // Listen for navigation events with image highlight
+  useEffect(() => {
+    const handleHighlightImage = (e: CustomEvent<{ imageName: string }>) => {
+      setActiveTab('local');
+      setHighlightedImage(e.detail.imageName);
+      refetchVmBaseImages();
+      // Clear highlight after 3 seconds
+      setTimeout(() => setHighlightedImage(null), 3000);
+    };
+    window.addEventListener('caisson-highlight-image' as any, handleHighlightImage);
+    return () => window.removeEventListener('caisson-highlight-image' as any, handleHighlightImage);
+  }, [refetchVmBaseImages]);
 
   // Load Daytona snapshots when tab is selected
   useEffect(() => {
@@ -406,6 +427,26 @@ export function ImageManager() {
 
   const configuredRegistries = availableRegistries.filter(r => r.configured);
 
+  // VM Base Image operations
+  const handleDeleteVmBaseImage = async (name: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Base Image',
+      message: `Are you sure you want to delete "${name}"? This cannot be undone.`,
+      confirmText: 'Delete',
+      variant: 'danger',
+    });
+    if (confirmed) {
+      deleteVmBaseImage.mutate(name);
+    }
+  };
+
+  const handleWarmupVmImage = (name: string) => {
+    triggerWarmup.mutate(name);
+  };
+
+  // Combine counts for tab badge
+  const localImageCount = (images?.length || 0) + (vmBaseImages?.length || 0);
+
   return (
     <div className="h-full flex flex-col">
       {/* Tabs */}
@@ -420,8 +461,8 @@ export function ImageManager() {
         >
           <Image className="h-4 w-4" />
           Local Images
-          {images && images.length > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] bg-[hsl(var(--bg-elevated))] rounded">{images.length}</span>
+          {localImageCount > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] bg-[hsl(var(--bg-elevated))] rounded">{localImageCount}</span>
           )}
         </button>
         <button
@@ -458,15 +499,98 @@ export function ImageManager() {
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'local' && (
           <>
-            {!images || images.length === 0 ? (
+            {localImageCount === 0 ? (
               <div className="text-center py-16">
                 <Image className="h-12 w-12 mx-auto mb-4 text-[hsl(var(--text-muted))] opacity-30" />
-                <p className="text-sm text-[hsl(var(--text-muted))]">No images built yet</p>
-                <p className="text-xs text-[hsl(var(--text-muted))] mt-1">Build a Dockerfile to create an image</p>
+                <p className="text-sm text-[hsl(var(--text-muted))]">No images yet</p>
+                <p className="text-xs text-[hsl(var(--text-muted))] mt-1">Build a Dockerfile or promote a VM snapshot</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {images.map((image) => {
+                {/* VM Base Images */}
+                {vmBaseImages && vmBaseImages.length > 0 && (
+                  <>
+                    <div className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <Server className="h-3 w-3" />
+                      VM Base Images ({vmBaseImages.length})
+                    </div>
+                    {vmBaseImages.map((vmImage) => {
+                      const isHighlighted = highlightedImage === vmImage.name;
+                      const isDeleting = deleteVmBaseImage.isPending && deleteVmBaseImage.variables === vmImage.name;
+
+                      return (
+                        <div
+                          key={vmImage.name}
+                          className={`p-4 bg-[hsl(var(--bg-surface))] border hover:border-[hsl(var(--border-highlight))] transition-all ${
+                            isHighlighted
+                              ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)] animate-pulse'
+                              : 'border-[hsl(var(--border))]'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <Server className="h-4 w-4 text-[hsl(var(--purple))] flex-shrink-0" />
+                                <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{vmImage.name}</span>
+                                <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))] border border-[hsl(var(--purple)/0.2)]">
+                                  VM
+                                </span>
+                                {vmImage.hasWarmupSnapshot && (
+                                  <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                                    FAST BOOT
+                                  </span>
+                                )}
+                                {vmImage.isLayered && (
+                                  <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--amber)/0.1)] text-[hsl(var(--amber))] border border-[hsl(var(--amber)/0.2)]">
+                                    LAYERED
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-4 mt-2 text-xs text-[hsl(var(--text-muted))]">
+                                {vmImage.hasKernel && <span className="text-[hsl(var(--green))]">✓ Kernel</span>}
+                                {vmImage.isLayered && vmImage.parent && (
+                                  <span>Parent: {vmImage.parent}</span>
+                                )}
+                                {vmImage.layerSizeMB !== undefined && (
+                                  <span>{vmImage.layerSizeMB} MB layer</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {!vmImage.hasWarmupSnapshot && (
+                                <button
+                                  onClick={() => handleWarmupVmImage(vmImage.name)}
+                                  className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
+                                  title="Create fast boot cache"
+                                >
+                                  <RefreshCw className="h-3 w-3" />
+                                  Warmup
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteVmBaseImage(vmImage.name)}
+                                disabled={isDeleting}
+                                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
+                                title="Delete"
+                              >
+                                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+
+                {/* Docker Images */}
+                {images && images.length > 0 && (
+                  <>
+                    <div className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider mb-2 mt-4 flex items-center gap-2">
+                      <Box className="h-3 w-3" />
+                      Docker Images ({images.length})
+                    </div>
+                    {images.map((image) => {
                   const tag = image.repoTags[0] || 'untagged';
                   const isDeleting = deletingImageId === image.id;
                   const isPushing = pushingImageId === tag;
@@ -659,8 +783,10 @@ export function ImageManager() {
                         </div>
                       )}
                     </div>
-                  );
-                })}
+                    );
+                    })}
+                  </>
+                )}
               </div>
             )}
           </>
