@@ -101,7 +101,7 @@ export function DockerfileEditor() {
   const { data: files, refetch: refetchFiles } = useDockerfiles();
   const { data: images } = useImages();
   const confirm = useConfirm();
-  const { theme } = useTheme();
+  const { isDark } = useTheme();
 
   // Save panel position
   useEffect(() => {
@@ -769,7 +769,7 @@ export function DockerfileEditor() {
                   defaultLanguage="dockerfile"
                   value={content}
                   onChange={(value) => !isSystemFile && setContent(value || '')}
-                  theme={theme === 'terminal' ? 'vs-dark' : 'light'}
+                  theme={isDark ? 'vs-dark' : 'light'}
                   options={{
                     minimap: { enabled: false },
                     fontSize: 13,

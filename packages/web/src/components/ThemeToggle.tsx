@@ -2,8 +2,8 @@ import { useTheme } from '../hooks/useTheme';
 import { Moon, Sun } from 'lucide-react';
 
 export function ThemeToggle() {
-  const { theme, toggleTheme } = useTheme();
-  const isLight = theme === 'blueprint';
+  const { isDark, toggleTheme } = useTheme();
+  const isLight = !isDark;
 
   return (
     <button
@@ -34,8 +34,8 @@ export function ThemeToggle() {
 
 // Compact version for tight spaces
 export function ThemeToggleCompact() {
-  const { theme, toggleTheme } = useTheme();
-  const isLight = theme === 'blueprint';
+  const { isDark, toggleTheme } = useTheme();
+  const isLight = !isDark;
 
   return (
     <button

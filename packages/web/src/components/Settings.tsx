@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap } from 'lucide-react';
+import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap, Palette } from 'lucide-react';
 import { useConfig, useUpdateConfig, useQuickLaunchConfig, useSetQuickLaunchConfig, useDeleteQuickLaunchConfig, useImages, useVmBaseImages } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
@@ -7,8 +7,9 @@ import type { ModelOption, BackendStatus, QuickLaunchConfig } from '../api/clien
 import { CloudBackendsSettings } from './settings/CloudBackendsSettings';
 import { FirecrackerInstallModal } from './settings/FirecrackerInstallModal';
 import { GitHubSettings } from './settings/GitHubSettings';
+import { AppearanceSettings } from './settings/AppearanceSettings';
 
-type SettingsTab = 'general' | 'quick-launch' | 'self-hosting' | 'ai' | 'backends' | 'github';
+type SettingsTab = 'appearance' | 'general' | 'quick-launch' | 'self-hosting' | 'ai' | 'backends' | 'github';
 type BackendsView = 'local' | 'cloud';
 
 export function Settings() {
@@ -23,7 +24,7 @@ export function Settings() {
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
 
   // AI Prompts state
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
   const [dockerfilePrompt, setDockerfilePrompt] = useState('');
   const [mcpInstallPrompt, setMcpInstallPrompt] = useState('');
   const [mcpSearchPrompt, setMcpSearchPrompt] = useState('');
@@ -208,6 +209,17 @@ export function Settings() {
       {/* Tabs */}
       <div className="flex border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))] px-4">
         <button
+          onClick={() => setActiveTab('appearance')}
+          className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
+            activeTab === 'appearance'
+              ? 'border-[hsl(var(--cyan))] text-[hsl(var(--cyan))]'
+              : 'border-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+          }`}
+        >
+          <Palette className="h-3.5 w-3.5" />
+          Appearance
+        </button>
+        <button
           onClick={() => setActiveTab('general')}
           className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
             activeTab === 'general'
@@ -278,6 +290,10 @@ export function Settings() {
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className={activeTab === 'backends' && backendsView === 'cloud' ? '' : activeTab === 'github' ? 'max-w-2xl mx-auto' : 'max-w-3xl mx-auto'}>
+          {activeTab === 'appearance' && (
+            <AppearanceSettings />
+          )}
+
           {activeTab === 'general' && (
             <div className="space-y-6">
               {/* Data Directory */}
