@@ -1,4 +1,4 @@
-import { Moon, Sun, Check } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { useTheme, DARK_THEMES, LIGHT_THEMES, type Theme, type ThemeConfig } from '../../hooks/useTheme';
 
 // Representative swatch colors per theme (hardcoded HSL strings for preview)
@@ -21,17 +21,13 @@ function ThemeCard({ config, isSelected, onClick }: { config: ThemeConfig; isSel
   return (
     <button
       onClick={onClick}
-      className={`relative text-left p-3 border-2 transition-all duration-200 hover:border-[hsl(var(--border-highlight))] ${
+      className={`relative text-left p-3 border-2 transition-all duration-200 ${
         isSelected
-          ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.05)] shadow-[0_0_12px_hsl(var(--cyan)/0.15)]'
-          : 'border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]'
+          ? 'bg-[#1a9eaa]/10'
+          : 'bg-[hsl(var(--bg-surface))]'
       }`}
+      style={{ borderColor: isSelected ? '#1a9eaa' : undefined }}
     >
-      {isSelected && (
-        <div className="absolute top-2 right-2">
-          <Check className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
-        </div>
-      )}
 
       {/* Color swatch row */}
       <div className="flex gap-1.5 mb-2.5">
