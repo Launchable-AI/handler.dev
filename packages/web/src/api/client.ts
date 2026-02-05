@@ -504,6 +504,34 @@ export async function browseDirectory(path?: string): Promise<BrowseDirectoryRes
   });
 }
 
+// Quick Launch config
+export interface QuickLaunchConfig {
+  backend: 'docker' | 'firecracker' | 'cloud-hypervisor' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
+  image?: string;
+  ports?: number[];
+  vcpus?: number;
+  memoryMb?: number;
+  diskGb?: number;
+  namePrefix?: string;
+}
+
+export async function getQuickLaunchConfig(): Promise<QuickLaunchConfig | null> {
+  return fetchAPI('/config/quick-launch');
+}
+
+export async function setQuickLaunchConfig(config: QuickLaunchConfig): Promise<{ success: boolean; quickLaunch: QuickLaunchConfig }> {
+  return fetchAPI('/config/quick-launch', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function deleteQuickLaunchConfig(): Promise<{ success: boolean }> {
+  return fetchAPI('/config/quick-launch', {
+    method: 'DELETE',
+  });
+}
+
 // AI Chat
 export interface AIStatus {
   configured: boolean;

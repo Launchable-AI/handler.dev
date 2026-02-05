@@ -32,6 +32,7 @@ import { SandboxRow } from './SandboxRow';
 
 interface SandboxListProps {
   onCreateClick: () => void;
+  highlightedId?: string | null;
 }
 
 type ViewMode = 'compact' | 'detailed' | 'list';
@@ -100,9 +101,16 @@ const STATUS_PRIORITY: Record<string, number> = {
 
 const HIGHLIGHT_KEY = 'caisson-highlight-sandbox';
 
-export function SandboxList({ onCreateClick }: SandboxListProps) {
-  // Sandbox to highlight (set from other tabs like Volumes)
+export function SandboxList({ onCreateClick, highlightedId }: SandboxListProps) {
+  // Sandbox to highlight (set from other tabs like Volumes, or from quick launch)
   const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // Use prop-based highlighting when provided
+  useEffect(() => {
+    if (highlightedId) {
+      setHighlightId(highlightedId);
+    }
+  }, [highlightedId]);
 
   // Check for highlight request on mount and when tab becomes visible
   useEffect(() => {

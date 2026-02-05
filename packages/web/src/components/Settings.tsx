@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe } from 'lucide-react';
-import { useConfig, useUpdateConfig } from '../hooks/useContainers';
+import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap } from 'lucide-react';
+import { useConfig, useUpdateConfig, useQuickLaunchConfig, useSetQuickLaunchConfig, useDeleteQuickLaunchConfig, useImages, useVmBaseImages } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
-import type { ModelOption, BackendStatus } from '../api/client';
+import type { ModelOption, BackendStatus, QuickLaunchConfig } from '../api/client';
 import { CloudBackendsSettings } from './settings/CloudBackendsSettings';
 import { FirecrackerInstallModal } from './settings/FirecrackerInstallModal';
 import { GitHubSettings } from './settings/GitHubSettings';
 
-type SettingsTab = 'general' | 'self-hosting' | 'ai' | 'backends' | 'github';
+type SettingsTab = 'general' | 'quick-launch' | 'self-hosting' | 'ai' | 'backends' | 'github';
 type BackendsView = 'local' | 'cloud';
 
 export function Settings() {
@@ -50,6 +50,19 @@ export function Settings() {
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [showFirecrackerInstall, setShowFirecrackerInstall] = useState(false);
 
+  // Quick Launch state
+  const { data: quickLaunchConfig, isLoading: quickLaunchLoading } = useQuickLaunchConfig();
+  const setQuickLaunchMutation = useSetQuickLaunchConfig();
+  const deleteQuickLaunchMutation = useDeleteQuickLaunchConfig();
+  const { data: dockerImages } = useImages();
+  const { data: vmBaseImages } = useVmBaseImages();
+  const [qlBackend, setQlBackend] = useState<string>('docker');
+  const [qlImage, setQlImage] = useState('');
+  const [qlPorts, setQlPorts] = useState('3000, 5173');
+  const [qlVcpus, setQlVcpus] = useState('2');
+  const [qlMemoryMb, setQlMemoryMb] = useState('2048');
+  const [qlDiskGb, setQlDiskGb] = useState('10');
+  const [qlNamePrefix, setQlNamePrefix] = useState('sandbox');
 
   useEffect(() => {
     if (config) {
@@ -60,6 +73,19 @@ export function Settings() {
       setSshKeysDisplayPath(config.sshKeysDisplayPath || '');
     }
   }, [config]);
+
+  // Load Quick Launch config
+  useEffect(() => {
+    if (quickLaunchConfig) {
+      setQlBackend(quickLaunchConfig.backend);
+      setQlImage(quickLaunchConfig.image || '');
+      setQlPorts(quickLaunchConfig.ports?.join(', ') || '3000, 5173');
+      setQlVcpus(String(quickLaunchConfig.vcpus || 2));
+      setQlMemoryMb(String(quickLaunchConfig.memoryMb || 2048));
+      setQlDiskGb(String(quickLaunchConfig.diskGb || 10));
+      setQlNamePrefix(quickLaunchConfig.namePrefix || 'sandbox');
+    }
+  }, [quickLaunchConfig]);
 
   // Load AI prompts when switching to AI tab
   useEffect(() => {
@@ -193,6 +219,17 @@ export function Settings() {
           General
         </button>
         <button
+          onClick={() => setActiveTab('quick-launch')}
+          className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
+            activeTab === 'quick-launch'
+              ? 'border-[hsl(var(--green))] text-[hsl(var(--green))]'
+              : 'border-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+          }`}
+        >
+          <Zap className="h-3.5 w-3.5" />
+          Quick Launch
+        </button>
+        <button
           onClick={() => setActiveTab('backends')}
           className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
             activeTab === 'backends'
@@ -306,6 +343,205 @@ export function Settings() {
                   Save Settings
                 </button>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'quick-launch' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Quick Launch Configuration</h3>
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
+                  Configure defaults for the "New Sandbox" button. When set, clicking New Sandbox will instantly create a sandbox with these settings.
+                </p>
+              </div>
+
+              {quickLaunchLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--text-muted))]" />
+                </div>
+              ) : (
+                <>
+                  {/* Backend Selection */}
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                      <Server className="h-3.5 w-3.5" />
+                      Backend
+                    </label>
+                    <select
+                      value={qlBackend}
+                      onChange={(e) => setQlBackend(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
+                    >
+                      <option value="docker">Docker</option>
+                      <option value="firecracker">Firecracker (VM)</option>
+                      <option value="cloud-hypervisor">Cloud-Hypervisor (VM)</option>
+                      <option value="daytona">Daytona</option>
+                      <option value="aws">AWS</option>
+                      <option value="azure">Azure</option>
+                      <option value="gcp">GCP</option>
+                      <option value="digitalocean">DigitalOcean</option>
+                      <option value="linode">Linode</option>
+                    </select>
+                  </div>
+
+                  {/* Name Prefix */}
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                      Name Prefix
+                    </label>
+                    <p className="text-[10px] text-[hsl(var(--text-muted))] mb-2">
+                      Auto-generated names will use this prefix (e.g., "dev" → "dev-1", "dev-2")
+                    </p>
+                    <input
+                      type="text"
+                      value={qlNamePrefix}
+                      onChange={(e) => setQlNamePrefix(e.target.value)}
+                      placeholder="sandbox"
+                      className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                    />
+                  </div>
+
+                  {/* Image Selection - changes based on backend type */}
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                      {qlBackend === 'docker' ? <Box className="h-3.5 w-3.5" /> : <Cpu className="h-3.5 w-3.5" />}
+                      {qlBackend === 'docker' ? 'Docker Image' : 'Base Image'}
+                    </label>
+                    <p className="text-[10px] text-[hsl(var(--text-muted))] mb-2">
+                      {qlBackend === 'docker'
+                        ? 'Select a Docker image to use for new containers'
+                        : 'Select a VM base image for new virtual machines'}
+                    </p>
+                    <select
+                      value={qlImage}
+                      onChange={(e) => setQlImage(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
+                    >
+                      <option value="">Select an image...</option>
+                      {qlBackend === 'docker' ? (
+                        dockerImages?.map((img) => (
+                          <option key={img.id} value={img.repoTags?.[0] || img.id}>
+                            {img.repoTags?.[0] || img.id.slice(0, 12)}
+                          </option>
+                        ))
+                      ) : (qlBackend === 'firecracker' || qlBackend === 'cloud-hypervisor') ? (
+                        vmBaseImages?.map((img) => (
+                          <option key={img.name} value={img.name}>
+                            {img.name}
+                          </option>
+                        ))
+                      ) : null}
+                    </select>
+                    {qlBackend === 'docker' && dockerImages?.length === 0 && (
+                      <p className="text-[10px] text-[hsl(var(--amber))] mt-1">No Docker images found. Build or pull an image first.</p>
+                    )}
+                    {(qlBackend === 'firecracker' || qlBackend === 'cloud-hypervisor') && vmBaseImages?.length === 0 && (
+                      <p className="text-[10px] text-[hsl(var(--amber))] mt-1">No VM base images found. Run prepare-fc-image.sh to create one.</p>
+                    )}
+                  </div>
+
+                  {/* VM Resources */}
+                  {(qlBackend === 'firecracker' || qlBackend === 'cloud-hypervisor' || qlBackend.match(/^(aws|azure|gcp|digitalocean|linode)$/)) && (
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-2 block">vCPUs</label>
+                        <input
+                          type="number"
+                          value={qlVcpus}
+                          onChange={(e) => setQlVcpus(e.target.value)}
+                          min="1"
+                          className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-2 block">Memory (MB)</label>
+                        <input
+                          type="number"
+                          value={qlMemoryMb}
+                          onChange={(e) => setQlMemoryMb(e.target.value)}
+                          min="512"
+                          step="512"
+                          className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-2 block">Disk (GB)</label>
+                        <input
+                          type="number"
+                          value={qlDiskGb}
+                          onChange={(e) => setQlDiskGb(e.target.value)}
+                          min="5"
+                          className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))]"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ports */}
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                      Quick Access Ports
+                    </label>
+                    <p className="text-[10px] text-[hsl(var(--text-muted))] mb-2">
+                      Comma-separated list of ports to expose (e.g., "3000, 5173, 8080")
+                    </p>
+                    <input
+                      type="text"
+                      value={qlPorts}
+                      onChange={(e) => setQlPorts(e.target.value)}
+                      placeholder="3000, 5173"
+                      className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                    />
+                  </div>
+
+                  {/* Preview */}
+                  <div className="p-4 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] space-y-2">
+                    <p className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider">Preview</p>
+                    <p className="text-xs text-[hsl(var(--text-primary))]">
+                      Clicking <span className="text-[hsl(var(--green))]">New Sandbox</span> will create:
+                    </p>
+                    <ul className="text-[10px] text-[hsl(var(--text-secondary))] space-y-1 ml-4 list-disc">
+                      <li>Backend: <span className="text-[hsl(var(--cyan))]">{qlBackend}</span></li>
+                      <li>Name: <span className="text-[hsl(var(--cyan))]">{qlNamePrefix || 'sandbox'}-1</span> (auto-incremented)</li>
+                      {qlImage && (
+                        <li>Image: <span className="text-[hsl(var(--cyan))]">{qlImage}</span></li>
+                      )}
+                      {qlPorts && <li>Ports: <span className="text-[hsl(var(--cyan))]">{qlPorts}</span></li>}
+                    </ul>
+                  </div>
+
+                  {/* Save/Reset Buttons */}
+                  <div className="flex justify-between pt-4 border-t border-[hsl(var(--border))]">
+                    <button
+                      onClick={() => deleteQuickLaunchMutation.mutate()}
+                      disabled={deleteQuickLaunchMutation.isPending || !quickLaunchConfig}
+                      className="flex items-center gap-1.5 px-4 py-2 text-xs text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.3)] disabled:opacity-50"
+                    >
+                      {deleteQuickLaunchMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                      Reset to Default
+                    </button>
+                    <button
+                      onClick={() => {
+                        const ports = qlPorts.split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+                        setQuickLaunchMutation.mutate({
+                          backend: qlBackend as QuickLaunchConfig['backend'],
+                          image: qlImage || undefined,
+                          ports: ports.length > 0 ? ports : undefined,
+                          vcpus: parseInt(qlVcpus, 10) || undefined,
+                          memoryMb: parseInt(qlMemoryMb, 10) || undefined,
+                          diskGb: parseInt(qlDiskGb, 10) || undefined,
+                          namePrefix: qlNamePrefix || undefined,
+                        });
+                      }}
+                      disabled={setQuickLaunchMutation.isPending}
+                      className="flex items-center gap-1.5 px-4 py-2 text-xs bg-[hsl(var(--green))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--green)/0.9)] disabled:opacity-50"
+                    >
+                      {setQuickLaunchMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                      Save Quick Launch
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

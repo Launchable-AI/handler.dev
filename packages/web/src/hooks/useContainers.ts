@@ -231,6 +231,36 @@ export function useUpdateConfig() {
   });
 }
 
+// Quick Launch config
+export function useQuickLaunchConfig() {
+  return useQuery({
+    queryKey: ['quick-launch-config'],
+    queryFn: api.getQuickLaunchConfig,
+  });
+}
+
+export function useSetQuickLaunchConfig() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: api.setQuickLaunchConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quick-launch-config'] });
+    },
+  });
+}
+
+export function useDeleteQuickLaunchConfig() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: api.deleteQuickLaunchConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quick-launch-config'] });
+    },
+  });
+}
+
 // ============ VM Hooks ============
 
 export function useVms() {

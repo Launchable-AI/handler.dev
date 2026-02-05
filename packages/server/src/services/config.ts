@@ -105,6 +105,16 @@ export interface ContainerRegistriesConfig {
   dockerHub?: DockerHubConfig;
 }
 
+export interface QuickLaunchConfig {
+  backend: 'docker' | 'firecracker' | 'cloud-hypervisor' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
+  image?: string;           // Docker image tag or VM base image name
+  ports?: number[];         // Quick access ports
+  vcpus?: number;           // For VMs
+  memoryMb?: number;        // For VMs
+  diskGb?: number;          // For VMs
+  namePrefix?: string;      // Prefix for auto-generated names (e.g., "dev" -> "dev-1", "dev-2")
+}
+
 export interface AppConfig {
   sshKeysDisplayPath: string; // Path shown in SSH commands (e.g., ~/.ssh)
   sshHost: string; // Host used in SSH commands (empty = localhost)
@@ -113,6 +123,7 @@ export interface AppConfig {
   dataDirectory: string; // Base directory for all data (volumes, ssh-keys, etc.)
   cloudBackends?: CloudBackendsConfig; // Cloud backend configurations
   containerRegistries?: ContainerRegistriesConfig; // Container registry configurations
+  quickLaunch?: QuickLaunchConfig; // Quick launch defaults for "New Sandbox" button
 }
 
 const DEFAULT_CONFIG: AppConfig = {

@@ -17,7 +17,7 @@ import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
 import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPanel';
-import { useHealth, useConfig, useHostStats, useBackendStatus } from './hooks/useContainers';
+import { useHealth, useConfig, useHostStats, useBackendStatus, useQuickLaunchConfig, useCreateContainer, useCreateVm, useContainers, useVms } from './hooks/useContainers';
 
 // All possible tabs
 type Tab = 'agents' | 'repos' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'settings';
@@ -96,7 +96,7 @@ function getTabLabelMap(): Map<Tab, string> {
 const tabLabelMap = getTabLabelMap();
 
 // Content area that adjusts for terminal panel
-function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; onCreateClick: () => void }) {
+function TerminalAwareContent({ activeTab, onCreateClick, highlightedSandboxId }: { activeTab: Tab; onCreateClick: () => void; highlightedSandboxId?: string | null }) {
   const { isOpen, position, size, isResizing } = useTerminalPanel();
 
   // Calculate style adjustments based on terminal panel
@@ -113,7 +113,7 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
     <div className={`flex-1 overflow-hidden ${!isResizing ? 'transition-[padding] duration-200 ease-out' : ''}`} style={style}>
       {activeTab === 'agents' && <CommandCentre />}
       {activeTab === 'repos' && <Repos />}
-      {activeTab === 'sandboxes' && <SandboxList onCreateClick={onCreateClick} />}
+      {activeTab === 'sandboxes' && <SandboxList onCreateClick={onCreateClick} highlightedId={highlightedSandboxId} />}
       {activeTab === 'volumes' && <UnifiedVolumeList />}
       {activeTab === 'dockerfiles' && <DockerfileEditor />}
       {activeTab === 'images' && <ImageManager />}
@@ -143,10 +143,74 @@ function App() {
     return 'sandboxes';
   });
   const [showHostTooltip, setShowHostTooltip] = useState(false);
+  const [highlightedSandboxId, setHighlightedSandboxId] = useState<string | null>(null);
   const { data: health } = useHealth();
   const { data: config } = useConfig();
   const { data: hostStats } = useHostStats();
   const { data: backendStatus } = useBackendStatus();
+  const { data: quickLaunchConfig } = useQuickLaunchConfig();
+  const { data: containers } = useContainers();
+  const { data: vms } = useVms();
+  const createContainerMutation = useCreateContainer();
+  const createVmMutation = useCreateVm();
+
+  // Generate unique name based on prefix and existing sandboxes (containers + VMs)
+  const generateUniqueName = (prefix: string): string => {
+    const containerNames = containers?.map(c => c.name) || [];
+    const vmNames = vms?.map(v => v.name) || [];
+    const existingNames = new Set([...containerNames, ...vmNames]);
+    let counter = 1;
+    let name = `${prefix}-${counter}`;
+    while (existingNames.has(name)) {
+      counter++;
+      name = `${prefix}-${counter}`;
+    }
+    return name;
+  };
+
+  // Handle quick launch - create sandbox with configured defaults
+  const handleQuickLaunch = async () => {
+    if (!quickLaunchConfig) {
+      setShowCreateForm(true);
+      return;
+    }
+
+    const name = generateUniqueName(quickLaunchConfig.namePrefix || 'sandbox');
+    const ports = quickLaunchConfig.ports?.map(p => ({ container: p, host: p })) || [];
+
+    try {
+      if (quickLaunchConfig.backend === 'docker') {
+        await createContainerMutation.mutateAsync({
+          name,
+          image: quickLaunchConfig.image,
+          ports,
+        });
+      } else if (quickLaunchConfig.backend === 'firecracker' || quickLaunchConfig.backend === 'cloud-hypervisor') {
+        await createVmMutation.mutateAsync({
+          name,
+          hypervisor: quickLaunchConfig.backend,
+          baseImage: quickLaunchConfig.image || 'ubuntu-24.04',
+          vcpus: quickLaunchConfig.vcpus || 2,
+          memoryMb: quickLaunchConfig.memoryMb || 2048,
+          diskGb: quickLaunchConfig.diskGb || 10,
+          ports,
+        });
+      } else {
+        // For cloud backends, fall back to form for now
+        setShowCreateForm(true);
+        return;
+      }
+
+      // Navigate to sandboxes and highlight the new one
+      setActiveTab('sandboxes');
+      setHighlightedSandboxId(name);
+      setTimeout(() => setHighlightedSandboxId(null), 3000);
+    } catch (error) {
+      console.error('Quick launch failed:', error);
+      // Fall back to form on error
+      setShowCreateForm(true);
+    }
+  };
 
   // Collapsible groups state
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
@@ -191,6 +255,45 @@ function App() {
       window.removeEventListener('caisson-create-sandbox', handleCreateSandbox as EventListener);
     };
   }, []);
+
+  // Listen for direct launch requests (from Image Launch buttons)
+  useEffect(() => {
+    const handleLaunchSandbox = async (e: CustomEvent<{ backend: string; image: string; name?: string }>) => {
+      const { backend, image, name: providedName } = e.detail;
+      const name = providedName || generateUniqueName('sandbox');
+      const ports = [{ container: 3000, host: 3000 }, { container: 5173, host: 5173 }];
+
+      try {
+        if (backend === 'docker') {
+          await createContainerMutation.mutateAsync({ name, image, ports });
+        } else if (backend === 'firecracker' || backend === 'cloud-hypervisor') {
+          await createVmMutation.mutateAsync({
+            name,
+            hypervisor: backend,
+            baseImage: image,
+            vcpus: 2,
+            memoryMb: 2048,
+            diskGb: 10,
+            ports,
+          });
+        }
+
+        // Navigate to sandboxes and highlight the new one
+        setActiveTab('sandboxes');
+        setHighlightedSandboxId(name);
+        setTimeout(() => setHighlightedSandboxId(null), 3000);
+      } catch (error) {
+        console.error('Launch failed:', error);
+        // Fall back to form on error
+        setCreateFormInitial({ backend, image });
+        setShowCreateForm(true);
+      }
+    };
+    window.addEventListener('caisson-launch-sandbox', handleLaunchSandbox as unknown as EventListener);
+    return () => {
+      window.removeEventListener('caisson-launch-sandbox', handleLaunchSandbox as unknown as EventListener);
+    };
+  }, [containers, vms, createContainerMutation, createVmMutation]);
 
   // GitHub OAuth callback handling
   const exchangeGitHubCode = useExchangeGitHubCode();
@@ -522,11 +625,18 @@ function App() {
         {/* Bottom Actions */}
         <div className="p-3 border-t border-[hsl(var(--border))]">
           <button
-            onClick={() => setShowCreateForm(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors"
+            onClick={handleQuickLaunch}
+            disabled={createContainerMutation.isPending || createVmMutation.isPending}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${
+              quickLaunchConfig
+                ? 'text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]'
+                : 'text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]'
+            }`}
+            title={quickLaunchConfig ? `Quick launch: ${quickLaunchConfig.backend} (${quickLaunchConfig.namePrefix || 'sandbox'})` : 'Open sandbox creation form'}
           >
             <Plus className="h-3.5 w-3.5" />
             New Sandbox
+            {quickLaunchConfig && <span className="text-[10px] opacity-70">({quickLaunchConfig.backend})</span>}
           </button>
         </div>
 
@@ -586,7 +696,7 @@ function App() {
         </header>
 
         {/* Content Area - uses TerminalAwareContent to adjust for terminal panel */}
-        <TerminalAwareContent activeTab={activeTab} onCreateClick={() => setShowCreateForm(true)} />
+        <TerminalAwareContent activeTab={activeTab} onCreateClick={() => setShowCreateForm(true)} highlightedSandboxId={highlightedSandboxId} />
       </main>
 
       {/* Modals */}

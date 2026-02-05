@@ -115,4 +115,34 @@ configRoutes.put('/dockerhub', async (c) => {
   return c.json({ success: true });
 });
 
+// Quick Launch config schema
+const QuickLaunchSchema = z.object({
+  backend: z.enum(['docker', 'firecracker', 'cloud-hypervisor', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode']),
+  image: z.string().optional(),
+  ports: z.array(z.number()).optional(),
+  vcpus: z.number().optional(),
+  memoryMb: z.number().optional(),
+  diskGb: z.number().optional(),
+  namePrefix: z.string().optional(),
+});
+
+// Get Quick Launch config
+configRoutes.get('/quick-launch', async (c) => {
+  const config = await getConfig();
+  return c.json(config.quickLaunch || null);
+});
+
+// Set Quick Launch config
+configRoutes.put('/quick-launch', zValidator('json', QuickLaunchSchema), async (c) => {
+  const quickLaunch = c.req.valid('json');
+  await setConfig({ quickLaunch });
+  return c.json({ success: true, quickLaunch });
+});
+
+// Delete Quick Launch config (reset to default form)
+configRoutes.delete('/quick-launch', async (c) => {
+  await setConfig({ quickLaunch: undefined });
+  return c.json({ success: true });
+});
+
 export default configRoutes;

@@ -364,8 +364,12 @@ export function ImageManager() {
         image: imageTag,
       });
 
-      // Navigate to sandboxes tab
+      // Navigate to sandboxes tab and highlight the new sandbox
       window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'sandboxes' } }));
+      // Set highlight in localStorage for SandboxList to pick up
+      localStorage.setItem('caisson-highlight-sandbox', sandboxName);
+      // Trigger a focus event to make SandboxList check for highlights
+      setTimeout(() => window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'sandboxes' } })), 100);
     } catch (error) {
       console.error('Failed to launch sandbox:', error);
       alert(`Failed to launch sandbox: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -557,8 +561,8 @@ export function ImageManager() {
                             <div className="flex items-center gap-1.5">
                               <button
                                 onClick={() => {
-                                  // Open create sandbox form with firecracker backend and this image pre-selected
-                                  window.dispatchEvent(new CustomEvent('caisson-create-sandbox', {
+                                  // Directly launch a VM from this base image
+                                  window.dispatchEvent(new CustomEvent('caisson-launch-sandbox', {
                                     detail: { backend: 'firecracker', image: vmImage.name }
                                   }));
                                 }}
