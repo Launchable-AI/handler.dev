@@ -21,9 +21,9 @@ function ThemeCard({ config, isSelected, onClick }: { config: ThemeConfig; isSel
   return (
     <button
       onClick={onClick}
-      className={`relative text-left p-3 border transition-all duration-200 hover:border-[hsl(var(--border-highlight))] ${
+      className={`relative text-left p-3 border-2 transition-all duration-200 hover:border-[hsl(var(--border-highlight))] ${
         isSelected
-          ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.05)]'
+          ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.05)] shadow-[0_0_12px_hsl(var(--cyan)/0.15)]'
           : 'border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]'
       }`}
     >
