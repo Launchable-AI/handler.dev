@@ -43,6 +43,22 @@ export async function ensureSandboxService() {
 }
 
 /**
+ * Expand ~ to the appropriate home directory for the sandbox backend.
+ */
+function expandTilde(filePath: string, backend: string): string {
+  if (!filePath.startsWith('~')) return filePath;
+  const home = backend === 'docker' ? '/home/dev'
+    : backend === 'daytona' ? '/home/daytona'
+    : backend === 'aws' ? '/home/ubuntu'
+    : backend === 'azure' ? '/home/azureuser'
+    : backend === 'gcp' ? '/home/handler'
+    : backend === 'digitalocean' ? '/root'
+    : backend === 'linode' ? '/root'
+    : '/home/agent'; // cloud-hypervisor, firecracker
+  return filePath.replace(/^~(?=\/|$)/, home);
+}
+
+/**
  * Inject files into a running sandbox. Returns the number of files injected.
  */
 export async function injectFilesIntoSandbox(
@@ -65,7 +81,8 @@ export async function injectFilesIntoSandbox(
   let injectedCount = 0;
 
   try {
-    for (const file of files) {
+    for (const rawFile of files) {
+      const file = { ...rawFile, destPath: expandTilde(rawFile.destPath, sandbox.backend) };
       const tempFilePath = path.join(tempDir, file.filename);
       fs.writeFileSync(tempFilePath, file.content);
 
