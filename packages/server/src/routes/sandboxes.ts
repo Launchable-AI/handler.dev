@@ -391,6 +391,37 @@ sandboxes.post('/', zValidator('json', CreateSandboxSchema), async (c) => {
       })();
     }
 
+    // Fire-and-forget: inject default quick files after sandbox is running
+    (async () => {
+      try {
+        const { getDefaultQuickFiles } = await import('../services/quick-files.js');
+        const defaults = await getDefaultQuickFiles();
+        if (defaults.length === 0) return;
+
+        const { dirname, basename } = await import('path');
+        const { injectFilesIntoSandbox } = await import('../services/sandbox-inject.js');
+
+        // Poll for sandbox to be running (max 120 seconds)
+        for (let i = 0; i < 60; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const current = await service.get(sandbox.id);
+          if (!current || current.status === 'error') break;
+          if (current.status === 'running') {
+            const filesToInject = defaults.map(qf => ({
+              content: qf.content,
+              destPath: dirname(qf.destPath),
+              filename: basename(qf.destPath),
+            }));
+            const count = await injectFilesIntoSandbox(sandbox.id, filesToInject);
+            console.log(`[SandboxRoutes] Injected ${count} default quick file(s) into sandbox ${sandbox.id}`);
+            break;
+          }
+        }
+      } catch (err) {
+        console.error('[SandboxRoutes] Quick files injection error:', err);
+      }
+    })();
+
     return c.json(sandbox, 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create sandbox';

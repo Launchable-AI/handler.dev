@@ -1124,6 +1124,67 @@ export async function deleteNote(id: string): Promise<{ success: boolean }> {
   });
 }
 
+// ============ Quick Files ============
+
+export interface QuickFile {
+  id: string;
+  name: string;
+  filename: string;
+  destPath: string;
+  content: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listQuickFiles(): Promise<{ files: QuickFile[] }> {
+  return fetchAPI('/quick-files');
+}
+
+export async function createQuickFile(input: {
+  name: string;
+  filename: string;
+  destPath: string;
+  content: string;
+  isDefault?: boolean;
+}): Promise<QuickFile> {
+  return fetchAPI('/quick-files', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateQuickFile(id: string, input: {
+  name?: string;
+  filename?: string;
+  destPath?: string;
+  content?: string;
+  isDefault?: boolean;
+}): Promise<QuickFile> {
+  return fetchAPI(`/quick-files/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteQuickFile(id: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/quick-files/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function copyQuickFileToSandbox(fileId: string, sandboxId: string): Promise<{ success: boolean; filesInjected: number }> {
+  return fetchAPI(`/quick-files/${encodeURIComponent(fileId)}/copy/${encodeURIComponent(sandboxId)}`, {
+    method: 'POST',
+  });
+}
+
+export async function copyDefaultQuickFilesToSandbox(sandboxId: string): Promise<{ success: boolean; filesInjected: number }> {
+  return fetchAPI(`/quick-files/copy-defaults/${encodeURIComponent(sandboxId)}`, {
+    method: 'POST',
+  });
+}
+
 // ============ Agent Config Presets ============
 
 export interface MCPServerStdioConfig {

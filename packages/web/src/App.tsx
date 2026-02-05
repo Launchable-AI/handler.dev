@@ -13,6 +13,7 @@ import { ImageManager } from './components/ImageManager';
 import { AgentConfig } from './components/AgentConfig';
 import { PluginMarketplace } from './components/PluginMarketplace';
 import { Repos } from './components/Repos';
+import { QuickFiles } from './components/QuickFiles';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
@@ -20,10 +21,10 @@ import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPa
 import { useHealth, useConfig, useHostStats, useBackendStatus, useQuickLaunchConfig, useCreateContainer, useCreateVm, useContainers, useVms } from './hooks/useContainers';
 
 // All possible tabs
-type Tab = 'agents' | 'repos' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'settings';
+type Tab = 'agents' | 'repos' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'quick-files' | 'settings';
 
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['agents', 'repos', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'settings'];
+const VALID_TABS: Tab[] = ['agents', 'repos', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'quick-files', 'settings'];
 
 interface NavItemDef {
   id: Tab;
@@ -61,6 +62,7 @@ const navStructure: NavEntry[] = [
       { id: 'snapshots', label: 'Snapshots', icon: Camera },
       { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
       { id: 'volumes', label: 'Volumes', icon: HardDrive },
+      { id: 'quick-files', label: 'Quick Files', icon: Zap },
     ],
   },
   {
@@ -120,6 +122,7 @@ function TerminalAwareContent({ activeTab, onCreateClick, highlightedSandboxId }
       {activeTab === 'snapshots' && <VMSnapshots />}
       {activeTab === 'mcp' && <MCPPage />}
       {activeTab === 'notes' && <Notes />}
+      {activeTab === 'quick-files' && <QuickFiles />}
       {activeTab === 'agent-config' && <AgentConfig />}
       {activeTab === 'plugins' && <PluginMarketplace />}
       {activeTab === 'settings' && <Settings />}
