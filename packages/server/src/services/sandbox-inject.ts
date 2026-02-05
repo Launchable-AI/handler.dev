@@ -88,8 +88,7 @@ export async function injectFilesIntoSandbox(
         const vmService = sandbox.backend === 'cloud-hypervisor'
           ? service.getHypervisorService()
           : service.getFirecrackerService();
-        const dataDir = vmService?.getDataDir?.();
-        const keyPath = dataDir ? path.join(dataDir, 'ssh', 'handler_vm_key') : '';
+        const keyPath = vmService?.getSshKeyPath?.() || '';
 
         if (keyPath && sandbox.guestIp) {
           try {
@@ -176,8 +175,7 @@ export async function execInSandbox(
       const vmService = sandbox.backend === 'cloud-hypervisor'
         ? service.getHypervisorService()
         : service.getFirecrackerService();
-      const dataDir = vmService?.getDataDir?.();
-      const keyPath = dataDir ? path.join(dataDir, 'ssh', 'handler_vm_key') : '';
+      const keyPath = vmService?.getSshKeyPath?.() || '';
       if (keyPath && sandbox.guestIp) {
         const result = execSync(
           `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes agent@${sandbox.guestIp} ${JSON.stringify(command)}`,
@@ -216,8 +214,7 @@ export async function readFileFromSandbox(
       const vmService = sandbox.backend === 'cloud-hypervisor'
         ? service.getHypervisorService()
         : service.getFirecrackerService();
-      const dataDir = vmService?.getDataDir?.();
-      const keyPath = dataDir ? path.join(dataDir, 'ssh', 'handler_vm_key') : '';
+      const keyPath = vmService?.getSshKeyPath?.() || '';
       if (keyPath && sandbox.guestIp) {
         const result = execSync(`ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes agent@${sandbox.guestIp} "cat '${filePath}' 2>/dev/null || true"`, { stdio: 'pipe', timeout: 10000 });
         const content = result.toString();
