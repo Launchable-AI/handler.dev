@@ -1,46 +1,65 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 
-export type Theme = 'terminal' | 'blueprint';
+export type Theme = 'terminal' | 'midnight' | 'handler' | 'ember' | 'void' | 'blueprint' | 'paper' | 'daylight' | 'sand' | 'frost';
 
 export interface ThemeConfig {
   id: Theme;
   name: string;
-  icon: 'moon' | 'sun';
+  mode: 'dark' | 'light';
   description: string;
 }
 
 export const THEMES: ThemeConfig[] = [
-  {
-    id: 'terminal',
-    name: 'Terminal',
-    icon: 'moon',
-    description: 'Industrial dark mode',
-  },
-  {
-    id: 'blueprint',
-    name: 'Blueprint',
-    icon: 'sun',
-    description: 'Engineering light mode',
-  },
+  { id: 'terminal',  name: 'Terminal',   mode: 'dark',  description: 'Industrial control panel, cyan accents' },
+  { id: 'midnight',  name: 'Midnight',   mode: 'dark',  description: 'Deep navy with blue accents' },
+  { id: 'handler',   name: 'Handler',    mode: 'dark',  description: 'Covert ops, gold/amber accents' },
+  { id: 'ember',     name: 'Ember',      mode: 'dark',  description: 'Warm dark, red/orange accents' },
+  { id: 'void',      name: 'Void',       mode: 'dark',  description: 'Ultra-minimal, desaturated' },
+  { id: 'blueprint', name: 'Blueprint',  mode: 'light', description: 'Engineering blueprint, warm paper' },
+  { id: 'paper',     name: 'Paper',      mode: 'light', description: 'Clean white/gray, professional' },
+  { id: 'daylight',  name: 'Daylight',   mode: 'light', description: 'Bright with sky-blue tones' },
+  { id: 'sand',      name: 'Sand',       mode: 'light', description: 'Warm desert/sandstone palette' },
+  { id: 'frost',     name: 'Frost',      mode: 'light', description: 'Cool icy light, slate/ice-blue' },
 ];
 
+export const DARK_THEMES = THEMES.filter(t => t.mode === 'dark');
+export const LIGHT_THEMES = THEMES.filter(t => t.mode === 'light');
+
 const STORAGE_KEY = 'handler-theme';
+const PREFERRED_DARK_KEY = 'handler-preferred-dark';
+const PREFERRED_LIGHT_KEY = 'handler-preferred-light';
+
+const DEFAULT_DARK: Theme = 'terminal';
+const DEFAULT_LIGHT: Theme = 'blueprint';
+
+function isValidTheme(id: string | null): id is Theme {
+  return id !== null && THEMES.some(t => t.id === id);
+}
+
+function getThemeMode(id: Theme): 'dark' | 'light' {
+  return THEMES.find(t => t.id === id)!.mode;
+}
+
+function getStoredPreferred(key: string, fallback: Theme): Theme {
+  if (typeof window === 'undefined') return fallback;
+  const stored = localStorage.getItem(key);
+  return isValidTheme(stored) ? stored : fallback;
+}
 
 function getInitialTheme(): Theme {
-  // Check localStorage first
   if (typeof window !== 'undefined') {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && THEMES.some(t => t.id === stored)) {
-      return stored as Theme;
+    if (isValidTheme(stored)) {
+      return stored;
     }
 
     // Check system preference
     if (window.matchMedia?.('(prefers-color-scheme: light)').matches) {
-      return 'blueprint';
+      return getStoredPreferred(PREFERRED_LIGHT_KEY, DEFAULT_LIGHT);
     }
   }
 
-  return 'terminal';
+  return getStoredPreferred(PREFERRED_DARK_KEY, DEFAULT_DARK);
 }
 
 interface ThemeContextValue {
@@ -49,6 +68,11 @@ interface ThemeContextValue {
   toggleTheme: () => void;
   themes: ThemeConfig[];
   currentThemeConfig: ThemeConfig;
+  isDark: boolean;
+  preferredDark: Theme;
+  preferredLight: Theme;
+  setPreferredDark: (id: Theme) => void;
+  setPreferredLight: (id: Theme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -67,6 +91,12 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(getInitialTheme);
+  const [preferredDark, setPreferredDarkState] = useState<Theme>(
+    () => getStoredPreferred(PREFERRED_DARK_KEY, DEFAULT_DARK)
+  );
+  const [preferredLight, setPreferredLightState] = useState<Theme>(
+    () => getStoredPreferred(PREFERRED_LIGHT_KEY, DEFAULT_LIGHT)
+  );
 
   // Apply theme to document
   useEffect(() => {
@@ -80,25 +110,44 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
     const handleChange = (e: MediaQueryListEvent) => {
       const stored = localStorage.getItem(STORAGE_KEY);
-      // Only auto-switch if user hasn't explicitly set a preference
       if (!stored) {
-        setThemeState(e.matches ? 'blueprint' : 'terminal');
+        setThemeState(e.matches ? preferredLight : preferredDark);
       }
     };
 
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, []);
+  }, [preferredDark, preferredLight]);
 
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
   }, []);
 
+  const currentThemeConfig = THEMES.find(t => t.id === theme) || THEMES[0];
+  const isDark = currentThemeConfig.mode === 'dark';
+
   const toggleTheme = useCallback(() => {
-    setThemeState(current => current === 'terminal' ? 'blueprint' : 'terminal');
+    setThemeState(current => {
+      const currentMode = getThemeMode(current);
+      if (currentMode === 'dark') {
+        return getStoredPreferred(PREFERRED_LIGHT_KEY, DEFAULT_LIGHT);
+      } else {
+        return getStoredPreferred(PREFERRED_DARK_KEY, DEFAULT_DARK);
+      }
+    });
   }, []);
 
-  const currentThemeConfig = THEMES.find(t => t.id === theme) || THEMES[0];
+  const setPreferredDark = useCallback((id: Theme) => {
+    setPreferredDarkState(id);
+    localStorage.setItem(PREFERRED_DARK_KEY, id);
+    setThemeState(id);
+  }, []);
+
+  const setPreferredLight = useCallback((id: Theme) => {
+    setPreferredLightState(id);
+    localStorage.setItem(PREFERRED_LIGHT_KEY, id);
+    setThemeState(id);
+  }, []);
 
   const value: ThemeContextValue = {
     theme,
@@ -106,6 +155,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     toggleTheme,
     themes: THEMES,
     currentThemeConfig,
+    isDark,
+    preferredDark,
+    preferredLight,
+    setPreferredDark,
+    setPreferredLight,
   };
 
   return (

@@ -4,8 +4,8 @@
 /* ============================================
    EXTENSIBLE THEME SYSTEM
    ============================================
-   Themes: terminal (dark), blueprint (light)
-   Add new themes by creating [data-theme="name"] blocks
+   Dark:  terminal, midnight, handler, ember, void
+   Light: blueprint, paper, daylight, sand, frost
    ============================================ */
 
 :root {
@@ -122,6 +122,374 @@
   /* Glow intensity - Subtler on light */
   --glow-opacity: 0.15;
   --glow-inset-opacity: 0.08;
+}
+
+/* ============================================
+   MIDNIGHT THEME (Dark)
+   Deep navy with blue accents
+   ============================================ */
+[data-theme="midnight"] {
+  --bg-base: 230 30% 7%;
+  --bg-surface: 230 28% 10%;
+  --bg-elevated: 230 25% 13%;
+  --bg-overlay: 230 22% 16%;
+  --bg-gradient-start: 230 30% 7%;
+  --bg-gradient-end: 235 32% 5%;
+
+  --text-primary: 220 25% 93%;
+  --text-secondary: 225 18% 58%;
+  --text-muted: 225 12% 38%;
+
+  --cyan: 200 80% 55%;
+  --cyan-dim: 200 55% 38%;
+  --amber: 38 85% 55%;
+  --amber-dim: 38 65% 40%;
+  --green: 155 55% 45%;
+  --green-dim: 155 38% 30%;
+  --red: 0 65% 55%;
+  --red-dim: 0 45% 35%;
+  --purple: 260 65% 62%;
+  --purple-dim: 260 42% 42%;
+  --blue: 220 85% 60%;
+  --blue-dim: 220 60% 42%;
+
+  --border: 230 20% 18%;
+  --border-highlight: 230 20% 26%;
+  --input-bg: 230 28% 10%;
+  --ring: 220 85% 60%;
+
+  --scrollbar-track: 230 30% 7%;
+  --scrollbar-thumb: 230 20% 26%;
+  --scrollbar-thumb-hover: 225 15% 38%;
+
+  --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.35);
+  --shadow-md: 0 4px 6px hsl(0 0% 0% / 0.35);
+  --shadow-lg: 0 10px 15px hsl(0 0% 0% / 0.45);
+
+  --glow-opacity: 0.18;
+  --glow-inset-opacity: 0.05;
+}
+
+/* ============================================
+   HANDLER THEME (Dark)
+   Covert ops: matte black, gold/amber accents, teal secondary
+   ============================================ */
+[data-theme="handler"] {
+  --bg-base: 200 10% 6%;
+  --bg-surface: 200 8% 9%;
+  --bg-elevated: 200 7% 12%;
+  --bg-overlay: 200 6% 15%;
+  --bg-gradient-start: 200 10% 6%;
+  --bg-gradient-end: 200 12% 4%;
+
+  --text-primary: 40 15% 90%;
+  --text-secondary: 40 8% 55%;
+  --text-muted: 40 5% 36%;
+
+  --cyan: 175 50% 42%;
+  --cyan-dim: 175 35% 30%;
+  --amber: 42 90% 50%;
+  --amber-dim: 42 65% 38%;
+  --green: 150 45% 42%;
+  --green-dim: 150 30% 28%;
+  --red: 0 60% 50%;
+  --red-dim: 0 40% 33%;
+  --purple: 270 40% 55%;
+  --purple-dim: 270 28% 38%;
+  --blue: 210 55% 50%;
+  --blue-dim: 210 40% 38%;
+
+  --border: 200 8% 16%;
+  --border-highlight: 42 30% 22%;
+  --input-bg: 200 10% 8%;
+  --ring: 42 90% 50%;
+
+  --scrollbar-track: 200 10% 6%;
+  --scrollbar-thumb: 200 8% 22%;
+  --scrollbar-thumb-hover: 40 10% 32%;
+
+  --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.4);
+  --shadow-md: 0 4px 6px hsl(0 0% 0% / 0.4);
+  --shadow-lg: 0 10px 15px hsl(0 0% 0% / 0.5);
+
+  --glow-opacity: 0.15;
+  --glow-inset-opacity: 0.04;
+}
+
+/* ============================================
+   EMBER THEME (Dark)
+   Warm dark with red/orange accents
+   ============================================ */
+[data-theme="ember"] {
+  --bg-base: 15 18% 7%;
+  --bg-surface: 15 16% 10%;
+  --bg-elevated: 15 14% 13%;
+  --bg-overlay: 15 12% 16%;
+  --bg-gradient-start: 15 18% 7%;
+  --bg-gradient-end: 10 20% 5%;
+
+  --text-primary: 20 20% 92%;
+  --text-secondary: 20 12% 58%;
+  --text-muted: 20 8% 38%;
+
+  --cyan: 180 55% 48%;
+  --cyan-dim: 180 38% 34%;
+  --amber: 25 95% 55%;
+  --amber-dim: 25 70% 40%;
+  --green: 140 50% 44%;
+  --green-dim: 140 35% 30%;
+  --red: 5 80% 55%;
+  --red-dim: 5 55% 38%;
+  --purple: 275 50% 58%;
+  --purple-dim: 275 35% 40%;
+  --blue: 210 65% 52%;
+  --blue-dim: 210 45% 38%;
+
+  --border: 15 12% 18%;
+  --border-highlight: 15 15% 26%;
+  --input-bg: 15 16% 10%;
+  --ring: 25 95% 55%;
+
+  --scrollbar-track: 15 18% 7%;
+  --scrollbar-thumb: 15 12% 24%;
+  --scrollbar-thumb-hover: 20 10% 36%;
+
+  --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.3);
+  --shadow-md: 0 4px 6px hsl(0 0% 0% / 0.35);
+  --shadow-lg: 0 10px 15px hsl(0 0% 0% / 0.45);
+
+  --glow-opacity: 0.22;
+  --glow-inset-opacity: 0.06;
+}
+
+/* ============================================
+   VOID THEME (Dark)
+   Ultra-minimal near-black, desaturated accents
+   ============================================ */
+[data-theme="void"] {
+  --bg-base: 0 0% 5%;
+  --bg-surface: 0 0% 7%;
+  --bg-elevated: 0 0% 10%;
+  --bg-overlay: 0 0% 13%;
+  --bg-gradient-start: 0 0% 5%;
+  --bg-gradient-end: 0 0% 3%;
+
+  --text-primary: 0 0% 85%;
+  --text-secondary: 0 0% 50%;
+  --text-muted: 0 0% 32%;
+
+  --cyan: 185 30% 48%;
+  --cyan-dim: 185 20% 34%;
+  --amber: 38 40% 50%;
+  --amber-dim: 38 28% 38%;
+  --green: 145 28% 44%;
+  --green-dim: 145 18% 30%;
+  --red: 0 35% 50%;
+  --red-dim: 0 22% 35%;
+  --purple: 270 25% 55%;
+  --purple-dim: 270 18% 40%;
+  --blue: 210 30% 50%;
+  --blue-dim: 210 20% 38%;
+
+  --border: 0 0% 14%;
+  --border-highlight: 0 0% 20%;
+  --input-bg: 0 0% 7%;
+  --ring: 185 30% 48%;
+
+  --scrollbar-track: 0 0% 5%;
+  --scrollbar-thumb: 0 0% 18%;
+  --scrollbar-thumb-hover: 0 0% 28%;
+
+  --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.4);
+  --shadow-md: 0 4px 6px hsl(0 0% 0% / 0.4);
+  --shadow-lg: 0 10px 15px hsl(0 0% 0% / 0.5);
+
+  --glow-opacity: 0.1;
+  --glow-inset-opacity: 0.03;
+}
+
+/* ============================================
+   PAPER THEME (Light)
+   Clean white/gray minimal, professional
+   ============================================ */
+[data-theme="paper"] {
+  --bg-base: 0 0% 97%;
+  --bg-surface: 0 0% 99%;
+  --bg-elevated: 0 0% 100%;
+  --bg-overlay: 0 0% 94%;
+  --bg-gradient-start: 0 0% 97%;
+  --bg-gradient-end: 0 0% 94%;
+
+  --text-primary: 0 0% 12%;
+  --text-secondary: 0 0% 40%;
+  --text-muted: 0 0% 55%;
+
+  --cyan: 190 75% 35%;
+  --cyan-dim: 190 55% 45%;
+  --amber: 30 85% 42%;
+  --amber-dim: 30 70% 50%;
+  --green: 150 55% 32%;
+  --green-dim: 150 40% 42%;
+  --red: 0 65% 45%;
+  --red-dim: 0 48% 55%;
+  --purple: 270 50% 50%;
+  --purple-dim: 270 35% 60%;
+  --blue: 210 70% 45%;
+  --blue-dim: 210 50% 55%;
+
+  --border: 0 0% 85%;
+  --border-highlight: 0 0% 78%;
+  --input-bg: 0 0% 95%;
+  --ring: 210 70% 45%;
+
+  --scrollbar-track: 0 0% 96%;
+  --scrollbar-thumb: 0 0% 80%;
+  --scrollbar-thumb-hover: 0 0% 68%;
+
+  --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.05);
+  --shadow-md: 0 4px 6px hsl(0 0% 0% / 0.07);
+  --shadow-lg: 0 10px 15px hsl(0 0% 0% / 0.09);
+
+  --glow-opacity: 0.12;
+  --glow-inset-opacity: 0.06;
+}
+
+/* ============================================
+   DAYLIGHT THEME (Light)
+   Bright with sky-blue tones
+   ============================================ */
+[data-theme="daylight"] {
+  --bg-base: 205 40% 96%;
+  --bg-surface: 205 35% 98%;
+  --bg-elevated: 200 30% 100%;
+  --bg-overlay: 205 35% 93%;
+  --bg-gradient-start: 205 40% 96%;
+  --bg-gradient-end: 210 45% 93%;
+
+  --text-primary: 215 30% 12%;
+  --text-secondary: 215 18% 38%;
+  --text-muted: 215 12% 52%;
+
+  --cyan: 195 80% 38%;
+  --cyan-dim: 195 58% 48%;
+  --amber: 35 90% 45%;
+  --amber-dim: 35 75% 52%;
+  --green: 155 60% 34%;
+  --green-dim: 155 45% 44%;
+  --red: 0 70% 48%;
+  --red-dim: 0 52% 56%;
+  --purple: 265 55% 52%;
+  --purple-dim: 265 40% 62%;
+  --blue: 215 80% 48%;
+  --blue-dim: 215 58% 56%;
+
+  --border: 210 25% 85%;
+  --border-highlight: 210 28% 78%;
+  --input-bg: 205 30% 94%;
+  --ring: 215 80% 48%;
+
+  --scrollbar-track: 205 35% 95%;
+  --scrollbar-thumb: 210 20% 80%;
+  --scrollbar-thumb-hover: 210 20% 70%;
+
+  --shadow-sm: 0 1px 2px hsl(215 25% 20% / 0.06);
+  --shadow-md: 0 4px 6px hsl(215 25% 20% / 0.08);
+  --shadow-lg: 0 10px 15px hsl(215 25% 20% / 0.1);
+
+  --glow-opacity: 0.14;
+  --glow-inset-opacity: 0.07;
+}
+
+/* ============================================
+   SAND THEME (Light)
+   Warm desert/sandstone palette
+   ============================================ */
+[data-theme="sand"] {
+  --bg-base: 35 35% 94%;
+  --bg-surface: 35 30% 96%;
+  --bg-elevated: 35 25% 98%;
+  --bg-overlay: 35 30% 90%;
+  --bg-gradient-start: 35 35% 94%;
+  --bg-gradient-end: 30 38% 90%;
+
+  --text-primary: 25 25% 14%;
+  --text-secondary: 25 15% 40%;
+  --text-muted: 25 10% 55%;
+
+  --cyan: 185 65% 35%;
+  --cyan-dim: 185 48% 45%;
+  --amber: 28 90% 42%;
+  --amber-dim: 28 72% 50%;
+  --green: 148 52% 34%;
+  --green-dim: 148 38% 44%;
+  --red: 2 65% 46%;
+  --red-dim: 2 48% 55%;
+  --purple: 268 48% 50%;
+  --purple-dim: 268 35% 60%;
+  --blue: 212 65% 45%;
+  --blue-dim: 212 48% 55%;
+
+  --border: 30 22% 82%;
+  --border-highlight: 30 25% 74%;
+  --input-bg: 35 28% 92%;
+  --ring: 28 90% 42%;
+
+  --scrollbar-track: 35 30% 93%;
+  --scrollbar-thumb: 30 18% 78%;
+  --scrollbar-thumb-hover: 30 18% 66%;
+
+  --shadow-sm: 0 1px 2px hsl(25 20% 20% / 0.06);
+  --shadow-md: 0 4px 6px hsl(25 20% 20% / 0.08);
+  --shadow-lg: 0 10px 15px hsl(25 20% 20% / 0.1);
+
+  --glow-opacity: 0.14;
+  --glow-inset-opacity: 0.07;
+}
+
+/* ============================================
+   FROST THEME (Light)
+   Cool icy light, slate/ice-blue tones
+   ============================================ */
+[data-theme="frost"] {
+  --bg-base: 210 25% 96%;
+  --bg-surface: 210 22% 98%;
+  --bg-elevated: 210 18% 100%;
+  --bg-overlay: 210 25% 93%;
+  --bg-gradient-start: 210 25% 96%;
+  --bg-gradient-end: 215 28% 93%;
+
+  --text-primary: 215 22% 14%;
+  --text-secondary: 215 14% 42%;
+  --text-muted: 215 10% 56%;
+
+  --cyan: 192 70% 36%;
+  --cyan-dim: 192 50% 46%;
+  --amber: 32 80% 44%;
+  --amber-dim: 32 62% 52%;
+  --green: 155 50% 34%;
+  --green-dim: 155 36% 44%;
+  --red: 0 58% 46%;
+  --red-dim: 0 42% 56%;
+  --purple: 265 45% 52%;
+  --purple-dim: 265 32% 62%;
+  --blue: 215 65% 48%;
+  --blue-dim: 215 48% 58%;
+
+  --border: 215 18% 84%;
+  --border-highlight: 215 20% 76%;
+  --input-bg: 210 20% 94%;
+  --ring: 215 65% 48%;
+
+  --scrollbar-track: 210 22% 95%;
+  --scrollbar-thumb: 215 14% 78%;
+  --scrollbar-thumb-hover: 215 14% 68%;
+
+  --shadow-sm: 0 1px 2px hsl(215 20% 20% / 0.06);
+  --shadow-md: 0 4px 6px hsl(215 20% 20% / 0.08);
+  --shadow-lg: 0 10px 15px hsl(215 20% 20% / 0.1);
+
+  --glow-opacity: 0.12;
+  --glow-inset-opacity: 0.06;
 }
 
 * {
