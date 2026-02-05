@@ -1,0 +1,13 @@
+{
+  "$schema": "./base-images.schema.json",
+  "description": "Available base images for Caisson VMs",
+  "baseUrl": "https://caisson-images.s3.amazonaws.com",
+  "images": {
+    "ubuntu-24.04": {
+      "description": "Ubuntu 24.04 LTS minimal server",
+      "qcow2": "ubuntu-24.04/image.qcow2",
+      "qcow2Size": "650MB",
+      "sha256": null
+    }
+  }
+}

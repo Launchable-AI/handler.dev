@@ -12,6 +12,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 GUEST_INIT_DIR="$PROJECT_DIR/guest-init"
+IMAGES_MANIFEST="$SCRIPT_DIR/base-images.json"
 
 # Source OS utilities for cross-platform package management
 source "$SCRIPT_DIR/lib/os-utils.sh"
@@ -67,34 +68,70 @@ echo "Image name: $IMAGE_NAME"
 echo "Image directory: $IMAGE_DIR"
 echo ""
 
-# Check if QCOW2 image exists
-if [ ! -f "$QCOW2_PATH" ]; then
-    error "QCOW2 image not found: $QCOW2_PATH"
-fi
-
 # Check if guest-init scripts exist
 if [ ! -f "$GUEST_INIT_DIR/mmds-configure.sh" ]; then
     error "MMDS configure script not found: $GUEST_INIT_DIR/mmds-configure.sh"
 fi
 
-# Check for required tools
-if ! command -v qemu-img &> /dev/null; then
-    error "qemu-img is required but not installed. Install with: $(pkg_install_hint qemu-utils)"
+# Step 1: Ensure we have a raw rootfs.ext4
+SKIP_CONVERSION=0
+
+if [ -f "$RAW_PATH" ]; then
+    # Raw image exists - check if we should reconvert
+    if [ -f "$QCOW2_PATH" ]; then
+        warn "Raw image already exists: $RAW_PATH"
+        read -p "Reconvert from QCOW2? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log "Skipping conversion, will update guest scripts only"
+            SKIP_CONVERSION=1
+        fi
+    else
+        log "Raw image exists, will update guest scripts only"
+        SKIP_CONVERSION=1
+    fi
+elif [ ! -f "$QCOW2_PATH" ]; then
+    # Neither raw nor QCOW2 exists - try to download from S3
+    if [ -f "$IMAGES_MANIFEST" ] && command -v jq &> /dev/null; then
+        BASE_URL=$(jq -r '.baseUrl // empty' "$IMAGES_MANIFEST")
+        QCOW2_FILE=$(jq -r ".images[\"$IMAGE_NAME\"].qcow2 // empty" "$IMAGES_MANIFEST")
+        QCOW2_SIZE=$(jq -r ".images[\"$IMAGE_NAME\"].qcow2Size // \"unknown size\"" "$IMAGES_MANIFEST")
+
+        if [ -n "$BASE_URL" ] && [ -n "$QCOW2_FILE" ]; then
+            DOWNLOAD_URL="$BASE_URL/$QCOW2_FILE"
+            echo ""
+            warn "QCOW2 image not found locally."
+            log "Available for download: $DOWNLOAD_URL ($QCOW2_SIZE)"
+            read -p "Download from S3? [Y/n] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                log "Downloading $IMAGE_NAME QCOW2 image..."
+                mkdir -p "$IMAGE_DIR"
+                if command -v curl &> /dev/null; then
+                    curl -L --progress-bar -o "$QCOW2_PATH" "$DOWNLOAD_URL" || error "Download failed"
+                elif command -v wget &> /dev/null; then
+                    wget --show-progress -O "$QCOW2_PATH" "$DOWNLOAD_URL" || error "Download failed"
+                else
+                    error "Neither curl nor wget available for download"
+                fi
+                log "Download complete"
+            else
+                error "QCOW2 image required for initial setup"
+            fi
+        else
+            error "Image '$IMAGE_NAME' not found in manifest: $IMAGES_MANIFEST"
+        fi
+    else
+        error "QCOW2 image not found: $QCOW2_PATH\nAdd image to $IMAGES_MANIFEST and upload to S3, or provide QCOW2 manually."
+    fi
 fi
 
-# Step 1: Convert QCOW2 to raw
-if [ -f "$RAW_PATH" ]; then
-    warn "Raw image already exists: $RAW_PATH"
-    read -p "Overwrite? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log "Skipping conversion"
-    else
-        log "Converting QCOW2 to raw..."
-        qemu-img convert -p -f qcow2 -O raw "$QCOW2_PATH" "$RAW_PATH"
-        log "Conversion complete"
+if [ "$SKIP_CONVERSION" = "0" ]; then
+    # Check for required tools
+    if ! command -v qemu-img &> /dev/null; then
+        error "qemu-img is required but not installed. Install with: $(pkg_install_hint qemu-utils)"
     fi
-else
+
     log "Converting QCOW2 to raw..."
     qemu-img convert -p -f qcow2 -O raw "$QCOW2_PATH" "$RAW_PATH"
     log "Conversion complete"

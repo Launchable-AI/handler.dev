@@ -87,14 +87,28 @@ mount_parent_layers() {
 
     # Build lowerdir string from top (most derived) to bottom (base rootfs)
     # overlayfs lowerdir: first entry = top layer, last entry = bottom layer
-    # /parentN (most derived) -> /parent1 (base-most) -> / (rootfs)
+    # /parentN/upper (most derived) -> /parent1/upper (base-most) -> / (rootfs)
+    #
+    # IMPORTANT: Parent layers are copied overlayfs upper directories, so files
+    # are stored under /upper within each layer's ext4 filesystem!
     LOWERDIR=""
     for i in $(seq $layer_count -1 1); do
         if [ -d "/parent${i}" ]; then
-            if [ -z "$LOWERDIR" ]; then
-                LOWERDIR="/parent${i}"
+            # The layer ext4 has files under /upper (from the original overlay structure)
+            layer_path="/parent${i}/upper"
+            if [ -d "$layer_path" ]; then
+                if [ -z "$LOWERDIR" ]; then
+                    LOWERDIR="$layer_path"
+                else
+                    LOWERDIR="${LOWERDIR}:$layer_path"
+                fi
             else
-                LOWERDIR="${LOWERDIR}:/parent${i}"
+                echo "[overlay-init] WARNING: /parent${i}/upper not found, using /parent${i}"
+                if [ -z "$LOWERDIR" ]; then
+                    LOWERDIR="/parent${i}"
+                else
+                    LOWERDIR="${LOWERDIR}:/parent${i}"
+                fi
             fi
         fi
     done
