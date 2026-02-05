@@ -129,6 +129,7 @@ function TerminalAwareContent({ activeTab, onCreateClick }: { activeTab: Tab; on
 
 function App() {
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createFormInitial, setCreateFormInitial] = useState<{ backend?: string; image?: string }>({});
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = localStorage.getItem('caisson:activeTab');
     // Migrate old command-centre value
@@ -176,6 +177,18 @@ function App() {
     window.addEventListener('caisson-navigate-tab', handleTabChange as EventListener);
     return () => {
       window.removeEventListener('caisson-navigate-tab', handleTabChange as EventListener);
+    };
+  }, []);
+
+  // Listen for create sandbox requests with initial values (e.g., from base images)
+  useEffect(() => {
+    const handleCreateSandbox = (e: CustomEvent<{ backend?: string; image?: string }>) => {
+      setCreateFormInitial(e.detail || {});
+      setShowCreateForm(true);
+    };
+    window.addEventListener('caisson-create-sandbox', handleCreateSandbox as EventListener);
+    return () => {
+      window.removeEventListener('caisson-create-sandbox', handleCreateSandbox as EventListener);
     };
   }, []);
 
@@ -578,7 +591,14 @@ function App() {
 
       {/* Modals */}
       {showCreateForm && (
-        <CreateSandboxForm onClose={() => setShowCreateForm(false)} />
+        <CreateSandboxForm
+          onClose={() => {
+            setShowCreateForm(false);
+            setCreateFormInitial({});
+          }}
+          initialBackend={createFormInitial.backend as any}
+          initialImage={createFormInitial.image}
+        />
       )}
     </div>
     </TerminalPanelProvider>

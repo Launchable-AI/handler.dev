@@ -12,6 +12,8 @@ import * as api from '../../api/client';
 
 interface CreateSandboxFormProps {
   onClose: () => void;
+  initialBackend?: SandboxBackend;
+  initialImage?: string;
 }
 
 // Generate a random suffix for volume names
@@ -96,7 +98,7 @@ const BACKEND_INFO: Record<SandboxBackend, { label: string; icon?: typeof Box; i
   },
 };
 
-export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
+export function CreateSandboxForm({ onClose, initialBackend, initialImage }: CreateSandboxFormProps) {
   const createMutation = useCreateSandbox();
   const createVolumeMutation = useCreateVolume();
   const { data: backends } = useSandboxBackends();
@@ -106,9 +108,9 @@ export function CreateSandboxForm({ onClose }: CreateSandboxFormProps) {
   const { data: sandboxes } = useSandboxes();
 
   // Form state
-  const [backend, setBackend] = useState<SandboxBackend | null>(null);
+  const [backend, setBackend] = useState<SandboxBackend | null>(initialBackend || null);
   const [name, setName] = useState('');
-  const [image, setImage] = useState('');
+  const [image, setImage] = useState(initialImage || '');
   const [vcpus, setVcpus] = useState(2);
   const [memoryMb, setMemoryMb] = useState(2048);
   const [diskGb, setDiskGb] = useState(20);

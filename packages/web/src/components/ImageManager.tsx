@@ -557,6 +557,19 @@ export function ImageManager() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => {
+                                  // Open create sandbox form with firecracker backend and this image pre-selected
+                                  window.dispatchEvent(new CustomEvent('caisson-create-sandbox', {
+                                    detail: { backend: 'firecracker', image: vmImage.name }
+                                  }));
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]"
+                                title="Create a new VM from this base image"
+                              >
+                                <Play className="h-3 w-3" />
+                                Launch
+                              </button>
                               {!vmImage.hasWarmupSnapshot && (
                                 <button
                                   onClick={() => handleWarmupVmImage(vmImage.name)}
