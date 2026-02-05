@@ -114,7 +114,7 @@ export function WorkModal({ repo, onClose }: WorkModalProps) {
       });
 
       // Navigate to agents view with the new sandbox
-      window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'agents' } }));
+      window.dispatchEvent(new CustomEvent('handler-navigate-tab', { detail: { tab: 'agents' } }));
       onClose();
 
       // Optionally could trigger opening the terminal to the sandbox

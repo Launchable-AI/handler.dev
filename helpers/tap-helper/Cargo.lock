@@ -65,17 +65,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
-name = "caisson-tap-helper"
-version = "0.1.0"
-dependencies = [
- "clap",
- "libc",
- "nix",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -126,6 +115,17 @@ name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
+
+[[package]]
+name = "handler-tap-helper"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "libc",
+ "nix",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "heck"

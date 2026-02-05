@@ -78,7 +78,7 @@ const DEFAULT_STARTUP_SCRIPT = `#!/bin/bash
 apt-get update && apt-get install -y git curl vim
 
 # Signal ready
-touch /tmp/caisson-ready
+touch /tmp/handler-ready
 `;
 
 /**
@@ -318,7 +318,7 @@ export class GcpService {
 
     return {
       instanceName: instance.name as string || '',
-      name: labels['caisson-name'] || instance.name as string || '',
+      name: labels['handler-name'] || instance.name as string || '',
       status: instance.status as string || 'UNKNOWN',
       machineType,
       publicIp,
@@ -330,7 +330,7 @@ export class GcpService {
   }
 
   /**
-   * List all Caisson-managed instances
+   * List all Handler-managed instances
    */
   async listInstances(forceRefresh: boolean = false): Promise<GcpInstance[]> {
     if (!forceRefresh && this.isCacheValid() && this.instancesCache.length > 0) {
@@ -339,7 +339,7 @@ export class GcpService {
     }
 
     try {
-      const filter = encodeURIComponent('labels.caisson=true');
+      const filter = encodeURIComponent('labels.handler=true');
       const result = await this.apiRequest(
         'GET',
         `/projects/${this.projectId}/zones/${this.zone}/instances?filter=${filter}`,
@@ -420,7 +420,7 @@ export class GcpService {
     const keyDataLen = Buffer.alloc(4);
     keyDataLen.writeUInt32BE(rawPubKey.length);
     const sshPubKeyBlob = Buffer.concat([keyTypeLen, keyType, keyDataLen, rawPubKey]);
-    const sshPubKey = `ssh-ed25519 ${sshPubKeyBlob.toString('base64')} caisson`;
+    const sshPubKey = `ssh-ed25519 ${sshPubKeyBlob.toString('base64')} handler`;
 
     // Write private key in OpenSSH PEM format
     await writeFile(GCP_SSH_KEY_PATH, privateKey, { mode: 0o600 });
@@ -456,9 +456,9 @@ export class GcpService {
       name: instanceName,
       machineType: `zones/${zone}/machineTypes/${machineType}`,
       labels: {
-        'caisson': 'true',
-        'caisson-name': request.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 63),
-        'caisson-size-class': sizeClass,
+        'handler': 'true',
+        'handler-name': request.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 63),
+        'handler-size-class': sizeClass,
       },
       disks: [
         {
@@ -486,7 +486,7 @@ export class GcpService {
         items: [
           {
             key: 'ssh-keys',
-            value: `caisson:${publicKey}`,
+            value: `handler:${publicKey}`,
           },
           {
             key: 'startup-script',
@@ -495,7 +495,7 @@ export class GcpService {
         ],
       },
       tags: {
-        items: ['caisson', 'ssh-server'],
+        items: ['handler', 'ssh-server'],
       },
     };
 

@@ -646,7 +646,7 @@ function VMCard({ vm }: { vm: VmInfo }) {
       const user = vm.sshUser || 'agent';
       // Use ProxyCommand format for proper key handling on both hops
       // Note: This assumes the same SSH key is synced to the jump host
-      return `ssh -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ${jumpHostKeyPath} -W %h:%p ${jumpHost}" -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ~/.local/share/caisson/ssh-keys/id_ed25519 ${user}@${vm.guestIp}`;
+      return `ssh -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ${jumpHostKeyPath} -W %h:%p ${jumpHost}" -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ~/.local/share/handler/ssh-keys/id_ed25519 ${user}@${vm.guestIp}`;
     }
 
     // Fallback: use server-provided command
@@ -1769,7 +1769,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-const VM_VIEW_MODE_KEY = 'caisson-vm-view-mode';
+const VM_VIEW_MODE_KEY = 'handler-vm-view-mode';
 
 export function VMList({ onCreateClick: _onCreateClick }: VMListProps) {
   const { data: vms, isLoading, error } = useVms();

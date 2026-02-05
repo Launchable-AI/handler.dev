@@ -188,9 +188,9 @@ export interface HypervisorConfig {
 
 // Default configuration
 export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = {
-  dataDir: `${process.env.HOME}/.local/share/caisson/vms`,
-  baseImagesDir: `${process.env.HOME}/.local/share/caisson/base-images`,
-  sshKeysDir: `${process.env.HOME}/.local/share/caisson/ssh-keys`,
+  dataDir: `${process.env.HOME}/.local/share/handler/vms`,
+  baseImagesDir: `${process.env.HOME}/.local/share/handler/base-images`,
+  sshKeysDir: `${process.env.HOME}/.local/share/handler/ssh-keys`,
   hypervisorBinary: '/usr/bin/cloud-hypervisor',
   sshPortRangeStart: 10022,
   sshPortRangeEnd: 10122,

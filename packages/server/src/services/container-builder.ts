@@ -7,7 +7,7 @@ import { appendBuildLog } from './build-tracker.js';
 import { findAvailableSshPort, resolveAvailablePorts } from '../utils/port.js';
 import type { CreateContainerRequest, ContainerInfo } from '../types/index.js';
 
-const CAISSON_LABEL = 'caisson';
+const HANDLER_LABEL = 'handler';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
@@ -36,22 +36,22 @@ export async function buildAndCreateContainer(request: CreateContainerRequest, b
 
   if (dockerfile) {
     // Build from user's dockerfile with SSH key baked in
-    imageName = `caisson-${name}:latest`;
+    imageName = `handler-${name}:latest`;
     const dockerfileWithKey = injectPublicKey(dockerfile, publicKey);
     logCallback?.(`Building image ${imageName} from Dockerfile...`);
     await dockerService.buildImageWithLogs(dockerfileWithKey, imageName, logCallback || (() => {}));
   } else if (image) {
     // Check if this image is already ACM-ready (has our label)
-    const isCaissonImage = await dockerService.imageHasLabel(image, CAISSON_LABEL);
+    const isHandlerImage = await dockerService.imageHasLabel(image, HANDLER_LABEL);
 
-    if (isCaissonImage) {
+    if (isHandlerImage) {
       // Image already has SSH setup - use it directly
       // Note: If SSH fails, user should rebuild the image to get current key
       imageName = image;
-      logCallback?.(`Using existing Caisson image: ${imageName}`);
+      logCallback?.(`Using existing Handler image: ${imageName}`);
     } else {
       // Base image needs SSH setup - build a new image with key baked in
-      imageName = `caisson-${name}:latest`;
+      imageName = `handler-${name}:latest`;
       const baseDockerfile = createSshDockerfile(image, publicKey);
       logCallback?.(`Building SSH-enabled image ${imageName} from ${image}...`);
       await dockerService.buildImageWithLogs(baseDockerfile, imageName, logCallback || (() => {}));
@@ -145,7 +145,7 @@ async function getOrCreateAppSshKey(): Promise<{ publicKey: string; privateKey: 
   }
 
   // Generate key pair using ssh-keygen
-  execSync(`ssh-keygen -t rsa -b 4096 -f "${privateKeyPath}" -N "" -C "caisson"`, {
+  execSync(`ssh-keygen -t rsa -b 4096 -f "${privateKeyPath}" -N "" -C "handler"`, {
     stdio: 'pipe',
   });
 

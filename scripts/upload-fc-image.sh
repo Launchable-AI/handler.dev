@@ -1,5 +1,5 @@
 #!/bin/bash
-# Upload Firecracker image to Caisson CDN (S3)
+# Upload Firecracker image to Handler CDN (S3)
 #
 # This script uploads a prepared Firecracker image to the S3 bucket
 # for distribution to users via the download-fc-image.sh script.
@@ -19,7 +19,7 @@
 #   5. Uploads all files to S3
 #
 # S3 Structure:
-#   s3://caisson.dev/images/{IMAGE_NAME}/firecracker/
+#   s3://handler.dev-public/images/{IMAGE_NAME}/firecracker/
 #     ├── manifest.json    # Checksums and metadata
 #     ├── vmlinux          # Uncompressed kernel (~43MB)
 #     └── rootfs.ext4.gz   # Compressed rootfs (~415MB)
@@ -30,7 +30,7 @@ set -e
 # Configuration
 # ============================================================================
 
-S3_BUCKET="caisson.dev"
+S3_BUCKET="handler.dev-public"
 S3_REGION="us-east-2"
 S3_BASE_PATH="images"
 
@@ -40,7 +40,7 @@ if [ -n "$SUDO_USER" ]; then
 else
     REAL_HOME="$HOME"
 fi
-DATA_DIR="${CAISSON_DATA_DIR:-$REAL_HOME/.local/share/caisson}"
+DATA_DIR="${HANDLER_DATA_DIR:-$REAL_HOME/.local/share/handler}"
 BASE_IMAGES_DIR="$DATA_DIR/base-images"
 
 # ============================================================================
@@ -65,7 +65,7 @@ cmd()   { echo -e "${CYAN}    \$ $*${NC}"; }
 # ============================================================================
 
 usage() {
-    echo "Upload Firecracker image to Caisson CDN"
+    echo "Upload Firecracker image to Handler CDN"
     echo ""
     echo "Usage: $0 <image-name> [--dry-run]"
     echo ""
@@ -129,7 +129,7 @@ S3_DEST="s3://$S3_BUCKET/$S3_BASE_PATH/$IMAGE_NAME/firecracker"
 # ============================================================================
 
 echo "============================================"
-echo "  Caisson Firecracker Image Uploader"
+echo "  Handler Firecracker Image Uploader"
 echo "============================================"
 echo ""
 echo "Image:       $IMAGE_NAME"

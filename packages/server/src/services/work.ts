@@ -124,7 +124,7 @@ export async function startWork(options: StartWorkOptions): Promise<WorkResult> 
   console.log(`[Work] Creating ${backend} sandbox for ${repoFullName}...`);
 
   // Determine default image based on backend
-  const defaultImage = backend === 'docker' ? 'caisson-default:latest' : 'ubuntu-base';
+  const defaultImage = backend === 'docker' ? 'handler-default:latest' : 'ubuntu-base';
 
   const sandbox = await service.create({
     name: `work-${repoName}-${Date.now()}`,

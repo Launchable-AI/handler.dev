@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Caisson Logo" width="128" height="128">
+  <img src="assets/logo.png" alt="Handler Logo" width="128" height="128">
 </p>
 
-<h1 align="center">Caisson</h1>
+<h1 align="center">Handler</h1>
 
 <p align="center">
   A web application for spawning and managing sandboxes (Docker containers, VMs, and cloud workspaces), designed for isolated agentic coding environments.
@@ -18,7 +18,7 @@
 ## Features
 
 ### Unified Sandbox Abstraction
-Caisson treats all compute environments as **Sandboxes** - a unified abstraction over different backends:
+Handler treats all compute environments as **Sandboxes** - a unified abstraction over different backends:
 
 - **Docker Containers**: Fast startup, easy volume management, port forwarding
 - **Cloud-Hypervisor VMs**: Full isolation with QCOW2 overlay disks
@@ -75,8 +75,8 @@ The UI presents a single "Sandboxes" view where you can filter by backend, manag
 
 ```bash
 # Clone the repository
-git clone https://github.com/anthropics/caisson.git
-cd caisson
+git clone https://github.com/anthropics/handler.git
+cd handler
 
 # Install dependencies
 pnpm install
@@ -105,8 +105,8 @@ sudo ./scripts/setup.sh --firecracker
 ```
 
 The setup script:
-- Installs the `caisson-tap-helper` binary with network capabilities
-- Creates a network bridge (`caisson-br0`) with NAT for VM internet access
+- Installs the `handler-tap-helper` binary with network capabilities
+- Creates a network bridge (`handler-br0`) with NAT for VM internet access
 - Downloads Ubuntu 24.04 base image
 - Creates a systemd service for persistence across reboots
 - Optionally installs Firecracker
@@ -127,7 +127,7 @@ sudo ./scripts/uninstall.sh --keep-data  # Keep VM images and data
 
 **Files created:**
 ```
-~/.local/share/caisson/
+~/.local/share/handler/
 ├── base-images/
 │   └── ubuntu-24.04/
 │       ├── rootfs.ext4   # Firecracker rootfs
@@ -255,7 +255,7 @@ ssh -i ~/.ssh/vm-name.pem agent@<vm-ip>
 │               ├── useVolumes.ts    # React Query hooks for unified volume API
 │               └── useTemplates.ts  # React Query hooks for template API
 ├── helpers/
-│   └── tap-helper/      # Rust TAP device helper (caisson-tap-helper)
+│   └── tap-helper/      # Rust TAP device helper (handler-tap-helper)
 ├── scripts/
 │   ├── setup.sh         # Unified VM setup
 │   ├── uninstall.sh     # Clean uninstall
@@ -278,7 +278,7 @@ ssh -i ~/.ssh/vm-name.pem agent@<vm-ip>
 VM data is stored in the user's home directory:
 
 ```
-~/.local/share/caisson/
+~/.local/share/handler/
 ├── vms/                 # cloud-hypervisor VM data
 │   └── <vm-id>/
 │       ├── disk.qcow2   # VM disk overlay

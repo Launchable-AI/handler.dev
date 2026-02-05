@@ -23,7 +23,7 @@ if [ -n "$SUDO_USER" ]; then
 else
     REAL_HOME="$HOME"
 fi
-BASE_IMAGES_DIR="${BASE_IMAGES_DIR:-$REAL_HOME/.local/share/caisson/base-images}"
+BASE_IMAGES_DIR="${BASE_IMAGES_DIR:-$REAL_HOME/.local/share/handler/base-images}"
 
 # Colors for output
 RED='\033[0;31m'

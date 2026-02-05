@@ -24,7 +24,7 @@ export const THEMES: ThemeConfig[] = [
   },
 ];
 
-const STORAGE_KEY = 'caisson-theme';
+const STORAGE_KEY = 'handler-theme';
 
 function getInitialTheme(): Theme {
   // Check localStorage first

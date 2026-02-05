@@ -53,7 +53,7 @@ type PanelPosition = 'left' | 'top';
 export function DockerfileEditor() {
   // File list panel position
   const [panelPosition, setPanelPosition] = useState<PanelPosition>(() => {
-    const saved = localStorage.getItem('caisson:dockerfile-panel-position');
+    const saved = localStorage.getItem('handler:dockerfile-panel-position');
     return (saved as PanelPosition) || 'left';
   });
 
@@ -61,7 +61,7 @@ export function DockerfileEditor() {
   const [templates, setTemplates] = useState<api.TemplateInfo[]>([]);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [showSystemFiles, setShowSystemFiles] = useState<boolean>(() => {
-    const saved = localStorage.getItem('caisson:dockerfile-show-system');
+    const saved = localStorage.getItem('handler:dockerfile-show-system');
     return saved !== 'false'; // Default to true
   });
 
@@ -105,12 +105,12 @@ export function DockerfileEditor() {
 
   // Save panel position
   useEffect(() => {
-    localStorage.setItem('caisson:dockerfile-panel-position', panelPosition);
+    localStorage.setItem('handler:dockerfile-panel-position', panelPosition);
   }, [panelPosition]);
 
   // Save show system files preference
   useEffect(() => {
-    localStorage.setItem('caisson:dockerfile-show-system', String(showSystemFiles));
+    localStorage.setItem('handler:dockerfile-show-system', String(showSystemFiles));
   }, [showSystemFiles]);
 
   // Get image built from a dockerfile
@@ -284,7 +284,7 @@ export function DockerfileEditor() {
 
     // Check if an image with this name already exists (unless we have a version override)
     if (!version) {
-      const expectedTag = `caisson-${targetFile.toLowerCase()}:latest`;
+      const expectedTag = `handler-${targetFile.toLowerCase()}:latest`;
       const existingImage = images?.find(img =>
         img.repoTags.some(tag => tag === expectedTag)
       );

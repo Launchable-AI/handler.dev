@@ -1,7 +1,7 @@
 /**
  * TapHelper - On-demand TAP Device Management
  *
- * Uses the caisson-tap-helper binary (with CAP_NET_ADMIN capability)
+ * Uses the handler-tap-helper binary (with CAP_NET_ADMIN capability)
  * to create and delete TAP devices without requiring root privileges
  * for the main application.
  *
@@ -42,16 +42,16 @@ export interface HelperStatus {
 }
 
 // Default configuration
-const DEFAULT_BRIDGE_NAME = 'caisson-br0';
+const DEFAULT_BRIDGE_NAME = 'handler-br0';
 const DEFAULT_GATEWAY = '172.31.0.1';
 const DEFAULT_SUBNET_PREFIX = '172.31.0';
-const HELPER_BINARY = 'caisson-tap-helper';
+const HELPER_BINARY = 'handler-tap-helper';
 
 // Search paths for the helper binary
 const HELPER_PATHS = [
-  '/usr/local/bin/caisson-tap-helper',
-  '/usr/local/lib/caisson/caisson-tap-helper',
-  path.join(__dirname, '../../../../helpers/tap-helper/target/release/caisson-tap-helper'),
+  '/usr/local/bin/handler-tap-helper',
+  '/usr/local/lib/handler/handler-tap-helper',
+  path.join(__dirname, '../../../../helpers/tap-helper/target/release/handler-tap-helper'),
 ];
 
 export class TapHelper {

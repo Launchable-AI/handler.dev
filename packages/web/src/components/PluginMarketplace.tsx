@@ -27,7 +27,7 @@ import type { MarketplaceData, MarketplacePlugin } from '../api/client';
 type ViewLayout = 'grid' | 'list';
 type DetailTab = 'info' | 'readme';
 
-const PANEL_WIDTH_KEY = 'caisson-plugin-panel-width';
+const PANEL_WIDTH_KEY = 'handler-plugin-panel-width';
 const MIN_PANEL_WIDTH = 300;
 const MAX_PANEL_WIDTH = 800;
 const DEFAULT_PANEL_WIDTH = 420;

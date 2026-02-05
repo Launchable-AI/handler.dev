@@ -46,7 +46,7 @@ import { getConfig, setConfig } from './config.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const SSH_KEYS_DIR = join(PROJECT_ROOT, 'data', 'ssh-keys');
-const AWS_SSH_KEY_NAME = 'caisson-key';
+const AWS_SSH_KEY_NAME = 'handler-key';
 export const AWS_SSH_KEY_PATH = join(SSH_KEYS_DIR, `${AWS_SSH_KEY_NAME}.pem`);
 
 // EC2 instance states
@@ -158,7 +158,7 @@ if [ -b /dev/xvdf ]; then
 fi
 
 # Signal ready (create marker file)
-touch /tmp/caisson-ready
+touch /tmp/handler-ready
 `;
 
 export class AwsService {
@@ -262,7 +262,7 @@ export class AwsService {
       }
     }
 
-    // Find attached volume with caisson tag
+    // Find attached volume with handler tag
     let volumeId: string | undefined;
     for (const mapping of instance.BlockDeviceMappings || []) {
       if (mapping.DeviceName === '/dev/xvdf' || mapping.DeviceName === '/dev/sdf') {
@@ -273,7 +273,7 @@ export class AwsService {
 
     return {
       instanceId: instance.InstanceId || '',
-      name: tags['Name'] || tags['caisson:name'] || instance.InstanceId || '',
+      name: tags['Name'] || tags['handler:name'] || instance.InstanceId || '',
       state: (instance.State?.Name as Ec2InstanceState) || 'pending',
       instanceType: instance.InstanceType || 't3.micro',
       publicIp: instance.PublicIpAddress,
@@ -290,7 +290,7 @@ export class AwsService {
   }
 
   /**
-   * List all Caisson-managed instances
+   * List all Handler-managed instances
    */
   async listInstances(forceRefresh: boolean = false): Promise<AwsInstance[]> {
     if (!forceRefresh && this.isCacheValid() && this.instancesCache.length > 0) {
@@ -302,7 +302,7 @@ export class AwsService {
       const client = await this.getClient();
       const command = new DescribeInstancesCommand({
         Filters: [
-          { Name: 'tag:caisson', Values: ['true'] },
+          { Name: 'tag:handler', Values: ['true'] },
           { Name: 'instance-state-name', Values: ['pending', 'running', 'stopping', 'stopped'] },
         ],
       });
@@ -405,7 +405,7 @@ export class AwsService {
         TagSpecifications: [
           {
             ResourceType: 'key-pair',
-            Tags: [{ Key: 'caisson', Value: 'true' }],
+            Tags: [{ Key: 'handler', Value: 'true' }],
           },
         ],
       });
@@ -442,11 +442,11 @@ export class AwsService {
   }
 
   /**
-   * Get or create a security group for Caisson instances
+   * Get or create a security group for Handler instances
    */
   async ensureSecurityGroup(): Promise<string> {
     const client = await this.getClient();
-    const sgName = 'caisson-sandbox-sg';
+    const sgName = 'handler-sandbox-sg';
 
     try {
       // Check if security group exists
@@ -476,12 +476,12 @@ export class AwsService {
     // Create security group
     const createCommand = new CreateSecurityGroupCommand({
       GroupName: sgName,
-      Description: 'Security group for Caisson sandbox instances',
+      Description: 'Security group for Handler sandbox instances',
       VpcId: vpcId,
       TagSpecifications: [
         {
           ResourceType: 'security-group',
-          Tags: [{ Key: 'caisson', Value: 'true' }],
+          Tags: [{ Key: 'handler', Value: 'true' }],
         },
       ],
     });
@@ -569,9 +569,9 @@ export class AwsService {
           ResourceType: 'instance',
           Tags: [
             { Key: 'Name', Value: request.name },
-            { Key: 'caisson', Value: 'true' },
-            { Key: 'caisson:name', Value: request.name },
-            { Key: 'caisson:sizeClass', Value: sizeClass },
+            { Key: 'handler', Value: 'true' },
+            { Key: 'handler:name', Value: request.name },
+            { Key: 'handler:sizeClass', Value: sizeClass },
           ],
         },
       ],
@@ -682,8 +682,8 @@ export class AwsService {
           ResourceType: 'volume',
           Tags: [
             { Key: 'Name', Value: name },
-            { Key: 'caisson', Value: 'true' },
-            { Key: 'caisson:name', Value: name },
+            { Key: 'handler', Value: 'true' },
+            { Key: 'handler:name', Value: name },
           ],
         },
       ],
@@ -747,14 +747,14 @@ export class AwsService {
   }
 
   /**
-   * List Caisson-managed volumes
+   * List Handler-managed volumes
    */
   async listVolumes(): Promise<Volume[]> {
     const client = await this.getClient();
 
     const command = new DescribeVolumesCommand({
       Filters: [
-        { Name: 'tag:caisson', Values: ['true'] },
+        { Name: 'tag:handler', Values: ['true'] },
       ],
     });
 

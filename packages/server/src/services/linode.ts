@@ -89,7 +89,7 @@ const DEFAULT_USER_DATA = `#!/bin/bash
 apt-get update && apt-get install -y git curl vim
 
 # Signal ready (create marker file)
-touch /tmp/caisson-ready
+touch /tmp/handler-ready
 `;
 
 export class LinodeService {
@@ -216,7 +216,7 @@ export class LinodeService {
   }
 
   /**
-   * List all Caisson-managed instances
+   * List all Handler-managed instances
    */
   async listInstances(forceRefresh: boolean = false): Promise<LinodeInstance[]> {
     if (!forceRefresh && this.isCacheValid() && this.instancesCache.length > 0) {
@@ -233,11 +233,11 @@ export class LinodeService {
       const result = await response.json() as { data: Record<string, unknown>[] };
       const allInstances = result.data || [];
 
-      // Filter by 'caisson' tag
+      // Filter by 'handler' tag
       const instances: LinodeInstance[] = allInstances
         .filter((inst) => {
           const tags = inst.tags as string[] | undefined;
-          return tags?.includes('caisson');
+          return tags?.includes('handler');
         })
         .map((inst) => this.apiToLinodeInstance(inst));
 
@@ -307,7 +307,7 @@ export class LinodeService {
       image,
       root_pass: rootPass,
       authorized_keys: [authorizedKeys],
-      tags: ['caisson'],
+      tags: ['handler'],
       booted: true,
     };
 
@@ -408,7 +408,7 @@ export class LinodeService {
     }
 
     execSync(
-      `ssh-keygen -t ed25519 -f "${LINODE_SSH_KEY_PATH}" -N "" -C "caisson-linode"`,
+      `ssh-keygen -t ed25519 -f "${LINODE_SSH_KEY_PATH}" -N "" -C "handler-linode"`,
       { stdio: 'pipe' },
     );
 

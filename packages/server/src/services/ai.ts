@@ -230,8 +230,8 @@ export async function searchMCPServersWithAI(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://caisson.dev',
-        'X-Title': 'Caisson',
+        'HTTP-Referer': 'https://handler.dev',
+        'X-Title': 'Handler',
       },
       body: JSON.stringify({
         model: getModel(),
@@ -304,8 +304,8 @@ export async function streamDockerfileAssistant(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://caisson.dev',
-        'X-Title': 'Caisson',
+        'HTTP-Referer': 'https://handler.dev',
+        'X-Title': 'Handler',
       },
       body: JSON.stringify({
         model: getModel(),
@@ -398,8 +398,8 @@ export async function streamMCPInstallInstructions(
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://caisson.dev',
-        'X-Title': 'Caisson',
+        'HTTP-Referer': 'https://handler.dev',
+        'X-Title': 'Handler',
       },
       body: JSON.stringify({
         model: getModel(),

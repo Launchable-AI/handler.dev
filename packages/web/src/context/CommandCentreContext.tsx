@@ -17,7 +17,7 @@ const DEFAULT_SIDEBAR_WIDTH = 220;
 
 // Initial state
 // Load persisted view mode from localStorage
-const savedViewMode = (typeof window !== 'undefined' && localStorage.getItem('caisson-view-mode')) as ViewMode | null;
+const savedViewMode = (typeof window !== 'undefined' && localStorage.getItem('handler-view-mode')) as ViewMode | null;
 
 const initialState: CommandCentreState = {
   sessions: [],
@@ -262,7 +262,7 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
       };
     }
     case 'SET_VIEW_MODE': {
-      localStorage.setItem('caisson-view-mode', action.payload);
+      localStorage.setItem('handler-view-mode', action.payload);
       return {
         ...state,
         viewMode: action.payload,

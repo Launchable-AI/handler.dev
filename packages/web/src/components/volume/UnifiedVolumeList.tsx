@@ -166,9 +166,9 @@ function VolumeCard({
                 <button
                   onClick={() => {
                     // Store the sandbox ID to highlight
-                    localStorage.setItem('caisson-highlight-sandbox', fullSandboxId);
+                    localStorage.setItem('handler-highlight-sandbox', fullSandboxId);
                     // Navigate to sandboxes tab using custom event
-                    window.dispatchEvent(new CustomEvent('caisson-navigate-tab', {
+                    window.dispatchEvent(new CustomEvent('handler-navigate-tab', {
                       detail: { tab: 'sandboxes' },
                     }));
                   }}

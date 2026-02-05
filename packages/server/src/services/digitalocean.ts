@@ -67,7 +67,7 @@ const DEFAULT_USER_DATA = `#!/bin/bash
 apt-get update && apt-get install -y git curl vim
 
 # Signal ready (create marker file)
-touch /tmp/caisson-ready
+touch /tmp/handler-ready
 `;
 
 export class DigitalOceanService {
@@ -215,7 +215,7 @@ export class DigitalOceanService {
   }
 
   /**
-   * List all Caisson-managed droplets
+   * List all Handler-managed droplets
    */
   async listDroplets(forceRefresh: boolean = false): Promise<DigitalOceanDroplet[]> {
     if (!forceRefresh && this.isCacheValid() && this.dropletsCache.length > 0) {
@@ -225,7 +225,7 @@ export class DigitalOceanService {
 
     try {
       await this.ensureInitialized();
-      const response = await this.apiRequest('GET', '/droplets?tag_name=caisson');
+      const response = await this.apiRequest('GET', '/droplets?tag_name=handler');
 
       if (!response.ok) {
         throw new Error(`Failed to list droplets: HTTP ${response.status}`);
@@ -294,7 +294,7 @@ export class DigitalOceanService {
       size: sizeSlug,
       image,
       ssh_keys: [sshKeyId],
-      tags: ['caisson'],
+      tags: ['handler'],
       user_data: request.userData || DEFAULT_USER_DATA,
     };
 
@@ -391,7 +391,7 @@ export class DigitalOceanService {
       console.log('[DigitalOceanService] Generating SSH keypair');
       await mkdir(SSH_KEYS_DIR, { recursive: true });
       execSync(
-        `ssh-keygen -t ed25519 -f "${DO_SSH_KEY_PATH}" -N "" -C "caisson-digitalocean"`,
+        `ssh-keygen -t ed25519 -f "${DO_SSH_KEY_PATH}" -N "" -C "handler-digitalocean"`,
         { stdio: 'pipe' },
       );
     }
@@ -401,7 +401,7 @@ export class DigitalOceanService {
 
     // Upload to DigitalOcean
     const response = await this.apiRequest('POST', '/account/keys', {
-      name: 'caisson-key',
+      name: 'handler-key',
       public_key: publicKey.trim(),
     });
 
@@ -411,7 +411,7 @@ export class DigitalOceanService {
       if (listResponse.ok) {
         const data = await listResponse.json() as { ssh_keys: any[] };
         for (const key of data.ssh_keys || []) {
-          if (key.name === 'caisson-key') {
+          if (key.name === 'handler-key') {
             await this.saveSshKeyId(key.id);
             return key.id;
           }

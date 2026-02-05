@@ -14,7 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export interface PersistedSession {
   sessionId: string;
   containerId: string;
-  tmuxSession: string;  // e.g., "caisson-abc123-1234567890"
+  tmuxSession: string;  // e.g., "handler-abc123-1234567890"
   createdAt: number;
   lastAccessedAt: number;
   user: string;
@@ -181,5 +181,5 @@ export function getAllSessions(): PersistedSession[] {
 export function generateTmuxSessionName(containerId: string): string {
   // Use short container ID + timestamp for uniqueness
   const shortId = containerId.slice(0, 8);
-  return `caisson-${shortId}-${Date.now()}`;
+  return `handler-${shortId}-${Date.now()}`;
 }

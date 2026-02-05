@@ -37,11 +37,11 @@ interface SandboxListProps {
 
 type ViewMode = 'compact' | 'detailed' | 'list';
 
-const VIEW_MODE_KEY = 'caisson-sandbox-view-mode';
-const BACKEND_FILTER_KEY = 'caisson-sandbox-backend-filter';
-const RUNNING_FILTER_KEY = 'caisson-sandbox-running-filter';
-const SEARCH_KEY = 'caisson-sandbox-search';
-const VISIBLE_COLUMNS_KEY = 'caisson-sandbox-visible-columns';
+const VIEW_MODE_KEY = 'handler-sandbox-view-mode';
+const BACKEND_FILTER_KEY = 'handler-sandbox-backend-filter';
+const RUNNING_FILTER_KEY = 'handler-sandbox-running-filter';
+const SEARCH_KEY = 'handler-sandbox-search';
+const VISIBLE_COLUMNS_KEY = 'handler-sandbox-visible-columns';
 
 // Column definitions for list view
 type ColumnId = 'status' | 'name' | 'backend' | 'resources' | 'connect' | 'image' | 'ip' | 'created' | 'volumes' | 'actions';
@@ -84,7 +84,7 @@ const BACKEND_OPTIONS: Array<{ value: SandboxBackend; label: string; icon: React
 type SortColumn = 'status' | 'name' | 'backend' | 'image' | 'ip' | 'created';
 type SortDirection = 'asc' | 'desc';
 
-const SORT_KEY = 'caisson-sandbox-sort';
+const SORT_KEY = 'handler-sandbox-sort';
 
 // Status priority for sorting (running first, then by activity level)
 const STATUS_PRIORITY: Record<string, number> = {
@@ -99,7 +99,7 @@ const STATUS_PRIORITY: Record<string, number> = {
   archived: 8,
 };
 
-const HIGHLIGHT_KEY = 'caisson-highlight-sandbox';
+const HIGHLIGHT_KEY = 'handler-highlight-sandbox';
 
 export function SandboxList({ onCreateClick, highlightedId }: SandboxListProps) {
   // Sandbox to highlight (set from other tabs like Volumes, or from quick launch)
@@ -131,10 +131,10 @@ export function SandboxList({ onCreateClick, highlightedId }: SandboxListProps) 
       // Small delay to ensure localStorage is set
       setTimeout(checkHighlight, 50);
     };
-    window.addEventListener('caisson-navigate-tab', handleNavigate);
+    window.addEventListener('handler-navigate-tab', handleNavigate);
     return () => {
       window.removeEventListener('focus', checkHighlight);
-      window.removeEventListener('caisson-navigate-tab', handleNavigate);
+      window.removeEventListener('handler-navigate-tab', handleNavigate);
     };
   }, []);
 

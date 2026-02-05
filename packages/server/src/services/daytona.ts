@@ -861,9 +861,9 @@ export class DaytonaService {
     if (cleanSnapshotName.includes(':')) {
       cleanSnapshotName = cleanSnapshotName.split(':')[0];
     }
-    // Ensure caisson- prefix for consistency
-    if (!cleanSnapshotName.startsWith('caisson-')) {
-      cleanSnapshotName = `caisson-${cleanSnapshotName}`;
+    // Ensure handler- prefix for consistency
+    if (!cleanSnapshotName.startsWith('handler-')) {
+      cleanSnapshotName = `handler-${cleanSnapshotName}`;
     }
 
     onProgress(`Pushing local image ${localImage} as snapshot ${cleanSnapshotName}`, 'info');

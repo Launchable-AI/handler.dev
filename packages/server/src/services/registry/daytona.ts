@@ -37,7 +37,7 @@ export class DaytonaRegistry implements ContainerRegistry {
     let cleanName = imageName;
     if (cleanName.includes('/')) cleanName = cleanName.split('/').pop() || cleanName;
     if (cleanName.includes(':')) cleanName = cleanName.split(':')[0];
-    if (!cleanName.startsWith('caisson-')) cleanName = `caisson-${cleanName}`;
+    if (!cleanName.startsWith('handler-')) cleanName = `handler-${cleanName}`;
 
     const versionTag = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     return `${this.registryUrl}/${this.project}/${cleanName}:${versionTag}`;

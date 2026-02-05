@@ -50,11 +50,11 @@ type Action =
   | { type: 'MINIMIZE_NODE'; payload: string }
   | { type: 'RESTORE_NODE'; payload: string };
 
-const STORAGE_KEY = 'caisson-canvas-nodes';
-const WORKSPACES_KEY = 'caisson-canvas-workspaces';
-const ACTIVE_WS_KEY = 'caisson-canvas-active-workspace';
-const SLIM_TOOLBAR_KEY = 'caisson-canvas-slim-toolbar';
-const MINIMIZED_KEY = 'caisson-canvas-minimized';
+const STORAGE_KEY = 'handler-canvas-nodes';
+const WORKSPACES_KEY = 'handler-canvas-workspaces';
+const ACTIVE_WS_KEY = 'handler-canvas-active-workspace';
+const SLIM_TOOLBAR_KEY = 'handler-canvas-slim-toolbar';
+const MINIMIZED_KEY = 'handler-canvas-minimized';
 
 function loadPersistedNodes(): WorktreeNode[] {
   try {

@@ -95,7 +95,7 @@ mkdir -p /home/azureuser/workspace /home/azureuser/.claude
 chown -R azureuser:azureuser /home/azureuser/workspace /home/azureuser/.claude
 
 # Signal ready (create marker file)
-touch /tmp/caisson-ready
+touch /tmp/handler-ready
 `;
 
 export class AzureService {
@@ -129,7 +129,7 @@ export class AzureService {
     this.clientId = azure.clientId;
     this.clientSecret = azure.clientSecret;
     this.subscriptionId = azure.subscriptionId;
-    this.resourceGroup = azure.resourceGroup || 'caisson-rg';
+    this.resourceGroup = azure.resourceGroup || 'handler-rg';
     this.region = azure.region || 'eastus';
     this.initialized = true;
 
@@ -273,7 +273,7 @@ export class AzureService {
     // Create the resource group
     const createResponse = await this.azureRequest('PUT', url, {
       location: this.region,
-      tags: { caisson: 'true' },
+      tags: { handler: 'true' },
     });
 
     if (!createResponse.ok) {
@@ -288,8 +288,8 @@ export class AzureService {
    * Ensure VNet and subnet exist, return subnet ID
    */
   private async ensureNetwork(): Promise<string> {
-    const vnetName = 'caisson-vnet';
-    const subnetName = 'caisson-subnet';
+    const vnetName = 'handler-vnet';
+    const subnetName = 'handler-subnet';
     const vnetUrl = `${this.networkBaseUrl()}/virtualNetworks/${vnetName}?api-version=${NETWORK_API_VERSION}`;
 
     const response = await this.azureRequest('GET', vnetUrl);
@@ -305,7 +305,7 @@ export class AzureService {
     // Create VNet with subnet
     const createResponse = await this.azureRequest('PUT', vnetUrl, {
       location: this.region,
-      tags: { caisson: 'true' },
+      tags: { handler: 'true' },
       properties: {
         addressSpace: {
           addressPrefixes: ['10.0.0.0/16'],
@@ -346,7 +346,7 @@ export class AzureService {
 
     const response = await this.azureRequest('PUT', url, {
       location: this.region,
-      tags: { caisson: 'true' },
+      tags: { handler: 'true' },
       properties: {
         publicIPAllocationMethod: 'Dynamic',
       },
@@ -377,7 +377,7 @@ export class AzureService {
 
     const response = await this.azureRequest('PUT', url, {
       location: this.region,
-      tags: { caisson: 'true' },
+      tags: { handler: 'true' },
       properties: {
         ipConfigurations: [
           {
@@ -407,7 +407,7 @@ export class AzureService {
    * Ensure a Network Security Group exists with SSH rule
    */
   private async ensureNetworkSecurityGroup(): Promise<string> {
-    const nsgName = 'caisson-nsg';
+    const nsgName = 'handler-nsg';
     const url = `${this.networkBaseUrl()}/networkSecurityGroups/${nsgName}?api-version=${NETWORK_API_VERSION}`;
 
     const response = await this.azureRequest('GET', url);
@@ -419,7 +419,7 @@ export class AzureService {
     // Create NSG with SSH rule
     const createResponse = await this.azureRequest('PUT', url, {
       location: this.region,
-      tags: { caisson: 'true' },
+      tags: { handler: 'true' },
       properties: {
         securityRules: [
           {
@@ -480,7 +480,7 @@ export class AzureService {
     const keyDataLen = Buffer.alloc(4);
     keyDataLen.writeUInt32BE(rawPubKey.length);
     const sshPubKey = Buffer.concat([keyTypeLen, keyType, keyDataLen, rawPubKey]);
-    const sshPubKeyStr = `ssh-ed25519 ${sshPubKey.toString('base64')} caisson@azure`;
+    const sshPubKeyStr = `ssh-ed25519 ${sshPubKey.toString('base64')} handler@azure`;
 
     await mkdir(SSH_KEYS_DIR, { recursive: true });
     await writeFile(AZURE_SSH_KEY_PATH, privateKey, { mode: 0o600 });
@@ -559,7 +559,7 @@ export class AzureService {
     return {
       vmName,
       vmId,
-      name: tags['caisson:name'] || vmName,
+      name: tags['handler:name'] || vmName,
       powerState,
       provisioningState: (properties.provisioningState as string) || 'Unknown',
       vmSize: hardwareProfile?.vmSize || 'Unknown',
@@ -573,7 +573,7 @@ export class AzureService {
   }
 
   /**
-   * List all Caisson-managed VMs
+   * List all Handler-managed VMs
    */
   async listInstances(forceRefresh: boolean = false): Promise<AzureInstance[]> {
     if (!forceRefresh && this.isCacheValid() && this.instancesCache.length > 0) {
@@ -592,14 +592,14 @@ export class AzureService {
       const data = await response.json() as { value: Array<Record<string, unknown>> };
       const vms = data.value || [];
 
-      // Filter for caisson-tagged VMs
-      const caissonVms = vms.filter((vm: Record<string, unknown>) => {
+      // Filter for handler-tagged VMs
+      const handlerVms = vms.filter((vm: Record<string, unknown>) => {
         const tags = (vm.tags as Record<string, string>) || {};
-        return tags['caisson'] === 'true';
+        return tags['handler'] === 'true';
       });
 
       const instances: AzureInstance[] = [];
-      for (const vm of caissonVms) {
+      for (const vm of handlerVms) {
         instances.push(await this.vmToAzureInstance(vm));
       }
 
@@ -665,9 +665,9 @@ export class AzureService {
     const vmBody = {
       location: this.region,
       tags: {
-        caisson: 'true',
-        'caisson:name': request.name,
-        'caisson:sizeClass': sizeClass,
+        handler: 'true',
+        'handler:name': request.name,
+        'handler:sizeClass': sizeClass,
       },
       properties: {
         hardwareProfile: {

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Download pre-built Firecracker image for Caisson
+# Download pre-built Firecracker image for Handler
 #
 # This downloads a pre-built Ubuntu 24.04 image that's ready for Firecracker,
 # with MMDS networking scripts already installed.
@@ -15,7 +15,7 @@
 set -e
 
 # Configuration
-BASE_URL="${CAISSON_IMAGE_URL:-https://s3.us-east-2.amazonaws.com/caisson.dev/images}"
+BASE_URL="${HANDLER_IMAGE_URL:-https://s3.us-east-2.amazonaws.com/handler.dev-public/images}"
 
 # Handle sudo: use SUDO_USER's home if running as root via sudo
 if [ -n "$SUDO_USER" ]; then
@@ -24,7 +24,7 @@ else
     REAL_HOME="$HOME"
 fi
 
-DATA_DIR="${CAISSON_DATA_DIR:-$REAL_HOME/.local/share/caisson}"
+DATA_DIR="${HANDLER_DATA_DIR:-$REAL_HOME/.local/share/handler}"
 IMAGES_DIR="$DATA_DIR/base-images"
 
 # Defaults
@@ -45,7 +45,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 step() { echo -e "\n${BLUE}==>${NC} $*"; }
 
 usage() {
-    echo "Download pre-built Firecracker image for Caisson"
+    echo "Download pre-built Firecracker image for Handler"
     echo ""
     echo "Usage: $0 [options]"
     echo ""
@@ -56,8 +56,8 @@ usage() {
     echo "  -h, --help         Show this help"
     echo ""
     echo "Environment variables:"
-    echo "  CAISSON_IMAGE_URL   Base URL for image downloads"
-    echo "  CAISSON_DATA_DIR    Data directory (default: ~/.local/share/caisson)"
+    echo "  HANDLER_IMAGE_URL   Base URL for image downloads"
+    echo "  HANDLER_DATA_DIR    Data directory (default: ~/.local/share/handler)"
     exit 0
 }
 
@@ -89,7 +89,7 @@ IMAGE_DIR="$IMAGES_DIR/$IMAGE_NAME"
 IMAGE_URL="$BASE_URL/$IMAGE_NAME/firecracker"
 
 echo "============================================"
-echo "  Caisson Firecracker Image Downloader"
+echo "  Handler Firecracker Image Downloader"
 echo "============================================"
 echo ""
 echo "Image:       $IMAGE_NAME"

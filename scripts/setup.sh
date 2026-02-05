@@ -1,7 +1,7 @@
 #!/bin/bash
-# Unified Caisson setup script
+# Unified Handler setup script
 #
-# This script sets up VM support for Caisson, including:
+# This script sets up VM support for Handler, including:
 # - TAP helper with network capabilities
 # - Network bridge and NAT rules
 # - Base VM images
@@ -24,7 +24,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/lib/os-utils.sh"
 
 # Configuration
-BRIDGE_NAME="caisson-br0"
+BRIDGE_NAME="handler-br0"
 BRIDGE_IP="172.31.0.1/24"
 
 # Handle sudo: use SUDO_USER's home if running as root via sudo
@@ -36,7 +36,7 @@ else
     REAL_USER="$USER"
 fi
 
-DATA_DIR="$REAL_HOME/.local/share/caisson"
+DATA_DIR="$REAL_HOME/.local/share/handler"
 
 # Defaults - both hypervisors optional, user chooses interactively
 INSTALL_CLOUD_HYPERVISOR=false
@@ -85,7 +85,7 @@ prompt_yn() {
 }
 
 usage() {
-    echo "Caisson Setup Script"
+    echo "Handler Setup Script"
     echo ""
     echo "Usage: sudo $0 [options]"
     echo ""
@@ -108,7 +108,7 @@ usage() {
     echo "  - Systemd service for persistence"
     echo "  - Base images for selected hypervisors (optional)"
     echo ""
-    echo "Data directory: \$HOME/.local/share/caisson"
+    echo "Data directory: \$HOME/.local/share/handler"
     exit 0
 }
 
@@ -151,7 +151,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "============================================"
-echo "  Caisson Setup"
+echo "  Handler Setup"
 echo "============================================"
 echo ""
 echo "Detected: $OS_NAME ($PKG_MANAGER)"
@@ -241,7 +241,7 @@ command -v qemu-img &> /dev/null || MISSING_PKGS+=("qemu-utils")
 command -v genisoimage &> /dev/null || command -v mkisofs &> /dev/null || MISSING_PKGS+=("genisoimage")
 
 # Check for Rust/Cargo (needed to build tap-helper if not pre-built)
-HELPER_BINARY="$PROJECT_ROOT/helpers/tap-helper/target/release/caisson-tap-helper"
+HELPER_BINARY="$PROJECT_ROOT/helpers/tap-helper/target/release/handler-tap-helper"
 if [ ! -f "$HELPER_BINARY" ]; then
     # Check for cargo in PATH or in user's rustup installation
     if ! command -v cargo &> /dev/null && [ ! -f "$REAL_HOME/.cargo/bin/cargo" ]; then
@@ -292,7 +292,7 @@ if [ "$SKIP_IMAGE" = false ] && { [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$
             log "Cloud-Hypervisor image already exists"
         else
             log "Downloading Cloud-Hypervisor image..."
-            sudo -H -u "$REAL_USER" env CAISSON_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/download-ubuntu-minimal.sh"
+            sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/download-ubuntu-minimal.sh"
         fi
     fi
 
@@ -302,7 +302,7 @@ if [ "$SKIP_IMAGE" = false ] && { [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$
             log "Firecracker image already exists"
         else
             log "Downloading Firecracker image..."
-            sudo -H -u "$REAL_USER" env CAISSON_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/download-fc-image.sh"
+            sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/download-fc-image.sh"
         fi
     fi
 else

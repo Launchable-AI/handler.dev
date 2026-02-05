@@ -60,7 +60,7 @@ export function Repos() {
           </p>
           <button
             onClick={() => {
-              window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'settings' } }));
+              window.dispatchEvent(new CustomEvent('handler-navigate-tab', { detail: { tab: 'settings' } }));
             }}
             className="flex items-center gap-2 px-4 py-2 mx-auto text-sm bg-[hsl(var(--text-primary))] text-[hsl(var(--bg-base))] hover:opacity-90 transition-opacity"
           >
@@ -144,7 +144,7 @@ export function Repos() {
                 Showing only selected repos.{' '}
                 <button
                   onClick={() => {
-                    window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'settings', subTab: 'github' } }));
+                    window.dispatchEvent(new CustomEvent('handler-navigate-tab', { detail: { tab: 'settings', subTab: 'github' } }));
                   }}
                   className="text-[hsl(var(--cyan))] hover:underline"
                 >

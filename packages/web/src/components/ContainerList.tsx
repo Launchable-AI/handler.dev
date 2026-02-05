@@ -11,7 +11,7 @@ interface ContainerListProps {
 
 type ViewMode = 'compact' | 'detailed' | 'list';
 
-const CONTAINER_VIEW_MODE_KEY = 'caisson-container-view-mode';
+const CONTAINER_VIEW_MODE_KEY = 'handler-container-view-mode';
 
 export function ContainerList({ onCreateClick }: ContainerListProps) {
   const { data: containers, isLoading, error } = useContainers();

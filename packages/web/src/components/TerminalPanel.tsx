@@ -66,7 +66,7 @@ export function useTerminalPanel() {
   return context;
 }
 
-const TERMINAL_POSITION_KEY = 'caisson-terminal-position';
+const TERMINAL_POSITION_KEY = 'handler-terminal-position';
 
 // Determine default position based on screen size
 function getDefaultPosition(): PanelPosition {

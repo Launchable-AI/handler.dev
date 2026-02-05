@@ -32,7 +32,7 @@ type ViewMode = 'all' | 'favorites';
 type DetailTab = 'info' | 'readme' | 'install';
 
 const PAGE_SIZE = 50;
-const PANEL_WIDTH_KEY = 'caisson-mcp-panel-width';
+const PANEL_WIDTH_KEY = 'handler-mcp-panel-width';
 const MIN_PANEL_WIDTH = 300;
 const MAX_PANEL_WIDTH = 800;
 const DEFAULT_PANEL_WIDTH = 450;

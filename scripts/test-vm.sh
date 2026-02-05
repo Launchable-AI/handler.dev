@@ -26,7 +26,7 @@ if [ -n "$SUDO_USER" ]; then
 else
     REAL_HOME="$HOME"
 fi
-SSH_KEY="$REAL_HOME/.local/share/caisson/ssh-keys/id_ed25519"
+SSH_KEY="$REAL_HOME/.local/share/handler/ssh-keys/id_ed25519"
 
 # Colors
 RED='\033[0;31m'
@@ -99,7 +99,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "============================================"
-echo "  Caisson VM Test"
+echo "  Handler VM Test"
 echo "============================================"
 echo ""
 echo "API URL:     $API_URL"

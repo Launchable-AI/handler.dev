@@ -32,7 +32,7 @@ azure.post('/configure', async (c) => {
       clientId: '',
       clientSecret: '',
       subscriptionId: '',
-      resourceGroup: 'caisson-rg',
+      resourceGroup: 'handler-rg',
       region: 'eastus',
       enabled: false,
     };
@@ -99,7 +99,7 @@ azure.post('/test', async (c) => {
     const testClientId = clientId || config.cloudBackends?.azure?.clientId;
     const testClientSecret = clientSecret || config.cloudBackends?.azure?.clientSecret;
     const testSubscriptionId = subscriptionId || config.cloudBackends?.azure?.subscriptionId;
-    const testResourceGroup = resourceGroup || config.cloudBackends?.azure?.resourceGroup || 'caisson-rg';
+    const testResourceGroup = resourceGroup || config.cloudBackends?.azure?.resourceGroup || 'handler-rg';
     const testRegion = region || config.cloudBackends?.azure?.region || 'eastus';
 
     if (!testTenantId || !testClientId || !testClientSecret || !testSubscriptionId) {

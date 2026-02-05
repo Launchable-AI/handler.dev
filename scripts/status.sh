@@ -1,5 +1,5 @@
 #!/bin/bash
-# Check Caisson installation status
+# Check Handler installation status
 #
 # Usage: ./scripts/status.sh
 #
@@ -10,11 +10,11 @@
 set -e
 
 # Configuration
-INSTALL_DIR="/usr/local/lib/caisson"
-BINARY_NAME="caisson-tap-helper"
-BRIDGE_NAME="caisson-br0"
-SERVICE_NAME="caisson-bridge.service"
-DATA_DIR="$HOME/.local/share/caisson"
+INSTALL_DIR="/usr/local/lib/handler"
+BINARY_NAME="handler-tap-helper"
+BRIDGE_NAME="handler-br0"
+SERVICE_NAME="handler-bridge.service"
+DATA_DIR="$HOME/.local/share/handler"
 
 # Colors
 RED='\033[0;31m'
@@ -33,7 +33,7 @@ fail() { echo -e "${RED}[!!]${NC} $*"; ERRORS=$((ERRORS + 1)); }
 info() { echo -e "${BLUE}[i]${NC} $*"; }
 
 echo "============================================"
-echo "  Caisson Installation Status"
+echo "  Handler Installation Status"
 echo "============================================"
 echo ""
 
@@ -96,10 +96,10 @@ fi
 # Check NAT rules
 if command -v nft &> /dev/null; then
     # nft requires root to query tables, so use sudo if available
-    if sudo -n nft list table ip caisson &> /dev/null 2>&1; then
-        ok "NAT rules configured (nftables: caisson table)"
-    elif nft list table ip caisson &> /dev/null 2>&1; then
-        ok "NAT rules configured (nftables: caisson table)"
+    if sudo -n nft list table ip handler &> /dev/null 2>&1; then
+        ok "NAT rules configured (nftables: handler table)"
+    elif nft list table ip handler &> /dev/null 2>&1; then
+        ok "NAT rules configured (nftables: handler table)"
     else
         # Can't determine - might be permission issue or actually missing
         warn "NAT rules status unknown (run with sudo to verify)"
@@ -204,7 +204,7 @@ if [ $ERRORS -eq 0 ]; then
     echo -e "${GREEN}  Status: Ready${NC}"
     echo "============================================"
     echo ""
-    echo "Caisson is ready to create VMs."
+    echo "Handler is ready to create VMs."
     exit 0
 else
     echo -e "${RED}  Status: Setup Incomplete${NC}"

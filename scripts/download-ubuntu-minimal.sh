@@ -3,13 +3,13 @@
 set -e
 
 # Handle data directory: prefer explicit env var, then check for sudo context
-if [ -n "$CAISSON_DATA_DIR" ]; then
-    DATA_DIR="$CAISSON_DATA_DIR"
+if [ -n "$HANDLER_DATA_DIR" ]; then
+    DATA_DIR="$HANDLER_DATA_DIR"
 elif [ -n "$SUDO_USER" ]; then
     REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-    DATA_DIR="$REAL_HOME/.local/share/caisson"
+    DATA_DIR="$REAL_HOME/.local/share/handler"
 else
-    DATA_DIR="${HOME}/.local/share/caisson"
+    DATA_DIR="${HOME}/.local/share/handler"
 fi
 
 BASE_IMAGES_DIR="$DATA_DIR/base-images"

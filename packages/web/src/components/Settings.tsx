@@ -550,7 +550,7 @@ export function Settings() {
               <div>
                 <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Remote Access Configuration</h3>
                 <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1">
-                  Configure SSH settings for accessing Caisson when running on a remote server
+                  Configure SSH settings for accessing Handler when running on a remote server
                 </p>
               </div>
 

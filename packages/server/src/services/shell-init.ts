@@ -28,13 +28,13 @@ const SHELL_INIT_SCRIPT = [
   // Set up Claude Code hooks for status tracking
   CLAUDE_HOOKS_INIT,
   // Helper to read Claude Code status from hook-written file, falling back to process detection
-  `__caisson_claude_status() { if [ -f ~/.claude-status ]; then cat ~/.claude-status; elif pgrep -x claude >/dev/null 2>&1; then echo idle; else echo off; fi; }`,
+  `__handler_claude_status() { if [ -f ~/.claude-status ]; then cat ~/.claude-status; elif pgrep -x claude >/dev/null 2>&1; then echo idle; else echo off; fi; }`,
   // Define the prompt hook function
-  `__caisson_prompt() { local b cs; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); cs=$(__caisson_claude_status); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; }`,
+  `__handler_prompt() { local b cs; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); cs=$(__handler_claude_status); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; }`,
   // Append to PROMPT_COMMAND (preserve existing value if any)
-  `PROMPT_COMMAND="__caisson_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`,
+  `PROMPT_COMMAND="__handler_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`,
   // Background watcher: emit OSC on Claude status changes (every 2s), independent of prompt
-  `(__cs_prev=""; while true; do cs=$(__caisson_claude_status); if [ "$cs" != "$__cs_prev" ]; then __cs_prev="$cs"; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; fi; sleep 2; done &) 2>/dev/null`,
+  `(__cs_prev=""; while true; do cs=$(__handler_claude_status); if [ "$cs" != "$__cs_prev" ]; then __cs_prev="$cs"; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; fi; sleep 2; done &) 2>/dev/null`,
 ].join('; ');
 
 /**

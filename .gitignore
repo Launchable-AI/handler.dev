@@ -37,5 +37,8 @@ pnpm-debug.log*
 # Test coverage
 coverage/
 
+# Working/scratch scripts (local only)
+working_scripts/
+
 # Claude Code local settings
 .claude/

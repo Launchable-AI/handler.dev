@@ -1,7 +1,7 @@
 {
   "$schema": "./base-images.schema.json",
-  "description": "Available base images for Caisson VMs",
-  "baseUrl": "https://caisson-images.s3.amazonaws.com",
+  "description": "Available base images for Handler VMs",
+  "baseUrl": "https://s3.us-east-2.amazonaws.com/handler.dev-public",
   "images": {
     "ubuntu-24.04": {
       "description": "Ubuntu 24.04 LTS minimal server",

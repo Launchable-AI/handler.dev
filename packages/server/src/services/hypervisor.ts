@@ -1,6 +1,6 @@
 /**
  * CloudHypervisorService - Cloud-Hypervisor VM Management
- * Manages virtual machines using cloud-hypervisor for the Caisson platform.
+ * Manages virtual machines using cloud-hypervisor for the Handler platform.
  */
 
 import { EventEmitter } from 'events';

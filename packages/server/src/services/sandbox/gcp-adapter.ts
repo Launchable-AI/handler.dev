@@ -44,7 +44,7 @@ function mapGcpStatus(status: string): SandboxStatus {
  * Converts a GCP instance to Sandbox
  */
 function instanceToSandbox(instance: GcpInstance, projectId: string): Sandbox {
-  const sizeClass = (instance.labels['caisson-size-class'] || 'small') as GcpSizeClass;
+  const sizeClass = (instance.labels['handler-size-class'] || 'small') as GcpSizeClass;
   const preset = GCP_SIZE_PRESETS[sizeClass] || GCP_SIZE_PRESETS.small;
 
   const meta: GcpMeta = {
@@ -79,9 +79,9 @@ function instanceToSandbox(instance: GcpInstance, projectId: string): Sandbox {
     terminalType: 'ssh',
     sshHost: instance.publicIp,
     sshPort: 22,
-    sshUser: 'caisson',
+    sshUser: 'handler',
     sshCommand: instance.publicIp
-      ? `ssh -i ${GCP_SSH_KEY_PATH} caisson@${instance.publicIp}`
+      ? `ssh -i ${GCP_SSH_KEY_PATH} handler@${instance.publicIp}`
       : undefined,
 
     // Metadata

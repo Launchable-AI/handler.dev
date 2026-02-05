@@ -35,7 +35,7 @@ export interface TerminalInstanceProps {
 }
 
 // Session storage key prefix
-const SESSION_STORAGE_KEY = 'caisson-terminal-session-';
+const SESSION_STORAGE_KEY = 'handler-terminal-session-';
 
 export function TerminalInstance({
   target,

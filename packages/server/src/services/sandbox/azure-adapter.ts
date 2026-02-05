@@ -45,7 +45,7 @@ function mapAzurePowerState(state: AzurePowerState): SandboxStatus {
  * Converts an Azure instance to Sandbox
  */
 function instanceToSandbox(instance: AzureInstance): Sandbox {
-  const sizeClass = (instance.tags['caisson:sizeClass'] || 'small') as AzureSizeClass;
+  const sizeClass = (instance.tags['handler:sizeClass'] || 'small') as AzureSizeClass;
   const preset = AZURE_SIZE_PRESETS[sizeClass] || AZURE_SIZE_PRESETS.small;
 
   const meta: AzureMeta = {

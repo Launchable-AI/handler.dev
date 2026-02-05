@@ -1,30 +1,30 @@
 #!/bin/bash
-# Uninstall Caisson VM support
+# Uninstall Handler VM support
 #
 # This script removes all system modifications made by the setup scripts.
 #
 # Usage: sudo ./scripts/uninstall.sh [options]
 #
 # Options:
-#   --keep-data    Preserve ~/.local/share/caisson/ (VMs, images, keys)
+#   --keep-data    Preserve ~/.local/share/handler/ (VMs, images, keys)
 #   --force        Don't prompt for confirmation
 #   -h, --help     Show this help
 
 set -e
 
 # Configuration
-INSTALL_DIR="/usr/local/lib/caisson"
-BINARY_NAME="caisson-tap-helper"
-BRIDGE_NAME="caisson-br0"
-SERVICE_NAME="caisson-bridge.service"
-SYSCTL_FILE="/etc/sysctl.d/99-caisson.conf"
-NFTABLES_TABLE="caisson"
+INSTALL_DIR="/usr/local/lib/handler"
+BINARY_NAME="handler-tap-helper"
+BRIDGE_NAME="handler-br0"
+SERVICE_NAME="handler-bridge.service"
+SYSCTL_FILE="/etc/sysctl.d/99-handler.conf"
+NFTABLES_TABLE="handler"
 
 # Handle sudo: use SUDO_USER's home if running as root via sudo
 if [ -n "$SUDO_USER" ]; then
-    DATA_DIR=$(getent passwd "$SUDO_USER" | cut -d: -f6)/.local/share/caisson
+    DATA_DIR=$(getent passwd "$SUDO_USER" | cut -d: -f6)/.local/share/handler
 else
-    DATA_DIR="$HOME/.local/share/caisson"
+    DATA_DIR="$HOME/.local/share/handler"
 fi
 
 # Defaults
@@ -44,12 +44,12 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 step() { echo -e "\n${BLUE}==>${NC} $*"; }
 
 usage() {
-    echo "Uninstall Caisson VM support"
+    echo "Uninstall Handler VM support"
     echo ""
     echo "Usage: sudo $0 [options]"
     echo ""
     echo "Options:"
-    echo "  --keep-data    Preserve ~/.local/share/caisson/ (VMs, images, keys)"
+    echo "  --keep-data    Preserve ~/.local/share/handler/ (VMs, images, keys)"
     echo "  --force        Don't prompt for confirmation"
     echo "  -h, --help     Show this help"
     echo ""
@@ -90,7 +90,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "============================================"
-echo "  Caisson Uninstaller"
+echo "  Handler Uninstaller"
 echo "============================================"
 echo ""
 echo "This will remove:"
@@ -275,7 +275,7 @@ echo "============================================"
 echo -e "${GREEN}  Uninstall Complete${NC}"
 echo "============================================"
 echo ""
-echo "Caisson VM support has been removed."
+echo "Handler VM support has been removed."
 echo ""
 if [ "$KEEP_DATA" = true ] && [ -d "$DATA_DIR" ]; then
     echo "User data preserved at: $DATA_DIR"

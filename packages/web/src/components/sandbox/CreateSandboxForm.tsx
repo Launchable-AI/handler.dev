@@ -21,15 +21,15 @@ function generateRandomSuffix(): string {
   return Math.random().toString(36).substring(2, 8);
 }
 
-// Format display name: remove registry paths, "caisson-" prefix, and timestamp/latest tags
+// Format display name: remove registry paths, "handler-" prefix, and timestamp/latest tags
 function formatDisplayName(name: string): string {
   let display = name;
   // Remove registry path (e.g., "cr.app.daytona.io/sbox-transient/my-image" -> "my-image")
   if (display.includes('/')) {
     display = display.split('/').pop() || display;
   }
-  // Remove caisson- prefix
-  if (display.startsWith('caisson-')) {
+  // Remove handler- prefix
+  if (display.startsWith('handler-')) {
     display = display.slice(8);
   }
   // Remove :latest tag
@@ -128,7 +128,7 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
   const [daytonaSnapshots, setDaytonaSnapshots] = useState<DaytonaSnapshot[]>([]);
   const [isLoadingSnapshots, setIsLoadingSnapshots] = useState(false);
   const [showDaytonaManaged, setShowDaytonaManaged] = useState<boolean>(() => {
-    const saved = localStorage.getItem('caisson:show-daytona-managed');
+    const saved = localStorage.getItem('handler:show-daytona-managed');
     return saved === 'true'; // Default to false (hide managed)
   });
 
@@ -198,7 +198,7 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
 
   // Persist show Daytona-managed preference
   useEffect(() => {
-    localStorage.setItem('caisson:show-daytona-managed', String(showDaytonaManaged));
+    localStorage.setItem('handler:show-daytona-managed', String(showDaytonaManaged));
   }, [showDaytonaManaged]);
 
   const loadDaytonaSnapshots = async () => {

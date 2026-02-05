@@ -214,7 +214,7 @@ aws.get('/ssh-key', async (c) => {
     }
 
     c.header('Content-Type', 'application/x-pem-file');
-    c.header('Content-Disposition', 'attachment; filename="caisson-key.pem"');
+    c.header('Content-Disposition', 'attachment; filename="handler-key.pem"');
 
     return c.body(privateKey);
   } catch (err) {
@@ -222,7 +222,7 @@ aws.get('/ssh-key', async (c) => {
   }
 });
 
-// GET /backends/aws/volumes - List Caisson-managed volumes
+// GET /backends/aws/volumes - List Handler-managed volumes
 aws.get('/volumes', async (c) => {
   try {
     const awsService = getAwsService();

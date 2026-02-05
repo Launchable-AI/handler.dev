@@ -131,10 +131,10 @@ function App() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createFormInitial, setCreateFormInitial] = useState<{ backend?: string; image?: string }>({});
   const [activeTab, setActiveTab] = useState<Tab>(() => {
-    const saved = localStorage.getItem('caisson:activeTab');
+    const saved = localStorage.getItem('handler:activeTab');
     // Migrate old command-centre value
     if (saved === 'command-centre') {
-      localStorage.setItem('caisson:activeTab', 'agents');
+      localStorage.setItem('handler:activeTab', 'agents');
       return 'agents';
     }
     if (saved && VALID_TABS.includes(saved as Tab)) {
@@ -215,7 +215,7 @@ function App() {
   // Collapsible groups state
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
     try {
-      const saved = localStorage.getItem('caisson:expandedGroups');
+      const saved = localStorage.getItem('handler:expandedGroups');
       if (saved) return JSON.parse(saved);
     } catch {}
     return { extensions: true, resources: true };
@@ -223,12 +223,12 @@ function App() {
 
   // Persist active tab
   useEffect(() => {
-    localStorage.setItem('caisson:activeTab', activeTab);
+    localStorage.setItem('handler:activeTab', activeTab);
   }, [activeTab]);
 
   // Persist expanded groups
   useEffect(() => {
-    localStorage.setItem('caisson:expandedGroups', JSON.stringify(expandedGroups));
+    localStorage.setItem('handler:expandedGroups', JSON.stringify(expandedGroups));
   }, [expandedGroups]);
 
   // Listen for tab change requests from other components (e.g., volume list -> sandboxes)
@@ -238,9 +238,9 @@ function App() {
         setActiveTab(e.detail.tab);
       }
     };
-    window.addEventListener('caisson-navigate-tab', handleTabChange as EventListener);
+    window.addEventListener('handler-navigate-tab', handleTabChange as EventListener);
     return () => {
-      window.removeEventListener('caisson-navigate-tab', handleTabChange as EventListener);
+      window.removeEventListener('handler-navigate-tab', handleTabChange as EventListener);
     };
   }, []);
 
@@ -250,9 +250,9 @@ function App() {
       setCreateFormInitial(e.detail || {});
       setShowCreateForm(true);
     };
-    window.addEventListener('caisson-create-sandbox', handleCreateSandbox as EventListener);
+    window.addEventListener('handler-create-sandbox', handleCreateSandbox as EventListener);
     return () => {
-      window.removeEventListener('caisson-create-sandbox', handleCreateSandbox as EventListener);
+      window.removeEventListener('handler-create-sandbox', handleCreateSandbox as EventListener);
     };
   }, []);
 
@@ -289,9 +289,9 @@ function App() {
         setShowCreateForm(true);
       }
     };
-    window.addEventListener('caisson-launch-sandbox', handleLaunchSandbox as unknown as EventListener);
+    window.addEventListener('handler-launch-sandbox', handleLaunchSandbox as unknown as EventListener);
     return () => {
-      window.removeEventListener('caisson-launch-sandbox', handleLaunchSandbox as unknown as EventListener);
+      window.removeEventListener('handler-launch-sandbox', handleLaunchSandbox as unknown as EventListener);
     };
   }, [containers, vms, createContainerMutation, createVmMutation]);
 
@@ -408,12 +408,12 @@ function App() {
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-[hsl(var(--border))]">
           <div className="relative">
-            <img src="/logo.png" alt="Caisson" className="h-7 w-7" />
+            <img src="/logo.png" alt="Handler" className="h-7 w-7" />
             <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[hsl(var(--green))] animate-pulse-glow" />
           </div>
           <div>
             <h1 className="text-sm font-semibold text-[hsl(var(--text-primary))] tracking-tight">
-              Caisson
+              Handler
             </h1>
             <p className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider">
               Control Panel

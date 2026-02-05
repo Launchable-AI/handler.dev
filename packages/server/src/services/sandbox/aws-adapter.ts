@@ -45,7 +45,7 @@ function mapEc2State(state: Ec2InstanceState): SandboxStatus {
  * Converts an AWS instance to Sandbox
  */
 function instanceToSandbox(instance: AwsInstance, region: string): Sandbox {
-  const sizeClass = (instance.tags['caisson:sizeClass'] || 'small') as AwsSizeClass;
+  const sizeClass = (instance.tags['handler:sizeClass'] || 'small') as AwsSizeClass;
   const preset = AWS_SIZE_PRESETS[sizeClass] || AWS_SIZE_PRESETS.small;
 
   const meta: AwsMeta = {

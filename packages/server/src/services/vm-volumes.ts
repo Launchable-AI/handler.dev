@@ -523,7 +523,7 @@ let vmVolumeService: VmVolumeService | null = null;
 export function getVmVolumeService(dataDir?: string): VmVolumeService {
   if (!vmVolumeService) {
     if (!dataDir) {
-      dataDir = `${process.env.HOME}/.local/share/caisson`;
+      dataDir = `${process.env.HOME}/.local/share/handler`;
     }
     vmVolumeService = new VmVolumeService(dataDir);
   }

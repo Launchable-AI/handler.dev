@@ -1,5 +1,5 @@
 [package]
-name = "caisson-tap-helper"
+name = "handler-tap-helper"
 version = "0.1.0"
 edition = "2021"
 description = "Minimal privileged helper for TAP device creation"

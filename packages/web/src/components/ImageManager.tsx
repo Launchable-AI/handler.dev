@@ -70,7 +70,7 @@ export function ImageManager() {
   const [isLoadingSnapshots, setIsLoadingSnapshots] = useState(false);
   const [deletingSnapshotId, setDeletingSnapshotId] = useState<string | null>(null);
   const [showDaytonaManaged, setShowDaytonaManaged] = useState<boolean>(() => {
-    const saved = localStorage.getItem('caisson:show-daytona-managed');
+    const saved = localStorage.getItem('handler:show-daytona-managed');
     return saved !== 'false'; // Default to true
   });
 
@@ -84,15 +84,15 @@ export function ImageManager() {
     return snapshot.imageName?.startsWith('daytonaio/') || snapshot.general;
   };
 
-  // Format display name: remove registry paths, "caisson-" prefix, and timestamp/latest tags
+  // Format display name: remove registry paths, "handler-" prefix, and timestamp/latest tags
   const formatDisplayName = (name: string): string => {
     let display = name;
     // Remove registry path (e.g., "cr.app.daytona.io/sbox-transient/my-image" -> "my-image")
     if (display.includes('/')) {
       display = display.split('/').pop() || display;
     }
-    // Remove caisson- prefix
-    if (display.startsWith('caisson-')) {
+    // Remove handler- prefix
+    if (display.startsWith('handler-')) {
       display = display.slice(8);
     }
     // Remove :latest tag
@@ -130,8 +130,8 @@ export function ImageManager() {
       // Clear highlight after 3 seconds
       setTimeout(() => setHighlightedImage(null), 3000);
     };
-    window.addEventListener('caisson-highlight-image' as any, handleHighlightImage);
-    return () => window.removeEventListener('caisson-highlight-image' as any, handleHighlightImage);
+    window.addEventListener('handler-highlight-image' as any, handleHighlightImage);
+    return () => window.removeEventListener('handler-highlight-image' as any, handleHighlightImage);
   }, [refetchVmBaseImages]);
 
   // Load Daytona snapshots when tab is selected
@@ -145,7 +145,7 @@ export function ImageManager() {
 
   // Persist show Daytona-managed preference
   useEffect(() => {
-    localStorage.setItem('caisson:show-daytona-managed', String(showDaytonaManaged));
+    localStorage.setItem('handler:show-daytona-managed', String(showDaytonaManaged));
   }, [showDaytonaManaged]);
 
   // Filter snapshots based on managed toggle
@@ -194,10 +194,10 @@ export function ImageManager() {
         const result = await api.listDaytonaSnapshots({ limit: 100 });
         setDaytonaSnapshots(result.items);
 
-        // Look for our snapshot (name might have caisson- prefix added)
+        // Look for our snapshot (name might have handler- prefix added)
         const snapshot = result.items.find(s =>
           s.name === snapshotName ||
-          s.name === `caisson-${snapshotName}` ||
+          s.name === `handler-${snapshotName}` ||
           s.name.includes(snapshotName)
         );
 
@@ -352,7 +352,7 @@ export function ImageManager() {
   // Launch sandbox from image (for Docker/Daytona - opens form with pre-selected values)
   const handleLaunchFromImage = async (imageTag: string, backend: 'docker' | 'daytona') => {
     // Open create sandbox form with the selected image pre-selected
-    window.dispatchEvent(new CustomEvent('caisson-create-sandbox', {
+    window.dispatchEvent(new CustomEvent('handler-create-sandbox', {
       detail: { backend, image: imageTag }
     }));
   };
@@ -542,7 +542,7 @@ export function ImageManager() {
                               <button
                                 onClick={() => {
                                   // Open create sandbox form with firecracker backend and this image pre-selected
-                                  window.dispatchEvent(new CustomEvent('caisson-create-sandbox', {
+                                  window.dispatchEvent(new CustomEvent('handler-create-sandbox', {
                                     detail: { backend: 'firecracker', image: vmImage.name }
                                   }));
                                 }}

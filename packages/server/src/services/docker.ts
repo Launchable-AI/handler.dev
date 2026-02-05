@@ -5,8 +5,8 @@ import { getConfig } from './config.js';
 
 const docker = new Docker();
 
-const CONTAINER_LABEL = 'caisson';
-const IMAGE_LABEL = 'caisson';
+const CONTAINER_LABEL = 'handler';
+const IMAGE_LABEL = 'handler';
 
 export async function listContainers(): Promise<ContainerInfo[]> {
   const containers = await docker.listContainers({
@@ -138,8 +138,8 @@ export async function renameContainer(id: string, newName: string): Promise<void
 }
 
 export async function listImages(): Promise<ImageInfo[]> {
-  // Get caisson-labeled images
-  const caissonImages = await docker.listImages({
+  // Get handler-labeled images
+  const handlerImages = await docker.listImages({
     filters: { label: [IMAGE_LABEL] },
   });
 
@@ -151,7 +151,7 @@ export async function listImages(): Promise<ImageInfo[]> {
 
   // Combine and dedupe by ID
   const seenIds = new Set<string>();
-  const images = [...caissonImages, ...ubuntuImage].filter(img => {
+  const images = [...handlerImages, ...ubuntuImage].filter(img => {
     if (seenIds.has(img.Id)) return false;
     seenIds.add(img.Id);
     return true;
@@ -167,12 +167,12 @@ export async function listImages(): Promise<ImageInfo[]> {
 
       // Decode Dockerfile content if present
       let dockerfile: string | undefined;
-      if (labels['caisson.dockerfile']) {
+      if (labels['handler.dockerfile']) {
         try {
-          dockerfile = Buffer.from(labels['caisson.dockerfile'], 'base64').toString('utf-8');
+          dockerfile = Buffer.from(labels['handler.dockerfile'], 'base64').toString('utf-8');
         } catch {
           // If decoding fails, use raw value
-          dockerfile = labels['caisson.dockerfile'];
+          dockerfile = labels['handler.dockerfile'];
         }
       }
 
@@ -182,7 +182,7 @@ export async function listImages(): Promise<ImageInfo[]> {
         size: img.Size,
         created: new Date(img.Created * 1000).toISOString(),
         dockerfile,
-        dockerfileName: labels['caisson.dockerfile-name'],
+        dockerfileName: labels['handler.dockerfile-name'],
       });
     } catch {
       // If inspection fails, return basic info
@@ -305,10 +305,10 @@ export async function buildImageWithLogs(
   // Build labels including Dockerfile content (base64 encoded)
   const labels: Record<string, string> = {
     [IMAGE_LABEL]: 'true',
-    'caisson.dockerfile': Buffer.from(dockerfile).toString('base64'),
+    'handler.dockerfile': Buffer.from(dockerfile).toString('base64'),
   };
   if (dockerfileName) {
-    labels['caisson.dockerfile-name'] = dockerfileName;
+    labels['handler.dockerfile-name'] = dockerfileName;
   }
 
   return new Promise((resolve, reject) => {

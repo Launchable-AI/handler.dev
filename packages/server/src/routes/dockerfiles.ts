@@ -231,7 +231,7 @@ dockerfiles.post('/:name/build', async (c) => {
     // Docker image tags must be lowercase
     // Use provided version or default to 'latest'
     const tagVersion = version || 'latest';
-    const tag = `caisson-${name.toLowerCase()}:${tagVersion}`;
+    const tag = `handler-${name.toLowerCase()}:${tagVersion}`;
 
     // Inject SSH public key (replaces {{PUBLIC_KEY}} placeholder)
     const publicKey = await getPublicKey();

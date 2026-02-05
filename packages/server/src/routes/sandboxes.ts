@@ -791,7 +791,7 @@ sandboxes.post('/:id/upload', async (c) => {
       : sandbox.backend === 'daytona' ? '/home/daytona'
       : sandbox.backend === 'aws' ? '/home/ubuntu'
       : sandbox.backend === 'azure' ? '/home/azureuser'
-      : sandbox.backend === 'gcp' ? '/home/caisson'
+      : sandbox.backend === 'gcp' ? '/home/handler'
       : sandbox.backend === 'digitalocean' ? '/root'
       : sandbox.backend === 'linode' ? '/root'
       : '/home/agent';  // firecracker/cloud-hypervisor
@@ -1098,7 +1098,7 @@ sandboxes.post('/:id/upload-directory', async (c) => {
       : sandbox.backend === 'daytona' ? '/home/daytona'
       : sandbox.backend === 'aws' ? '/home/ubuntu'
       : sandbox.backend === 'azure' ? '/home/azureuser'
-      : sandbox.backend === 'gcp' ? '/home/caisson'
+      : sandbox.backend === 'gcp' ? '/home/handler'
       : sandbox.backend === 'digitalocean' ? '/root'
       : sandbox.backend === 'linode' ? '/root'
       : '/home/agent';  // firecracker/cloud-hypervisor

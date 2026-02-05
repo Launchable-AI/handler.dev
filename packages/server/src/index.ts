@@ -14,7 +14,7 @@ import { getCloudHypervisorService } from './services/hypervisor.js';
 const execAsync = promisify(exec);
 
 // PID file location - use /tmp for simplicity
-const PID_FILE = '/tmp/caisson-server.pid';
+const PID_FILE = '/tmp/handler-server.pid';
 
 /**
  * Check if a port is available
@@ -453,7 +453,7 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
                   break;
                 }
 
-                const sshUser = msg.sshUser || (backendType === 'azure' ? 'azureuser' : backendType === 'gcp' ? 'caisson' : 'root');
+                const sshUser = msg.sshUser || (backendType === 'azure' ? 'azureuser' : backendType === 'gcp' ? 'handler' : 'root');
 
                 console.log(`[WS Terminal] Creating ${backendType} terminal for instance: ${msg.instanceId}`);
 
@@ -619,7 +619,7 @@ async function main() {
   server.listen(port, async () => {
     // Write PID file after successful startup
     writePidFile();
-    console.log(`\n🚀 Caisson API (PID: ${process.pid})`);
+    console.log(`\n🚀 Handler API (PID: ${process.pid})`);
     console.log(`   Running on http://localhost:${port}`);
     console.log(`   WebSocket: ws://localhost:${port}/ws/terminal`);
     console.log(`   API docs: http://localhost:${port}/api/health\n`);

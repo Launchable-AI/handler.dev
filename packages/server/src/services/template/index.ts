@@ -507,7 +507,7 @@ let templateServiceInstance: TemplateService | null = null;
 export function getTemplateService(dataDir?: string): TemplateService {
   if (!templateServiceInstance) {
     if (!dataDir) {
-      dataDir = `${process.env.HOME}/.local/share/caisson`;
+      dataDir = `${process.env.HOME}/.local/share/handler`;
     }
     templateServiceInstance = new TemplateService(dataDir);
   }
