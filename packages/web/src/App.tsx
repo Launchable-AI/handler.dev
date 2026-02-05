@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle, ChevronDown, ChevronRight, Store, Github } from 'lucide-react';
+import { Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle, ChevronDown, ChevronRight, Store, Github, Zap } from 'lucide-react';
 import { useExchangeGitHubCode } from './hooks/useGitHub';
 import { Settings } from './components/Settings';
 import { MCPPage } from './components/MCPPage';
@@ -634,8 +634,8 @@ function App() {
             }`}
             title={quickLaunchConfig ? `Quick launch: ${quickLaunchConfig.backend} (${quickLaunchConfig.namePrefix || 'sandbox'})` : 'Open sandbox creation form'}
           >
-            <Plus className="h-3.5 w-3.5" />
-            New Sandbox
+            <Zap className="h-3.5 w-3.5" />
+            Quick Launch
             {quickLaunchConfig && <span className="text-[10px] opacity-70">({quickLaunchConfig.backend})</span>}
           </button>
         </div>

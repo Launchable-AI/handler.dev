@@ -57,7 +57,7 @@ export function ImageManager() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [renamingImageTag, setRenamingImageTag] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [launchingImageTag, setLaunchingImageTag] = useState<string | null>(null);
+  const [launchingImageTag] = useState<string | null>(null);
   const [pushProgress, setPushProgress] = useState<string[]>([]);
 
   // Registry selection
@@ -349,32 +349,12 @@ export function ImageManager() {
     }
   };
 
-  // Launch sandbox from image
+  // Launch sandbox from image (for Docker/Daytona - opens form with pre-selected values)
   const handleLaunchFromImage = async (imageTag: string, backend: 'docker' | 'daytona') => {
-    setLaunchingImageTag(imageTag);
-
-    // Generate a sandbox name from the image tag
-    const baseName = imageTag.split(':')[0].replace(/[^a-zA-Z0-9-]/g, '-');
-    const sandboxName = `${baseName}-${Date.now().toString(36)}`;
-
-    try {
-      await api.createSandbox({
-        name: sandboxName,
-        backend,
-        image: imageTag,
-      });
-
-      // Navigate to sandboxes tab and highlight the new sandbox
-      window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'sandboxes' } }));
-      // Set highlight in localStorage for SandboxList to pick up
-      localStorage.setItem('caisson-highlight-sandbox', sandboxName);
-      // Trigger a focus event to make SandboxList check for highlights
-      setTimeout(() => window.dispatchEvent(new CustomEvent('caisson-navigate-tab', { detail: { tab: 'sandboxes' } })), 100);
-    } catch (error) {
-      console.error('Failed to launch sandbox:', error);
-      alert(`Failed to launch sandbox: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-    setLaunchingImageTag(null);
+    // Open create sandbox form with the selected image pre-selected
+    window.dispatchEvent(new CustomEvent('caisson-create-sandbox', {
+      detail: { backend, image: imageTag }
+    }));
   };
 
   // Push history operations
@@ -561,8 +541,8 @@ export function ImageManager() {
                             <div className="flex items-center gap-1.5">
                               <button
                                 onClick={() => {
-                                  // Directly launch a VM from this base image
-                                  window.dispatchEvent(new CustomEvent('caisson-launch-sandbox', {
+                                  // Open create sandbox form with firecracker backend and this image pre-selected
+                                  window.dispatchEvent(new CustomEvent('caisson-create-sandbox', {
                                     detail: { backend: 'firecracker', image: vmImage.name }
                                   }));
                                 }}
