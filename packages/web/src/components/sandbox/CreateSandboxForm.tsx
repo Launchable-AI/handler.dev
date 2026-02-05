@@ -165,13 +165,19 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
 
   // Set default ports when Docker or VM is selected
   useEffect(() => {
-    const needsDefaultPorts = backend === 'docker' || backend === 'firecracker' || backend === 'cloud-hypervisor';
-    if (needsDefaultPorts && ports.length === 0) {
+    if (backend === 'docker' && ports.length === 0) {
+      // Docker needs host:container mappings
       const defaultPort1 = findNextAvailablePort(9999);
       const defaultPort2 = findNextAvailablePort(9998, new Set([defaultPort1]));
       setPorts([
         { host: defaultPort1, container: 3000 },
         { host: defaultPort2, container: 5173 },
+      ]);
+    } else if ((backend === 'firecracker' || backend === 'cloud-hypervisor') && ports.length === 0) {
+      // VMs just need quick access ports (container port = the port on the VM)
+      setPorts([
+        { host: 3000, container: 3000 },
+        { host: 5173, container: 5173 },
       ]);
     }
   }, [backend]);
@@ -766,64 +772,118 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
               </div>
             )}
 
-            {/* Port Mapping */}
-            <div>
-              <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
-                Port Mapping
-              </label>
+            {/* Port Mapping (Docker) or Quick Access Ports (VMs) */}
+            {backend === 'docker' ? (
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
+                  Port Mapping
+                </label>
 
-              {ports.length > 0 && (
-                <ul className="mb-2 space-y-1">
-                  {ports.map((port, i) => (
-                    <li key={i} className="flex items-center justify-between bg-[hsl(var(--bg-elevated))] px-3 py-1.5 text-xs">
-                      <span className="text-[hsl(var(--text-secondary))]">
-                        localhost:{port.host} <span className="text-[hsl(var(--text-muted))]">→</span> {backend === 'docker' ? 'container' : 'guest'}:{port.container}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removePort(i)}
-                        className="text-[hsl(var(--red))] hover:text-[hsl(var(--red-dim))]"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                {ports.length > 0 && (
+                  <ul className="mb-2 space-y-1">
+                    {ports.map((port, i) => (
+                      <li key={i} className="flex items-center justify-between bg-[hsl(var(--bg-elevated))] px-3 py-1.5 text-xs">
+                        <span className="text-[hsl(var(--text-secondary))]">
+                          localhost:{port.host} <span className="text-[hsl(var(--text-muted))]">→</span> container:{port.container}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removePort(i)}
+                          className="text-[hsl(var(--red))] hover:text-[hsl(var(--red-dim))]"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
-              <div className="flex gap-2 items-center">
-                <input
-                  type="number"
-                  value={newHostPort}
-                  onChange={(e) => setNewHostPort(e.target.value)}
-                  placeholder={String(getNextHostPort())}
-                  min="1"
-                  max="65535"
-                  className="w-24 px-2 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none"
-                />
-                <span className="text-[hsl(var(--text-muted))]">→</span>
-                <input
-                  type="number"
-                  value={newContainerPort}
-                  onChange={(e) => setNewContainerPort(e.target.value)}
-                  placeholder={backend === 'docker' ? 'Container port' : 'Guest port'}
-                  min="1"
-                  max="65535"
-                  className="w-28 px-2 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={addPort}
-                  disabled={!newHostPort || !newContainerPort}
-                  className="p-1.5 bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] disabled:opacity-50"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="number"
+                    value={newHostPort}
+                    onChange={(e) => setNewHostPort(e.target.value)}
+                    placeholder={String(getNextHostPort())}
+                    min="1"
+                    max="65535"
+                    className="w-24 px-2 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none"
+                  />
+                  <span className="text-[hsl(var(--text-muted))]">→</span>
+                  <input
+                    type="number"
+                    value={newContainerPort}
+                    onChange={(e) => setNewContainerPort(e.target.value)}
+                    placeholder="Container port"
+                    min="1"
+                    max="65535"
+                    className="w-28 px-2 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={addPort}
+                    disabled={!newHostPort || !newContainerPort}
+                    className="p-1.5 bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] disabled:opacity-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
+                  SSH port (22) is automatically mapped.
+                </p>
               </div>
-              <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
-                {backend === 'docker' ? 'SSH port (22) is automatically mapped.' : 'SSH is available via the guest IP.'}
-              </p>
-            </div>
+            ) : (backend === 'firecracker' || backend === 'cloud-hypervisor') && (
+              <div>
+                <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
+                  Quick Access Ports
+                </label>
+
+                {ports.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {ports.map((port, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 bg-[hsl(var(--bg-elevated))] px-2 py-1 text-xs">
+                        <span className="text-[hsl(var(--text-secondary))]">:{port.container}</span>
+                        <button
+                          type="button"
+                          onClick={() => removePort(i)}
+                          className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))]"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="number"
+                    value={newContainerPort}
+                    onChange={(e) => setNewContainerPort(e.target.value)}
+                    placeholder="Port (e.g. 8080)"
+                    min="1"
+                    max="65535"
+                    className="w-32 px-2 py-1.5 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan-dim))] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const port = parseInt(newContainerPort, 10);
+                      if (port) {
+                        setPorts([...ports, { container: port, host: port }]);
+                        setNewContainerPort('');
+                      }
+                    }}
+                    disabled={!newContainerPort}
+                    className="p-1.5 bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] disabled:opacity-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[10px] text-[hsl(var(--text-muted))]">
+                  Shortcuts to open http://{'<vm-ip>'}:{'<port>'} in your browser.
+                </p>
+              </div>
+            )}
 
             {/* Agent Config Preset */}
             {agentConfigData && agentConfigData.configs.length > 0 && (
