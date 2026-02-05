@@ -29,8 +29,6 @@ import {
   Eye,
   EyeOff,
   Settings,
-  Pencil,
-  Terminal,
   History,
   Server,
   Box,
@@ -633,7 +631,13 @@ export function ImageManager() {
                                 autoFocus
                               />
                             ) : (
-                              <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate" title={tag}>{formatDisplayName(tag)}</span>
+                              <button
+                                onClick={() => { setRenamingImageTag(tag); setRenameValue(formatDisplayName(tag)); }}
+                                className="text-sm font-medium text-[hsl(var(--text-primary))] truncate hover:text-[hsl(var(--cyan))] text-left"
+                                title="Click to rename"
+                              >
+                                {formatDisplayName(tag)}
+                              </button>
                             )}
                           </div>
                           <div className="flex items-center gap-4 mt-2 text-xs text-[hsl(var(--text-muted))]">
@@ -667,17 +671,11 @@ export function ImageManager() {
                           <button
                             onClick={() => handleLaunchFromImage(tag, 'docker')}
                             disabled={isLaunching}
-                            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-elevated))]"
-                            title="Launch sandbox"
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
+                            title="Create a new Docker sandbox from this image"
                           >
-                            {isLaunching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
-                          </button>
-                          <button
-                            onClick={() => { setRenamingImageTag(tag); setRenameValue(formatDisplayName(tag)); }}
-                            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))] hover:bg-[hsl(var(--bg-elevated))]"
-                            title="Rename"
-                          >
-                            <Pencil className="h-4 w-4" />
+                            {isLaunching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                            Launch
                           </button>
                           <button
                             onClick={() => { setShowPushModal(tag); setPushSnapshotName(formatDisplayName(tag)); }}
@@ -890,10 +888,11 @@ export function ImageManager() {
                             <button
                               onClick={() => handleLaunchFromImage(snapshot.name, 'daytona')}
                               disabled={isLaunchingSnapshot}
-                              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-elevated))]"
-                              title="Launch sandbox"
+                              className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
+                              title="Create a new Daytona sandbox from this snapshot"
                             >
-                              {isLaunchingSnapshot ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+                              {isLaunchingSnapshot ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                              Launch
                             </button>
                           )}
                           {!isManaged && (snapshot.state === 'active' || snapshot.state === 'inactive') && (
