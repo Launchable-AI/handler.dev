@@ -58,9 +58,9 @@ const navStructure: NavEntry[] = [
     children: [
       { id: 'sandboxes', label: 'Sandboxes', icon: Boxes },
       { id: 'images', label: 'Images', icon: Image },
+      { id: 'snapshots', label: 'Snapshots', icon: Camera },
       { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
       { id: 'volumes', label: 'Volumes', icon: HardDrive },
-      { id: 'snapshots', label: 'Snapshots', icon: Camera },
     ],
   },
   {

@@ -1665,6 +1665,17 @@ export class FirecrackerService extends EventEmitter {
     const layerPath = path.join(newImageDir, 'layer.ext4');
     execSync(`cp --sparse=always "${snapshotMeta.diskPath}" "${layerPath}"`, { stdio: 'pipe' });
 
+    // Clean the ext4 journal - snapshot was taken from a running VM so the
+    // filesystem may have an unclean journal. Without this, mounting read-only
+    // would fail with "recovery required on readonly filesystem".
+    try {
+      execSync(`e2fsck -y -f "${layerPath}"`, { stdio: 'pipe' });
+      console.log(`[FirecrackerService] Cleaned ext4 journal on layer`);
+    } catch (error) {
+      // e2fsck returns non-zero if it made changes, which is expected
+      console.log(`[FirecrackerService] e2fsck completed (may have fixed journal)`);
+    }
+
     // Get actual size of the layer file
     const layerStats = fs.statSync(layerPath);
     const layerSizeMB = Math.round(layerStats.blocks * 512 / 1024 / 1024); // blocks are 512 bytes

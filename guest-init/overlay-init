@@ -71,14 +71,26 @@ mount_parent_layers() {
         layer_count=$((layer_count + 1))
     done
 
+    # Create a tmpfs for parent layer mount points since rootfs is read-only
+    # We use /run which is typically a tmpfs, or fall back to mounting our own
+    PARENT_MOUNT_BASE="/run/parent-layers"
+    if ! mkdir -p "$PARENT_MOUNT_BASE" 2>/dev/null; then
+        # /run might not exist or be read-only, mount tmpfs at /tmp and use that
+        /bin/mount -t tmpfs -o noatime,size=1M tmpfs /tmp 2>/dev/null || true
+        PARENT_MOUNT_BASE="/tmp/parent-layers"
+        mkdir -p "$PARENT_MOUNT_BASE"
+    fi
+    echo "[overlay-init] Using $PARENT_MOUNT_BASE for parent layer mounts"
+
     # Mount each parent layer in order (idx matches position in parent_layers)
     # /parent1 gets vdb (base-most), /parent2 gets vdc (more derived), etc.
     idx=1
     for layer in $layer_list; do
-        mkdir -p "/parent${idx}"
+        mount_point="${PARENT_MOUNT_BASE}/parent${idx}"
+        mkdir -p "$mount_point"
         if [ -b "/dev/${layer}" ]; then
-            /bin/mount -t ext4 -o noatime,ro "/dev/${layer}" "/parent${idx}"
-            echo "[overlay-init] Mounted parent layer /dev/${layer} at /parent${idx}"
+            /bin/mount -t ext4 -o noatime,ro "/dev/${layer}" "$mount_point"
+            echo "[overlay-init] Mounted parent layer /dev/${layer} at $mount_point"
         else
             echo "[overlay-init] WARNING: Parent layer /dev/${layer} not found"
         fi
@@ -93,9 +105,10 @@ mount_parent_layers() {
     # are stored under /upper within each layer's ext4 filesystem!
     LOWERDIR=""
     for i in $(seq $layer_count -1 1); do
-        if [ -d "/parent${i}" ]; then
+        mount_point="${PARENT_MOUNT_BASE}/parent${i}"
+        if [ -d "$mount_point" ]; then
             # The layer ext4 has files under /upper (from the original overlay structure)
-            layer_path="/parent${i}/upper"
+            layer_path="${mount_point}/upper"
             if [ -d "$layer_path" ]; then
                 if [ -z "$LOWERDIR" ]; then
                     LOWERDIR="$layer_path"
@@ -103,11 +116,11 @@ mount_parent_layers() {
                     LOWERDIR="${LOWERDIR}:$layer_path"
                 fi
             else
-                echo "[overlay-init] WARNING: /parent${i}/upper not found, using /parent${i}"
+                echo "[overlay-init] WARNING: ${mount_point}/upper not found, using $mount_point"
                 if [ -z "$LOWERDIR" ]; then
-                    LOWERDIR="/parent${i}"
+                    LOWERDIR="$mount_point"
                 else
-                    LOWERDIR="${LOWERDIR}:/parent${i}"
+                    LOWERDIR="${LOWERDIR}:$mount_point"
                 fi
             fi
         fi

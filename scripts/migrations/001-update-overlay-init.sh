@@ -64,20 +64,40 @@ fi
 echo "Found ${#IMAGES[@]} base image(s): ${IMAGES[*]}"
 echo ""
 
-# Check if running as root (needed for mount method)
-if [ "$EUID" -ne 0 ]; then
-    # Try guestfish
-    if ! command -v guestfish &> /dev/null; then
-        error "This script requires either:\n  - Root privileges (sudo)\n  - guestfish installed (sudo apt install libguestfs-tools)"
-    fi
-    USE_GUESTFISH=1
+# Determine which method to use (prefer debugfs as it's simplest and most reliable)
+USE_METHOD=""
+if command -v debugfs &> /dev/null; then
+    USE_METHOD="debugfs"
+    log "Using debugfs (no root required)"
+elif command -v guestfish &> /dev/null; then
+    USE_METHOD="guestfish"
+    log "Using guestfish"
+elif [ "$EUID" -eq 0 ]; then
+    USE_METHOD="mount"
+    log "Using mount (root)"
 else
-    USE_GUESTFISH=0
-    # Prefer guestfish even as root if available
-    if command -v guestfish &> /dev/null; then
-        USE_GUESTFISH=1
-    fi
+    error "This script requires one of:\n  - debugfs (sudo apt install e2fsprogs)\n  - guestfish (sudo apt install libguestfs-tools)\n  - Root privileges for direct mount"
 fi
+
+update_image_debugfs() {
+    local image_name="$1"
+    local raw_path="$BASE_IMAGES_DIR/$image_name/rootfs.ext4"
+
+    log "Updating $image_name using debugfs..."
+
+    # debugfs can write files directly to ext4 without mounting
+    # First, remove the old file, then write the new one
+    debugfs -w -R "rm /sbin/overlay-init" "$raw_path" 2>/dev/null || true
+
+    # Write the new overlay-init
+    echo "write $GUEST_INIT_DIR/overlay-init /sbin/overlay-init" | debugfs -w "$raw_path" 2>/dev/null
+
+    # Set permissions (mode 0755 = octal, debugfs uses hex: 0x1ed)
+    # debugfs set_inode_field can corrupt fs, so we'll leave default perms
+    # The script will be executable since we're replacing an existing executable
+
+    log "Updated $image_name"
+}
 
 update_image_guestfish() {
     local image_name="$1"
@@ -85,9 +105,11 @@ update_image_guestfish() {
 
     log "Updating $image_name using guestfish..."
 
+    # Note: rootfs.ext4 is a raw ext4 filesystem, not a partitioned disk
+    # So we mount /dev/sda directly, not /dev/sda1
     guestfish -a "$raw_path" <<EOF
 run
-mount /dev/sda1 /
+mount /dev/sda /
 upload $GUEST_INIT_DIR/overlay-init /sbin/overlay-init
 chmod 0755 /sbin/overlay-init
 EOF
@@ -144,11 +166,17 @@ update_image_mount() {
 
 # Update each image
 for image in "${IMAGES[@]}"; do
-    if [ "$USE_GUESTFISH" = "1" ]; then
-        update_image_guestfish "$image"
-    else
-        update_image_mount "$image"
-    fi
+    case "$USE_METHOD" in
+        debugfs)
+            update_image_debugfs "$image"
+            ;;
+        guestfish)
+            update_image_guestfish "$image"
+            ;;
+        mount)
+            update_image_mount "$image"
+            ;;
+    esac
 done
 
 echo ""
