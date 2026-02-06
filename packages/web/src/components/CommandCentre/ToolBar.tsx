@@ -21,10 +21,13 @@ import {
   Pencil,
   Trash2,
   Check,
+  Palette,
 } from 'lucide-react';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
 import { useVms, useContainers, useVolumes, useVmVolumes } from '../../hooks/useContainers';
 import { useCanvas } from '../../context/CanvasContext';
+import { PromptThemePicker } from '../Terminal/PromptThemePicker';
+import type { ShellPromptTheme } from '../../lib/prompt-themes';
 
 interface ToolBarProps {
   className?: string;
@@ -44,6 +47,8 @@ export function ToolBar({ className = '' }: ToolBarProps) {
   const [showPicker, setShowPicker] = useState(false);
   const [isOpeningAll, setIsOpeningAll] = useState(false);
   const [showResources, setShowResources] = useState(false);
+  const [showThemePicker, setShowThemePicker] = useState(false);
+  const [activeTheme, setActiveTheme] = useState<ShellPromptTheme>('minimal');
   const { data: vms } = useVms();
   const { data: containers } = useContainers();
   const { data: dockerVolumes } = useVolumes();
@@ -74,6 +79,42 @@ export function ToolBar({ className = '' }: ToolBarProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreen, maximizedSessionId, toggleFullscreen, maximizeSession]);
+
+  // Load initial theme from config
+  useEffect(() => {
+    const port = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
+    fetch(`${window.location.protocol}//${window.location.hostname}:${port}/api/config`)
+      .then(r => r.json())
+      .then(config => {
+        if (config.shellPromptTheme) {
+          setActiveTheme(config.shellPromptTheme);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Listen for theme changes from TerminalInstance
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const theme = (e as CustomEvent<{ theme: ShellPromptTheme }>).detail.theme;
+      setActiveTheme(theme);
+    };
+    window.addEventListener('handler-prompt-theme', handler);
+    return () => window.removeEventListener('handler-prompt-theme', handler);
+  }, []);
+
+  const handleThemeSelect = (theme: ShellPromptTheme) => {
+    setActiveTheme(theme);
+    // Dispatch event to all terminal instances
+    window.dispatchEvent(new CustomEvent('handler-prompt-theme', { detail: { theme } }));
+    // Persist via API
+    const port = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
+    fetch(`${window.location.protocol}//${window.location.hostname}:${port}/api/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shellPromptTheme: theme }),
+    }).catch(() => {});
+  };
 
   // Count running instances
   const runningVMs = vms?.filter(vm => vm.state === 'running') || [];
@@ -197,6 +238,28 @@ export function ToolBar({ className = '' }: ToolBarProps) {
             <WorkspaceSwitcher />
           </>
         )}
+
+        {/* Separator */}
+        <div className="w-px h-5 bg-[hsl(var(--border))]" />
+
+        {/* Prompt theme picker */}
+        <div className="relative">
+          <button
+            onClick={() => setShowThemePicker(!showThemePicker)}
+            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] transition-colors rounded"
+            title="Shell prompt theme"
+          >
+            <Palette className="h-3.5 w-3.5" />
+          </button>
+          {showThemePicker && (
+              <PromptThemePicker
+                activeTheme={activeTheme}
+                onSelect={handleThemeSelect}
+                onClose={() => setShowThemePicker(false)}
+                className="absolute right-0 top-full mt-1 z-50 w-72 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg rounded overflow-hidden"
+              />
+          )}
+        </div>
 
         {/* Separator */}
         <div className="w-px h-5 bg-[hsl(var(--border))]" />

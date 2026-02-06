@@ -14,6 +14,7 @@ const UpdateConfigSchema = z.object({
   sshJumpHost: z.string().optional(),
   sshJumpHostKeyPath: z.string().optional(),
   dataDirectory: z.string().optional(),
+  shellPromptTheme: z.enum(['minimal', 'arrow', 'bracket', 'lambda', 'cyberpunk', 'multiline']).optional(),
 });
 
 const BrowseDirectorySchema = z.object({
