@@ -2,9 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Loader2, Copy, Check, RefreshCw, Palette } from 'lucide-react';
+import { Loader2, Copy, Check, RefreshCw } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
-import { PromptThemePicker } from './PromptThemePicker';
 import type { ShellPromptTheme } from '../../lib/prompt-themes';
 
 // Connection state type
@@ -52,9 +51,6 @@ export function TerminalInstance({
   const [errorMessage, setErrorMessage] = useState<string>();
   const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
-  const [activeTheme, setActiveTheme] = useState<ShellPromptTheme>('minimal');
-  const [showThemePicker, setShowThemePicker] = useState(false);
-
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -490,45 +486,16 @@ export function TerminalInstance({
     }
   }, [fontSize]);
 
-  // Listen for prompt theme changes from ToolBar
+  // Listen for prompt theme changes from settings
   useEffect(() => {
     const handler = (e: Event) => {
       const theme = (e as CustomEvent<{ theme: ShellPromptTheme }>).detail.theme;
-      setActiveTheme(theme);
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'set-prompt-theme', theme }));
       }
     };
     window.addEventListener('handler-prompt-theme', handler);
     return () => window.removeEventListener('handler-prompt-theme', handler);
-  }, []);
-
-  // Load initial theme from config
-  useEffect(() => {
-    fetch(`${window.location.protocol}//${window.location.hostname}:${(window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001}/api/config`)
-      .then(r => r.json())
-      .then(config => {
-        if (config.shellPromptTheme) {
-          setActiveTheme(config.shellPromptTheme);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const handleThemeSelect = useCallback((theme: ShellPromptTheme) => {
-    setActiveTheme(theme);
-    // Send to this terminal's WebSocket
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'set-prompt-theme', theme }));
-    }
-    // Dispatch event to all other terminal instances
-    window.dispatchEvent(new CustomEvent('handler-prompt-theme', { detail: { theme } }));
-    // Persist via API
-    fetch(`${window.location.protocol}//${window.location.hostname}:${(window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001}/api/config`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shellPromptTheme: theme }),
-    }).catch(() => {});
   }, []);
 
   // Focus the terminal when this component is clicked
@@ -556,25 +523,6 @@ export function TerminalInstance({
               <span className="text-[hsl(var(--text-secondary))]">agent@{target.ip}</span>
             </>
           )}
-          <div className="ml-auto relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowThemePicker(!showThemePicker);
-              }}
-              className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] rounded transition-colors"
-              title="Shell prompt theme"
-            >
-              <Palette className="h-3 w-3" />
-            </button>
-            {showThemePicker && (
-              <PromptThemePicker
-                activeTheme={activeTheme}
-                onSelect={handleThemeSelect}
-                onClose={() => setShowThemePicker(false)}
-              />
-            )}
-          </div>
         </div>
       )}
 

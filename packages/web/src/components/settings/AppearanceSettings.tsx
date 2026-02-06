@@ -1,5 +1,7 @@
-import { Moon, Sun } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Moon, Sun, Check } from 'lucide-react';
 import { useTheme, DARK_THEMES, LIGHT_THEMES, type Theme, type ThemeConfig } from '../../hooks/useTheme';
+import { PROMPT_THEMES, type ShellPromptTheme } from '../../lib/prompt-themes';
 
 // Representative swatch colors per theme (hardcoded HSL strings for preview)
 const THEME_SWATCHES: Record<Theme, string[]> = {
@@ -48,6 +50,43 @@ function ThemeCard({ config, isSelected, onClick }: { config: ThemeConfig; isSel
 
 export function AppearanceSettings() {
   const { isDark, toggleTheme, preferredDark, preferredLight, setPreferredDark, setPreferredLight } = useTheme();
+  const [activePromptTheme, setActivePromptTheme] = useState<ShellPromptTheme>('minimal');
+
+  // Load initial prompt theme from config
+  useEffect(() => {
+    const port = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
+    fetch(`${window.location.protocol}//${window.location.hostname}:${port}/api/config`)
+      .then(r => r.json())
+      .then(config => {
+        if (config.shellPromptTheme) {
+          setActivePromptTheme(config.shellPromptTheme);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Listen for theme changes from other sources
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const theme = (e as CustomEvent<{ theme: ShellPromptTheme }>).detail.theme;
+      setActivePromptTheme(theme);
+    };
+    window.addEventListener('handler-prompt-theme', handler);
+    return () => window.removeEventListener('handler-prompt-theme', handler);
+  }, []);
+
+  const handlePromptThemeSelect = useCallback((theme: ShellPromptTheme) => {
+    setActivePromptTheme(theme);
+    // Dispatch event to all terminal instances
+    window.dispatchEvent(new CustomEvent('handler-prompt-theme', { detail: { theme } }));
+    // Persist via API
+    const port = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
+    fetch(`${window.location.protocol}//${window.location.hostname}:${port}/api/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shellPromptTheme: theme }),
+    }).catch(() => {});
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -116,6 +155,56 @@ export function AppearanceSettings() {
               onClick={() => setPreferredLight(config.id)}
             />
           ))}
+        </div>
+      </div>
+
+      {/* Shell Prompt Theme */}
+      <div>
+        <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Shell Prompt</h3>
+        <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1 mb-3">
+          Choose the PS1 prompt style for terminal sessions
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {PROMPT_THEMES.map((theme) => {
+            const isActive = theme.id === activePromptTheme;
+            return (
+              <button
+                key={theme.id}
+                onClick={() => handlePromptThemeSelect(theme.id)}
+                className={`relative text-left p-3 border-2 transition-all duration-200 ${
+                  isActive
+                    ? 'bg-[#1a9eaa]/10'
+                    : 'bg-[hsl(var(--bg-surface))] hover:bg-[hsl(var(--bg-elevated))]'
+                }`}
+                style={{ borderColor: isActive ? '#1a9eaa' : undefined }}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-medium text-[hsl(var(--text-primary))]">
+                    {theme.name}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-[hsl(var(--text-muted))]">
+                      {theme.description}
+                    </span>
+                    {isActive && (
+                      <Check className="h-3 w-3 text-[hsl(var(--cyan))]" />
+                    )}
+                  </div>
+                </div>
+                <div className="px-2 py-1.5 rounded bg-[hsl(220_20%_6%)] font-mono text-[11px] leading-relaxed whitespace-pre">
+                  {theme.previewSegments.map((seg, i) => (
+                    <span
+                      key={i}
+                      style={{ color: seg.color === 'inherit' ? undefined : seg.color }}
+                    >
+                      {seg.text}
+                    </span>
+                  ))}
+                  <span className="animate-pulse text-[hsl(180_60%_55%)]">▎</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
