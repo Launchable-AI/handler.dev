@@ -268,19 +268,27 @@ export function TerminalInstance({
           // Ignore fit errors on startup
         }
 
-        // Check for existing session to resume (only for containers)
+        // Check for existing session to resume
         const savedSessionId = getSavedSession();
-        if (attemptResume && savedSessionId && target.type === 'container') {
+        if (attemptResume && savedSessionId) {
           // Try to resume the session
           updateState('reconnecting');
-          ws.send(JSON.stringify({
-            type: 'resume',
-            sessionId: savedSessionId,
-            cols: term.cols,
-            rows: term.rows,
-          }));
+          if (target.type === 'vm') {
+            ws.send(JSON.stringify({
+              type: 'resume-vm',
+              sessionId: savedSessionId,
+              cols: term.cols,
+              rows: term.rows,
+            }));
+          } else {
+            ws.send(JSON.stringify({
+              type: 'resume',
+              sessionId: savedSessionId,
+              cols: term.cols,
+              rows: term.rows,
+            }));
+          }
         } else if (target.type === 'vm') {
-          // VM terminal - no session persistence yet
           ws.send(JSON.stringify({
             type: 'start-vm',
             vmId: target.id,
@@ -331,16 +339,27 @@ export function TerminalInstance({
               // Session no longer exists, start fresh
               clearSavedSession();
               term.write('\r\n\x1b[33m[Previous session expired, starting new session...]\x1b[0m\r\n');
-              // Start a new session
-              ws.send(JSON.stringify({
-                type: 'start',
-                containerId: target.id,
-                shell: '/bin/bash',
-                cols: term.cols,
-                rows: term.rows,
-                isDevNode: target.isDevNode ?? true,
-                ...(target.workdir ? { workdir: target.workdir } : {}),
-              }));
+              // Start a new session based on target type
+              if (target.type === 'vm') {
+                ws.send(JSON.stringify({
+                  type: 'start-vm',
+                  vmId: target.id,
+                  vmIp: target.ip,
+                  shell: '/bin/bash',
+                  cols: term.cols,
+                  rows: term.rows,
+                }));
+              } else {
+                ws.send(JSON.stringify({
+                  type: 'start',
+                  containerId: target.id,
+                  shell: '/bin/bash',
+                  cols: term.cols,
+                  rows: term.rows,
+                  isDevNode: target.isDevNode ?? true,
+                  ...(target.workdir ? { workdir: target.workdir } : {}),
+                }));
+              }
               break;
             case 'output':
               term.write(msg.data);
@@ -396,7 +415,7 @@ export function TerminalInstance({
 
     // Check for saved session and attempt resume on initial connect
     const savedSession = getSavedSession();
-    connect(!!savedSession && target.type === 'container');
+    connect(!!savedSession);
 
     // Handle terminal input
     const dataDisposable = term.onData((data) => {

@@ -272,6 +272,11 @@ export async function resumeTerminalSession(
 
   const { containerId, tmuxSession, user, workdir } = persisted;
 
+  if (!containerId) {
+    console.log(`[Terminal] Session ${oldSessionId} is not a container session`);
+    return null;
+  }
+
   // Check if the tmux session still exists
   const exists = await tmuxSessionExists(containerId, tmuxSession);
   if (!exists) {

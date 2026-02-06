@@ -162,6 +162,7 @@ import { setConfig } from './services/config.js';
 import type { ShellPromptTheme } from './services/config.js';
 import {
   createVmTerminalSession,
+  resumeVmTerminalSession,
   createDaytonaTerminalSession,
   createAwsTerminalSession,
   createCloudTerminalSession,
@@ -346,6 +347,38 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
               }
             } else {
               ws.send(JSON.stringify({ type: 'error', message: 'sessionId is required for resume' }));
+            }
+            break;
+
+          case 'resume-vm':
+            // Resume an existing VM terminal session (with tmux)
+            if (msg.sessionId) {
+              try {
+                const result = await resumeVmTerminalSession(
+                  ws,
+                  msg.sessionId,
+                  msg.cols || 80,
+                  msg.rows || 24
+                );
+                if (result) {
+                  sessionId = result.sessionId;
+                  isVmSession = true;
+                  if (result.scrollback) {
+                    ws.send(JSON.stringify({ type: 'scrollback', data: result.scrollback }));
+                  }
+                } else {
+                  ws.send(JSON.stringify({ type: 'session-not-found', oldSessionId: msg.sessionId }));
+                }
+              } catch (err) {
+                console.error('[WS Terminal] Failed to resume VM session:', err);
+                ws.send(JSON.stringify({
+                  type: 'session-not-found',
+                  oldSessionId: msg.sessionId,
+                  message: err instanceof Error ? err.message : 'Failed to resume VM session'
+                }));
+              }
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'sessionId is required for resume-vm' }));
             }
             break;
 
