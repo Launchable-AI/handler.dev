@@ -426,6 +426,7 @@ function TerminalPanelUI({
               <TerminalInstance
                 tab={tab}
                 onStateChange={(state) => onTabStateChange(tab.id, state)}
+                onClose={() => onTabClose(tab.id)}
               />
             </div>
           ))}
@@ -439,6 +440,7 @@ function TerminalPanelUI({
 interface TerminalInstanceProps {
   tab: TerminalTab;
   onStateChange: (state: Partial<TerminalTab>) => void;
+  onClose?: () => void;
 }
 
 // Retry configuration
@@ -446,7 +448,7 @@ const MAX_RETRY_COUNT = 5;
 const INITIAL_RETRY_DELAY = 1000; // 1 second
 const MAX_RETRY_DELAY = 30000; // 30 seconds
 
-function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
+function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -464,9 +466,11 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
     return `${protocol}//${hostname}:${apiPort}/ws/terminal`;
   }, []);
 
-  // Stable callback ref to avoid re-running effect
+  // Stable callback refs to avoid re-running effect
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -635,6 +639,9 @@ function TerminalInstance({ tab, onStateChange }: TerminalInstanceProps) {
             case 'exit':
               onStateChangeRef.current({ connectionState: 'disconnected' });
               term.write('\r\n\x1b[33m[Session ended]\x1b[0m\r\n');
+              if (onCloseRef.current) {
+                setTimeout(() => onCloseRef.current?.(), 800);
+              }
               break;
             case 'error':
               onStateChangeRef.current({ connectionState: 'error', errorMessage: msg.message });
