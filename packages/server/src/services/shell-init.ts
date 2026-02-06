@@ -40,11 +40,11 @@ const PS1_THEMES: Record<ShellPromptTheme, string> = {
     `PS1='\\[\\033[0;36m\\]\\u\\[\\033[0m\\] \\[\\033[1m\\]\\w\\[\\033[0m\\]$(__handler_ps1_branch) \\[\\033[0;36m\\]\\$\\[\\033[0m\\] '`,
   ].join('; '),
 
-  // Arrow: Powerline segments with  arrows
-  arrow: [
+  // Clean: ~/project on main ❯ (path-focused with ❯ prompt, starship-inspired)
+  clean: [
     GIT_BRANCH_HELPER,
-    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf '\\001\\033[0;34m\\002\\001\\033[0;37;44m\\002  %s \\001\\033[0;34;49m\\002\\001\\033[0m\\002' "$b" || printf '\\001\\033[0;32;49m\\002\\001\\033[0m\\002'; }`,
-    `PS1='\\[\\033[0;30;42m\\]  \\w \\[\\033[0;32;49m\\]$(__handler_ps1_branch) '`,
+    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\001\\033[0;90m\\002on \\001\\033[0;32m\\002%s' "$b"; }`,
+    `PS1='\\[\\033[1;37m\\]\\w$(__handler_ps1_branch) \\[\\033[0;36m\\]❯\\[\\033[0m\\] '`,
   ].join('; '),
 
   // Bracket: [user@host] [~/project] [main] $ (blue brackets, green user, yellow path)

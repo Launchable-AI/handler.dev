@@ -464,7 +464,7 @@ export interface CloudBackendsConfig {
   daytona?: DaytonaConfig;
 }
 
-export type ShellPromptTheme = 'minimal' | 'arrow' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
+export type ShellPromptTheme = 'minimal' | 'clean' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
 
 export interface AppConfig {
   sshKeysDisplayPath: string;

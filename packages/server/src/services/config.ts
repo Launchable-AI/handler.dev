@@ -105,7 +105,7 @@ export interface ContainerRegistriesConfig {
   dockerHub?: DockerHubConfig;
 }
 
-export type ShellPromptTheme = 'minimal' | 'arrow' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
+export type ShellPromptTheme = 'minimal' | 'clean' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
 
 export interface QuickLaunchConfig {
   backend: 'docker' | 'firecracker' | 'cloud-hypervisor' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
