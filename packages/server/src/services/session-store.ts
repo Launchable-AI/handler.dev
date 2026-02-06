@@ -13,12 +13,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface PersistedSession {
   sessionId: string;
-  containerId: string;
+  containerId?: string;
   tmuxSession: string;  // e.g., "handler-abc123-1234567890"
   createdAt: number;
   lastAccessedAt: number;
   user: string;
   workdir: string;
+  // VM-specific fields
+  vmId?: string;
+  vmIp?: string;
+  dataDir?: string;
 }
 
 // Store file location
@@ -168,6 +172,36 @@ export function deleteByContainer(containerId: string): number {
 }
 
 /**
+ * List all sessions for a VM
+ */
+export function listByVm(vmId: string): PersistedSession[] {
+  loadSessions();
+  return Array.from(sessions.values()).filter(s => s.vmId === vmId);
+}
+
+/**
+ * Delete all sessions for a VM (when VM is deleted)
+ */
+export function deleteByVm(vmId: string): number {
+  loadSessions();
+  let deleted = 0;
+
+  for (const [id, session] of sessions.entries()) {
+    if (session.vmId === vmId) {
+      sessions.delete(id);
+      deleted++;
+    }
+  }
+
+  if (deleted > 0) {
+    saveSessions();
+    console.log(`[SessionStore] Deleted ${deleted} sessions for VM ${vmId}`);
+  }
+
+  return deleted;
+}
+
+/**
  * Get all sessions (for debugging)
  */
 export function getAllSessions(): PersistedSession[] {
@@ -176,10 +210,10 @@ export function getAllSessions(): PersistedSession[] {
 }
 
 /**
- * Generate a tmux session name for a container
+ * Generate a tmux session name for a container or VM
  */
-export function generateTmuxSessionName(containerId: string): string {
-  // Use short container ID + timestamp for uniqueness
-  const shortId = containerId.slice(0, 8);
+export function generateTmuxSessionName(id: string): string {
+  // Use short ID + timestamp for uniqueness
+  const shortId = id.slice(0, 8);
   return `handler-${shortId}-${Date.now()}`;
 }

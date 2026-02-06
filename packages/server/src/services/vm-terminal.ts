@@ -1,18 +1,32 @@
 /**
  * VM Terminal Service - SSH-based terminal sessions for VMs
- * Uses SSH to connect to VMs instead of docker exec
+ * Uses SSH to connect to VMs with tmux for persistent sessions.
+ * When tmux is available in the VM, sessions survive WebSocket disconnects
+ * and server restarts. Falls back to bare shell when tmux is not installed.
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, exec } from 'child_process';
+import { promisify } from 'util';
 import { WebSocket } from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
 import { injectShellInit } from './shell-init.js';
+import {
+  getSession as getPersistedSession,
+  setSession as setPersistedSession,
+  deleteSession as deletePersistedSession,
+  generateTmuxSessionName,
+} from './session-store.js';
+
+const execAsync = promisify(exec);
 
 interface VmTerminalSession {
   process: ChildProcess;
   ws: WebSocket;
   vmId: string;
+  tmuxSession?: string;
+  vmIp?: string;
+  dataDir?: string;
 }
 
 const sessions = new Map<string, VmTerminalSession>();
@@ -22,6 +36,54 @@ const sessions = new Map<string, VmTerminalSession>();
 // dataDir should be the handler data directory (e.g., ~/.local/share/handler)
 function getSshKeyPath(dataDir: string): string {
   return path.join(dataDir, 'ssh-keys', 'id_ed25519');
+}
+
+/**
+ * Execute a command on a VM via SSH and return stdout
+ */
+async function sshExec(vmIp: string, dataDir: string, command: string): Promise<string> {
+  const sshKeyPath = getSshKeyPath(dataDir);
+  const { stdout } = await execAsync(
+    `ssh -i ${sshKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 agent@${vmIp} ${JSON.stringify(command)}`,
+    { timeout: 10000 }
+  );
+  return stdout;
+}
+
+/**
+ * Check if tmux is available in a VM
+ */
+async function hasTmuxInVm(vmIp: string, dataDir: string): Promise<boolean> {
+  try {
+    await sshExec(vmIp, dataDir, 'which tmux');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if a tmux session exists in a VM
+ */
+async function vmTmuxSessionExists(vmIp: string, dataDir: string, tmuxSession: string): Promise<boolean> {
+  try {
+    await sshExec(vmIp, dataDir, `tmux has-session -t ${tmuxSession} 2>/dev/null`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Capture scrollback from a tmux session in a VM
+ */
+async function captureVmTmuxScrollback(vmIp: string, dataDir: string, tmuxSession: string, lines: number = 1000): Promise<string> {
+  try {
+    return await sshExec(vmIp, dataDir, `tmux capture-pane -t ${tmuxSession} -p -S -${lines}`);
+  } catch (err) {
+    console.warn(`[VM Terminal] Failed to capture scrollback for ${tmuxSession}:`, err);
+    return '';
+  }
 }
 
 export function createVmTerminalSession(
@@ -48,31 +110,121 @@ export function createVmTerminalSession(
 
   console.log(`[VM Terminal] SSH key exists, connecting to ${vmIp}...`);
 
-  // Use SSH to connect to the VM
-  // The -tt forces pseudo-terminal allocation
+  // Check if tmux is available, then start with or without it
+  hasTmuxInVm(vmIp, dataDir).then(useTmux => {
+    if (useTmux) {
+      startVmTmuxSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
+    } else {
+      console.log(`[VM Terminal] tmux not available in VM ${vmId}, falling back to bare shell`);
+      startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
+    }
+  }).catch(() => {
+    startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
+  });
+
+  return sessionId;
+}
+
+/**
+ * Start a tmux-based VM terminal session
+ */
+function startVmTmuxSession(
+  ws: WebSocket,
+  sessionId: string,
+  vmId: string,
+  vmIp: string,
+  dataDir: string,
+  sshKeyPath: string,
+  shell: string,
+  cols: number,
+  rows: number
+): void {
+  const tmuxSession = generateTmuxSessionName(vmId);
+  // SSH into VM and run tmux new-session; -A reattaches if session exists
+  // set-option status off hides the tmux status bar (we have our own UI)
+  const tmuxCmd = `tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} \\; set-option status off`;
+
   const sshArgs = [
-    '-tt',                                    // Force PTY allocation
-    '-i', sshKeyPath,                         // SSH key
-    '-o', 'IdentitiesOnly=yes',               // Only use specified key, not agent keys
-    '-o', 'StrictHostKeyChecking=no',         // Don't prompt for host key
-    '-o', 'UserKnownHostsFile=/dev/null',     // Don't save host keys
-    '-o', 'ConnectTimeout=10',                // Connection timeout
-    '-o', 'ServerAliveInterval=30',           // Keep-alive
-    '-o', 'ServerAliveCountMax=3',            // Keep-alive retries
+    '-tt',
+    '-i', sshKeyPath,
+    '-o', 'IdentitiesOnly=yes',
+    '-o', 'StrictHostKeyChecking=no',
+    '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'ConnectTimeout=10',
+    '-o', 'ServerAliveInterval=30',
+    '-o', 'ServerAliveCountMax=3',
+    `agent@${vmIp}`,
+    tmuxCmd
+  ];
+
+  const sshProcess = spawn('ssh', sshArgs, {
+    env: { ...process.env, TERM: 'xterm-256color' }
+  });
+
+  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, tmuxSession, sshProcess);
+
+  // Persist session metadata for reconnection
+  setPersistedSession({
+    sessionId,
+    tmuxSession,
+    createdAt: Date.now(),
+    lastAccessedAt: Date.now(),
+    user: 'agent',
+    workdir: '/home/agent',
+    vmId,
+    vmIp,
+    dataDir,
+  });
+
+  console.log(`[VM Terminal] Started tmux session: ${tmuxSession}`);
+}
+
+/**
+ * Start a bare shell VM terminal session (fallback when tmux unavailable)
+ */
+function startVmBareSession(
+  ws: WebSocket,
+  sessionId: string,
+  vmId: string,
+  vmIp: string,
+  dataDir: string,
+  sshKeyPath: string,
+  shell: string,
+  cols: number,
+  rows: number
+): void {
+  const sshArgs = [
+    '-tt',
+    '-i', sshKeyPath,
+    '-o', 'IdentitiesOnly=yes',
+    '-o', 'StrictHostKeyChecking=no',
+    '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'ConnectTimeout=10',
+    '-o', 'ServerAliveInterval=30',
+    '-o', 'ServerAliveCountMax=3',
     `agent@${vmIp}`,
     shell
   ];
 
-  console.log(`[VM Terminal] SSH command: ssh ${sshArgs.join(' ')}`);
-
   const sshProcess = spawn('ssh', sshArgs, {
-    env: {
-      ...process.env,
-      TERM: 'xterm-256color',
-    }
+    env: { ...process.env, TERM: 'xterm-256color' }
   });
 
-  // Handle process output -> WebSocket
+  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, undefined, sshProcess);
+}
+
+/**
+ * Set up event handlers for a VM terminal session
+ */
+function setupVmSessionHandlers(
+  ws: WebSocket,
+  sessionId: string,
+  vmId: string,
+  vmIp: string,
+  dataDir: string,
+  tmuxSession: string | undefined,
+  sshProcess: ChildProcess
+): void {
   sshProcess.stdout?.on('data', (data: Buffer) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
@@ -86,7 +238,6 @@ export function createVmTerminalSession(
     }
   });
 
-  // Handle process exit
   sshProcess.on('exit', (code) => {
     console.log(`[VM Terminal] Session ${sessionId} exited with code ${code}`);
     if (ws.readyState === WebSocket.OPEN) {
@@ -103,15 +254,130 @@ export function createVmTerminalSession(
     sessions.delete(sessionId);
   });
 
-  sessions.set(sessionId, { process: sshProcess, ws, vmId });
+  sessions.set(sessionId, { process: sshProcess, ws, vmId, tmuxSession, vmIp, dataDir });
 
-  // Send connected message
-  ws.send(JSON.stringify({ type: 'connected', sessionId }));
+  ws.send(JSON.stringify({
+    type: 'connected',
+    sessionId,
+    tmuxSession: tmuxSession || undefined,
+  }));
 
-  // Inject shell init (PROMPT_COMMAND for real-time cwd/branch tracking)
   injectShellInit(sshProcess);
+}
 
-  return sessionId;
+/**
+ * Resume an existing VM tmux session
+ * Returns the new sessionId and scrollback if successful, or null if session doesn't exist
+ */
+export async function resumeVmTerminalSession(
+  ws: WebSocket,
+  oldSessionId: string,
+  cols: number = 80,
+  rows: number = 24
+): Promise<{ sessionId: string; scrollback: string } | null> {
+  const persisted = getPersistedSession(oldSessionId);
+  if (!persisted || !persisted.vmId || !persisted.vmIp || !persisted.dataDir) {
+    console.log(`[VM Terminal] No persisted VM session found for ${oldSessionId}`);
+    return null;
+  }
+
+  const { vmId, vmIp, dataDir, tmuxSession } = persisted;
+  const sshKeyPath = getSshKeyPath(dataDir);
+
+  if (!fs.existsSync(sshKeyPath)) {
+    console.log(`[VM Terminal] SSH key not found for resume: ${sshKeyPath}`);
+    deletePersistedSession(oldSessionId);
+    return null;
+  }
+
+  // Check if the tmux session still exists in the VM
+  const exists = await vmTmuxSessionExists(vmIp, dataDir, tmuxSession);
+  if (!exists) {
+    console.log(`[VM Terminal] tmux session ${tmuxSession} no longer exists in VM ${vmId}`);
+    deletePersistedSession(oldSessionId);
+    return null;
+  }
+
+  // Capture scrollback before reattaching
+  const scrollback = await captureVmTmuxScrollback(vmIp, dataDir, tmuxSession);
+
+  // Create new session ID for this connection
+  const sessionId = `vm-${vmId}-${Date.now()}`;
+  console.log(`[VM Terminal] Resuming session: ${sessionId} (tmux: ${tmuxSession})`);
+
+  // Attach to the existing tmux session
+  const tmuxCmd = `tmux attach-session -t ${tmuxSession} \\; set-option status off \\; resize-window -x ${cols} -y ${rows}`;
+
+  const sshArgs = [
+    '-tt',
+    '-i', sshKeyPath,
+    '-o', 'IdentitiesOnly=yes',
+    '-o', 'StrictHostKeyChecking=no',
+    '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'ConnectTimeout=10',
+    '-o', 'ServerAliveInterval=30',
+    '-o', 'ServerAliveCountMax=3',
+    `agent@${vmIp}`,
+    tmuxCmd
+  ];
+
+  const sshProcess = spawn('ssh', sshArgs, {
+    env: { ...process.env, TERM: 'xterm-256color' }
+  });
+
+  sshProcess.stdout?.on('data', (data: Buffer) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+    }
+  });
+
+  sshProcess.stderr?.on('data', (data: Buffer) => {
+    console.log(`[VM Terminal] SSH stderr: ${data.toString()}`);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+    }
+  });
+
+  sshProcess.on('exit', (code) => {
+    console.log(`[VM Terminal] Resumed session ${sessionId} exited with code ${code}`);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'exit', code }));
+    }
+    sessions.delete(sessionId);
+  });
+
+  sshProcess.on('error', (err) => {
+    console.error(`[VM Terminal] Resumed session ${sessionId} error:`, err);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'error', message: err.message }));
+    }
+    sessions.delete(sessionId);
+  });
+
+  sessions.set(sessionId, { process: sshProcess, ws, vmId, tmuxSession, vmIp, dataDir });
+
+  // Update persisted session with new sessionId
+  setPersistedSession({
+    ...persisted,
+    sessionId,
+    lastAccessedAt: Date.now(),
+  });
+
+  // Delete old session entry
+  if (oldSessionId !== sessionId) {
+    deletePersistedSession(oldSessionId);
+  }
+
+  ws.send(JSON.stringify({ type: 'connected', sessionId, tmuxSession, resumed: true }));
+
+  // Resize the tmux window to match client dimensions
+  try {
+    await sshExec(vmIp, dataDir, `tmux resize-window -t ${tmuxSession} -x ${cols} -y ${rows}`);
+  } catch {
+    // Ignore resize errors
+  }
+
+  return { sessionId, scrollback };
 }
 
 export function writeToVmSession(sessionId: string, data: string): boolean {
@@ -129,6 +395,13 @@ export function resizeVmSession(sessionId: string, cols: number, rows: number): 
     // Send resize escape sequence for SSH PTY
     // Using stty command through the shell
     session.process.stdin.write(`\x15stty cols ${cols} rows ${rows} 2>/dev/null; clear\n`);
+
+    // Also resize tmux window if this is a tmux session
+    if (session.tmuxSession && session.vmIp && session.dataDir) {
+      sshExec(session.vmIp, session.dataDir, `tmux resize-window -t ${session.tmuxSession} -x ${cols} -y ${rows} 2>/dev/null`)
+        .catch(() => { /* ignore errors */ });
+    }
+
     console.log(`[VM Terminal] Resized session ${sessionId}: ${cols}x${rows}`);
     return true;
   }
@@ -149,11 +422,25 @@ export function closeVmSession(sessionId: string): void {
 export function closeVmSessionByWebSocket(ws: WebSocket): void {
   for (const [id, session] of sessions.entries()) {
     if (session.ws === ws) {
-      if (!session.process.killed) {
-        session.process.kill();
+      if (session.tmuxSession) {
+        // For tmux sessions: detach cleanly, the tmux session continues in the VM
+        if (session.process.stdin?.writable) {
+          session.process.stdin.write('\x02d'); // Ctrl+B followed by 'd' to detach
+        }
+        setTimeout(() => {
+          if (!session.process.killed) {
+            session.process.kill('SIGTERM');
+          }
+        }, 100);
+        console.log(`[VM Terminal] Detached from tmux session ${session.tmuxSession} (session preserved for reconnection)`);
+      } else {
+        // For non-tmux sessions: kill the process
+        if (!session.process.killed) {
+          session.process.kill();
+        }
+        console.log(`[VM Terminal] Closed session ${id} due to WebSocket disconnect`);
       }
       sessions.delete(id);
-      console.log(`[VM Terminal] Closed session ${id} due to WebSocket disconnect`);
       break;
     }
   }
@@ -427,8 +714,20 @@ export function getVmSession(sessionId: string): VmTerminalSession | undefined {
 export function closeAllVmSessions(): void {
   console.log(`[VM Terminal] Closing ${sessions.size} active session(s)...`);
   for (const [id, session] of sessions.entries()) {
-    if (!session.process.killed) {
-      session.process.kill();
+    if (session.tmuxSession) {
+      // Detach cleanly from tmux so sessions persist in VMs
+      if (session.process.stdin?.writable) {
+        session.process.stdin.write('\x02d');
+      }
+      setTimeout(() => {
+        if (!session.process.killed) {
+          session.process.kill('SIGTERM');
+        }
+      }, 50);
+    } else {
+      if (!session.process.killed) {
+        session.process.kill();
+      }
     }
     sessions.delete(id);
   }

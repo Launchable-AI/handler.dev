@@ -168,9 +168,9 @@ mkdir-p /overlay
 mkdir-p /mnt
 mkdir-p /rom
 
-# Ensure jq is installed (needed for MMDS parsing)
+# Ensure jq, curl, tmux are installed (jq needed for MMDS parsing, tmux for terminal persistence)
 # This is a no-op if already installed
-command "which jq || apt-get update -qq && apt-get install -y -qq jq curl"
+command "which jq || apt-get update -qq && apt-get install -y -qq jq curl tmux"
 
 # Download kernel
 download /boot/vmlinuz* KERNEL_PATH_PLACEHOLDER
@@ -300,16 +300,16 @@ if [ "${USE_MOUNT:-0}" = "1" ]; then
         fi
     fi
 
-    # Install jq if needed (chroot)
-    if [ ! -f "$MOUNT_POINT/usr/bin/jq" ]; then
-        log "Installing jq in guest image..."
+    # Install jq, curl, tmux if needed (chroot)
+    if [ ! -f "$MOUNT_POINT/usr/bin/jq" ] || [ ! -f "$MOUNT_POINT/usr/bin/tmux" ]; then
+        log "Installing jq, curl, tmux in guest image..."
         # Need to mount /proc, /sys, /dev for chroot to work properly
         mount --bind /proc "$MOUNT_POINT/proc" 2>/dev/null || true
         mount --bind /sys "$MOUNT_POINT/sys" 2>/dev/null || true
         mount --bind /dev "$MOUNT_POINT/dev" 2>/dev/null || true
 
-        chroot "$MOUNT_POINT" /bin/bash -c "apt-get update -qq && apt-get install -y -qq jq curl" 2>/dev/null || \
-            warn "Failed to install jq - you may need to install it manually"
+        chroot "$MOUNT_POINT" /bin/bash -c "apt-get update -qq && apt-get install -y -qq jq curl tmux" 2>/dev/null || \
+            warn "Failed to install packages - you may need to install them manually"
 
         umount "$MOUNT_POINT/proc" 2>/dev/null || true
         umount "$MOUNT_POINT/sys" 2>/dev/null || true
