@@ -511,7 +511,7 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
           case 'set-prompt-theme':
             // Live-switch prompt theme for this session
             if (sessionId && msg.theme) {
-              const validThemes: ShellPromptTheme[] = ['minimal', 'arrow', 'bracket', 'lambda', 'cyberpunk', 'multiline'];
+              const validThemes: ShellPromptTheme[] = ['minimal', 'clean', 'bracket', 'lambda', 'cyberpunk', 'multiline'];
               if (validThemes.includes(msg.theme)) {
                 const session = isVmSession ? getVmSession(sessionId) : getSession(sessionId);
                 if (session) {

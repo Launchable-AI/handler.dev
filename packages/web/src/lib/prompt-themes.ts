@@ -1,4 +1,4 @@
-export type ShellPromptTheme = 'minimal' | 'arrow' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
+export type ShellPromptTheme = 'minimal' | 'clean' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
 
 export interface PreviewSegment {
   text: string;
@@ -29,15 +29,14 @@ export const PROMPT_THEMES: PromptThemeDefinition[] = [
     ],
   },
   {
-    id: 'arrow',
-    name: 'Arrow',
-    description: 'Powerline-style with arrow segments',
+    id: 'clean',
+    name: 'Clean',
+    description: 'Path-focused with ❯ prompt',
     previewSegments: [
-      { text: '\ue0b0', color: 'hsl(140 60% 55%)' },
-      { text: ' \uf07b ~/project ', color: 'hsl(140 60% 55%)' },
-      { text: '\ue0b0', color: 'hsl(210 80% 65%)' },
-      { text: ' \ue0a0 main ', color: 'hsl(210 80% 65%)' },
-      { text: '\ue0b0', color: 'hsl(210 80% 65%)' },
+      { text: '~/project', color: 'hsl(220 10% 95%)' },
+      { text: ' on ', color: 'hsl(220 15% 40%)' },
+      { text: 'main', color: 'hsl(140 60% 55%)' },
+      { text: ' ❯', color: 'hsl(180 60% 55%)' },
       { text: ' ', color: 'inherit' },
     ],
   },
