@@ -15,7 +15,7 @@ import {
   getSession as getPersistedSession,
   setSession as setPersistedSession,
   deleteSession as deletePersistedSession,
-  generateTmuxSessionName,
+  listByVm,
 } from './session-store.js';
 
 const execAsync = promisify(exec);
@@ -39,15 +39,27 @@ function getSshKeyPath(dataDir: string): string {
 }
 
 /**
- * Execute a command on a VM via SSH and return stdout
+ * Execute a command on a VM via SSH and return stdout.
+ * Uses single-quote escaping so the local shell passes the command
+ * literally to SSH — $() and other expansions run on the remote VM, not locally.
  */
 async function sshExec(vmIp: string, dataDir: string, command: string): Promise<string> {
   const sshKeyPath = getSshKeyPath(dataDir);
+  const escaped = command.replace(/'/g, "'\\''");
   const { stdout } = await execAsync(
-    `ssh -i ${sshKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 agent@${vmIp} ${JSON.stringify(command)}`,
+    `ssh -i ${sshKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 agent@${vmIp} '${escaped}'`,
     { timeout: 10000 }
   );
   return stdout;
+}
+
+/**
+ * Generate a deterministic tmux session name for a VM.
+ * Uses a stable name (no timestamp) so that reconnections and new connections
+ * reuse the same tmux session via `tmux new-session -A`.
+ */
+function getVmTmuxSessionName(vmId: string): string {
+  return `handler-${vmId.replace(/[.:]/g, '-')}`;
 }
 
 /**
@@ -126,7 +138,14 @@ export function createVmTerminalSession(
 }
 
 /**
- * Start a tmux-based VM terminal session
+ * Start a tmux-based VM terminal session.
+ *
+ * Sets the SSH PTY size with stty BEFORE starting tmux so tmux sees
+ * the correct client dimensions from the start. Uses `exec` to replace
+ * the shell with tmux so SIGHUP goes directly to tmux on disconnect.
+ *
+ * The tmux command separator ';' is single-quoted so the remote shell
+ * passes it literally to tmux instead of treating it as a command separator.
  */
 function startVmTmuxSession(
   ws: WebSocket,
@@ -139,10 +158,11 @@ function startVmTmuxSession(
   cols: number,
   rows: number
 ): void {
-  const tmuxSession = generateTmuxSessionName(vmId);
-  // SSH into VM and run tmux new-session; -A reattaches if session exists
-  // set-option status off hides the tmux status bar (we have our own UI)
-  const tmuxCmd = `tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} \\; set-option status off`;
+  const tmuxSession = getVmTmuxSessionName(vmId);
+
+  // stty sets the SSH PTY dimensions, then exec replaces the shell with tmux.
+  // -A reattaches if the session already exists (deterministic name per VM).
+  const remoteCmd = `stty cols ${cols} rows ${rows} 2>/dev/null; exec tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} ';' set-option status off`;
 
   const sshArgs = [
     '-tt',
@@ -154,7 +174,7 @@ function startVmTmuxSession(
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',
     `agent@${vmIp}`,
-    tmuxCmd
+    remoteCmd
   ];
 
   const sshProcess = spawn('ssh', sshArgs, {
@@ -163,7 +183,11 @@ function startVmTmuxSession(
 
   setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, tmuxSession, sshProcess);
 
-  // Persist session metadata for reconnection
+  // Clean up old persisted sessions for this VM, then persist the new one
+  for (const old of listByVm(vmId)) {
+    deletePersistedSession(old.sessionId);
+  }
+
   setPersistedSession({
     sessionId,
     tmuxSession,
@@ -305,8 +329,9 @@ export async function resumeVmTerminalSession(
   const sessionId = `vm-${vmId}-${Date.now()}`;
   console.log(`[VM Terminal] Resuming session: ${sessionId} (tmux: ${tmuxSession})`);
 
-  // Attach to the existing tmux session
-  const tmuxCmd = `tmux attach-session -t ${tmuxSession} \\; set-option status off \\; resize-window -x ${cols} -y ${rows}`;
+  // Set SSH PTY size then exec into tmux attach.
+  // stty ensures tmux sees the correct client dimensions on reattach.
+  const remoteCmd = `stty cols ${cols} rows ${rows} 2>/dev/null; exec tmux attach-session -t ${tmuxSession} ';' set-option status off`;
 
   const sshArgs = [
     '-tt',
@@ -318,7 +343,7 @@ export async function resumeVmTerminalSession(
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',
     `agent@${vmIp}`,
-    tmuxCmd
+    remoteCmd
   ];
 
   const sshProcess = spawn('ssh', sshArgs, {
@@ -370,13 +395,6 @@ export async function resumeVmTerminalSession(
 
   ws.send(JSON.stringify({ type: 'connected', sessionId, tmuxSession, resumed: true }));
 
-  // Resize the tmux window to match client dimensions
-  try {
-    await sshExec(vmIp, dataDir, `tmux resize-window -t ${tmuxSession} -x ${cols} -y ${rows}`);
-  } catch {
-    // Ignore resize errors
-  }
-
   return { sessionId, scrollback };
 }
 
@@ -391,17 +409,23 @@ export function writeToVmSession(sessionId: string, data: string): boolean {
 
 export function resizeVmSession(sessionId: string, cols: number, rows: number): boolean {
   const session = sessions.get(sessionId);
-  if (session && session.process.stdin?.writable) {
-    // Send resize escape sequence for SSH PTY
-    // Using stty command through the shell
+  if (!session) return false;
+
+  if (session.tmuxSession && session.vmIp && session.dataDir) {
+    // For tmux sessions: resize the SSH PTY that tmux is attached to.
+    // Find the client's TTY via tmux, then use stty -F to resize it.
+    // The kernel sends SIGWINCH to tmux, which auto-resizes its windows.
+    // This avoids writing visible stty/clear commands into the shell.
+    const { vmIp, dataDir, tmuxSession } = session;
+    sshExec(vmIp, dataDir,
+      `PTY=$(tmux list-clients -t ${tmuxSession} -F '#{client_tty}' | head -1) && [ -n "$PTY" ] && stty -F $PTY cols ${cols} rows ${rows}`
+    ).catch(() => { /* ignore errors */ });
+
+    console.log(`[VM Terminal] Resized session ${sessionId}: ${cols}x${rows}`);
+    return true;
+  } else if (session.process.stdin?.writable) {
+    // For non-tmux sessions: use stty through stdin (changes the SSH PTY directly)
     session.process.stdin.write(`\x15stty cols ${cols} rows ${rows} 2>/dev/null; clear\n`);
-
-    // Also resize tmux window if this is a tmux session
-    if (session.tmuxSession && session.vmIp && session.dataDir) {
-      sshExec(session.vmIp, session.dataDir, `tmux resize-window -t ${session.tmuxSession} -x ${cols} -y ${rows} 2>/dev/null`)
-        .catch(() => { /* ignore errors */ });
-    }
-
     console.log(`[VM Terminal] Resized session ${sessionId}: ${cols}x${rows}`);
     return true;
   }
