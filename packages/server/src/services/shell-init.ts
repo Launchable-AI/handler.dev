@@ -36,42 +36,42 @@ const PS1_THEMES: Record<ShellPromptTheme, string> = {
   // Minimal: user ~/project $ ▍ (cyan username, bold path, cyan $)
   minimal: [
     GIT_BRANCH_HELPER,
-    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\[\\033[0;35m\\]%s\\[\\033[0m\\]' "$b"; }`,
+    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\001\\033[0;35m\\002%s\\001\\033[0m\\002' "$b"; }`,
     `PS1='\\[\\033[0;36m\\]\\u\\[\\033[0m\\] \\[\\033[1m\\]\\w\\[\\033[0m\\]$(__handler_ps1_branch) \\[\\033[0;36m\\]\\$\\[\\033[0m\\] '`,
   ].join('; '),
 
   // Arrow: Powerline segments with  arrows
   arrow: [
     GIT_BRANCH_HELPER,
-    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf '\\[\\033[0;34m\\]\\[\\033[0;37;44m\\]  %s \\[\\033[0;34;49m\\]\\[\\033[0m\\]' "$b" || printf '\\[\\033[0;32;49m\\]\\[\\033[0m\\]'; }`,
+    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf '\\001\\033[0;34m\\002\\001\\033[0;37;44m\\002  %s \\001\\033[0;34;49m\\002\\001\\033[0m\\002' "$b" || printf '\\001\\033[0;32;49m\\002\\001\\033[0m\\002'; }`,
     `PS1='\\[\\033[0;30;42m\\]  \\w \\[\\033[0;32;49m\\]$(__handler_ps1_branch) '`,
   ].join('; '),
 
   // Bracket: [user@host] [~/project] [main] $ (blue brackets, green user, yellow path)
   bracket: [
     GIT_BRANCH_HELPER,
-    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\[\\033[0;34m\\][\\[\\033[0;36m\\]%s\\[\\033[0;34m\\]]' "$b"; }`,
+    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\001\\033[0;34m\\002[\\001\\033[0;36m\\002%s\\001\\033[0;34m\\002]' "$b"; }`,
     `PS1='\\[\\033[0;34m\\][\\[\\033[0;32m\\]\\u@\\h\\[\\033[0;34m\\]] [\\[\\033[0;33m\\]\\w\\[\\033[0;34m\\]]$(__handler_ps1_branch) \\[\\033[0;34m\\]\\$\\[\\033[0m\\] '`,
   ].join('; '),
 
   // Lambda: λ ~/project (green λ if last cmd succeeded, red if failed)
   lambda: [
     GIT_BRANCH_HELPER,
-    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\[\\033[0;35m\\](%s)\\[\\033[0m\\]' "$b"; }`,
+    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\001\\033[0;35m\\002(%s)\\001\\033[0m\\002' "$b"; }`,
     `PS1='\\[\\033[0;$(( $? == 0 ? 32 : 31 ))m\\]λ\\[\\033[0m\\] \\[\\033[1m\\]\\w\\[\\033[0m\\]$(__handler_ps1_branch) '`,
   ].join('; '),
 
   // Cyberpunk: ▸ user ▸ ~/project ▸ main ▸ (magenta arrows, cyan user, yellow path)
   cyberpunk: [
     GIT_BRANCH_HELPER,
-    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\[\\033[0;35m\\]▸ \\[\\033[0;32m\\]%s' "$b"; }`,
+    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf ' \\001\\033[0;35m\\002▸ \\001\\033[0;32m\\002%s' "$b"; }`,
     `PS1='\\[\\033[0;35m\\]▸ \\[\\033[0;36m\\]\\u \\[\\033[0;35m\\]▸ \\[\\033[0;33m\\]\\w$(__handler_ps1_branch) \\[\\033[0;35m\\]▸\\[\\033[0m\\] '`,
   ].join('; '),
 
   // Multiline: Two-line with box-drawing
   multiline: [
     GIT_BRANCH_HELPER,
-    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf '─\\[\\033[0;34m\\][\\[\\033[0;36m\\]%s\\[\\033[0;34m\\]]' "$b"; }`,
+    `__handler_ps1_branch() { local b; b=$(__handler_git_ps1); [ -n "$b" ] && printf '─\\001\\033[0;34m\\002[\\001\\033[0;36m\\002%s\\001\\033[0;34m\\002]' "$b"; }`,
     `PS1='\\[\\033[0;34m\\]┌─[\\[\\033[0;32m\\]\\u@\\h\\[\\033[0;34m\\]]─[\\[\\033[0;33m\\]\\w\\[\\033[0;34m\\]]$(__handler_ps1_branch)\\[\\033[0;34m\\]\\n└─\\$\\[\\033[0m\\] '`,
   ].join('; '),
 };
