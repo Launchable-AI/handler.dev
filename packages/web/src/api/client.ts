@@ -464,6 +464,8 @@ export interface CloudBackendsConfig {
   daytona?: DaytonaConfig;
 }
 
+export type ShellPromptTheme = 'minimal' | 'arrow' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
+
 export interface AppConfig {
   sshKeysDisplayPath: string;
   sshHost: string;
@@ -471,6 +473,7 @@ export interface AppConfig {
   sshJumpHostKeyPath: string; // Path to SSH key for jump host (e.g., ~/.ssh/jump_key.pem)
   dataDirectory: string;
   cloudBackends?: CloudBackendsConfig;
+  shellPromptTheme?: ShellPromptTheme;
 }
 
 export async function getConfig(): Promise<AppConfig> {

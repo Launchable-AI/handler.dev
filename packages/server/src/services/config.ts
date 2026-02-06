@@ -105,6 +105,8 @@ export interface ContainerRegistriesConfig {
   dockerHub?: DockerHubConfig;
 }
 
+export type ShellPromptTheme = 'minimal' | 'arrow' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
+
 export interface QuickLaunchConfig {
   backend: 'docker' | 'firecracker' | 'cloud-hypervisor' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
   image?: string;           // Docker image tag or VM base image name
@@ -124,6 +126,7 @@ export interface AppConfig {
   cloudBackends?: CloudBackendsConfig; // Cloud backend configurations
   containerRegistries?: ContainerRegistriesConfig; // Container registry configurations
   quickLaunch?: QuickLaunchConfig; // Quick launch defaults for "New Sandbox" button
+  shellPromptTheme?: ShellPromptTheme; // Shell prompt PS1 theme
 }
 
 const DEFAULT_CONFIG: AppConfig = {

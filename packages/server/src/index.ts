@@ -155,7 +155,11 @@ import {
   resizeSession,
   closeSessionByWebSocket,
   closeAllSessions,
+  getSession,
 } from './services/terminal.js';
+import { injectPromptTheme } from './services/shell-init.js';
+import { setConfig } from './services/config.js';
+import type { ShellPromptTheme } from './services/config.js';
 import {
   createVmTerminalSession,
   createDaytonaTerminalSession,
@@ -165,6 +169,7 @@ import {
   resizeVmSession,
   closeVmSessionByWebSocket,
   closeAllVmSessions,
+  getVmSession,
 } from './services/vm-terminal.js';
 import { getDaytonaService } from './services/daytona.js';
 import { getAwsService } from './services/aws.js';
@@ -497,6 +502,23 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
                 resizeVmSession(sessionId, msg.cols, msg.rows);
               } else {
                 resizeSession(sessionId, msg.cols, msg.rows);
+              }
+            }
+            break;
+
+          case 'set-prompt-theme':
+            // Live-switch prompt theme for this session
+            if (sessionId && msg.theme) {
+              const validThemes: ShellPromptTheme[] = ['minimal', 'arrow', 'bracket', 'lambda', 'cyberpunk', 'multiline'];
+              if (validThemes.includes(msg.theme)) {
+                const session = isVmSession ? getVmSession(sessionId) : getSession(sessionId);
+                if (session) {
+                  injectPromptTheme(session.process, msg.theme);
+                }
+                // Persist the theme selection
+                setConfig({ shellPromptTheme: msg.theme }).catch(err => {
+                  console.error('[WS] Failed to persist prompt theme:', err);
+                });
               }
             }
             break;

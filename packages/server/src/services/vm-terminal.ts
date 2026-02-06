@@ -420,6 +420,10 @@ export function createCloudTerminalSession(
   return sessionId;
 }
 
+export function getVmSession(sessionId: string): VmTerminalSession | undefined {
+  return sessions.get(sessionId);
+}
+
 export function closeAllVmSessions(): void {
   console.log(`[VM Terminal] Closing ${sessions.size} active session(s)...`);
   for (const [id, session] of sessions.entries()) {
