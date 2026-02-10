@@ -263,10 +263,15 @@ export class TapHelper {
       return this.allocatedTaps.get(vmId)!;
     }
 
-    // Check if TAP already exists (from previous run)
+    // Check if TAP already exists (from previous run or incomplete cleanup)
     if (this.deviceExists(tapName)) {
       console.log(`[TapHelper] TAP ${tapName} already exists, deleting first`);
       await this.deleteTap(vmId);
+      // Wait for device to fully disappear before attempting re-creation
+      const removed = await this.waitForDeviceRemoval(tapName);
+      if (!removed) {
+        console.warn(`[TapHelper] TAP ${tapName} still exists after cleanup, will retry creation`);
+      }
     }
 
     const { ip: guestIp, suffix } = this.getNextIp();
@@ -279,36 +284,76 @@ export class TapHelper {
 
     console.log(`[TapHelper] Creating TAP ${tapName} for VM ${vmId}`);
 
-    const result = await this.runHelper([
-      'create',
-      '--name', tapName,
-      '--bridge', this.bridgeName,
-      '--owner-uid', uid.toString(),
-      '--owner-gid', gid.toString(),
-      '--format', 'json',
-    ]);
+    // Retry creation with backoff — the kernel may still be cleaning up the old device
+    const maxRetries = 3;
+    let lastError = '';
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (attempt > 0) {
+        const delay = attempt * 500;
+        console.log(`[TapHelper] Retrying TAP creation (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
 
-    if (result.exitCode !== 0) {
-      let errorMsg = result.stderr || 'Unknown error';
+        // If the device reappeared or never left, try deleting again
+        if (this.deviceExists(tapName)) {
+          console.log(`[TapHelper] TAP ${tapName} still exists before retry, deleting`);
+          try {
+            await this.runHelper(['delete', '--name', tapName]);
+            await this.waitForDeviceRemoval(tapName);
+          } catch {}
+        }
+      }
+
+      const result = await this.runHelper([
+        'create',
+        '--name', tapName,
+        '--bridge', this.bridgeName,
+        '--owner-uid', uid.toString(),
+        '--owner-gid', gid.toString(),
+        '--format', 'json',
+      ]);
+
+      if (result.exitCode === 0) {
+        const tapInfo: TapInfo = {
+          name: tapName,
+          guestIp,
+          gateway: this.gateway,
+          macAddress,
+          bridgeName: this.bridgeName,
+        };
+
+        this.allocatedTaps.set(vmId, tapInfo);
+        console.log(`[TapHelper] Created TAP ${tapName} with IP ${guestIp}`);
+
+        return tapInfo;
+      }
+
+      lastError = result.stderr || 'Unknown error';
       try {
         const json = JSON.parse(result.stdout);
-        if (json.error) errorMsg = json.error;
+        if (json.error) lastError = json.error;
       } catch {}
-      throw new Error(`Failed to create TAP: ${errorMsg}`);
+      console.warn(`[TapHelper] TAP creation attempt ${attempt + 1} failed: ${lastError}`);
     }
 
-    const tapInfo: TapInfo = {
-      name: tapName,
-      guestIp,
-      gateway: this.gateway,
-      macAddress,
-      bridgeName: this.bridgeName,
-    };
+    // All retries exhausted — release the IP we reserved
+    this.releaseIp(guestIp);
+    throw new Error(`Failed to create TAP after ${maxRetries} attempts: ${lastError}`);
+  }
 
-    this.allocatedTaps.set(vmId, tapInfo);
-    console.log(`[TapHelper] Created TAP ${tapName} with IP ${guestIp}`);
-
-    return tapInfo;
+  /**
+   * Wait for a TAP device to disappear from the system after deletion.
+   * The kernel may take a moment to fully clean up the device.
+   */
+  private async waitForDeviceRemoval(tapName: string, timeoutMs: number = 2000): Promise<boolean> {
+    const interval = 100;
+    const maxAttempts = Math.ceil(timeoutMs / interval);
+    for (let i = 0; i < maxAttempts; i++) {
+      if (!this.deviceExists(tapName)) {
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, interval));
+    }
+    return !this.deviceExists(tapName);
   }
 
   /**
@@ -325,6 +370,7 @@ export class TapHelper {
         console.log(`[TapHelper] Deleting orphan TAP ${tapName}`);
         try {
           await this.runHelper(['delete', '--name', tapName]);
+          await this.waitForDeviceRemoval(tapName);
         } catch (error) {
           console.warn(`[TapHelper] Failed to delete orphan TAP: ${error}`);
         }
@@ -338,6 +384,11 @@ export class TapHelper {
       const result = await this.runHelper(['delete', '--name', tapInfo.name]);
       if (result.exitCode !== 0) {
         console.warn(`[TapHelper] Failed to delete TAP: ${result.stderr}`);
+      }
+      // Wait for the kernel to fully remove the device
+      const removed = await this.waitForDeviceRemoval(tapInfo.name);
+      if (!removed) {
+        console.warn(`[TapHelper] TAP ${tapInfo.name} still exists after deletion, may cause issues on re-creation`);
       }
     } catch (error) {
       console.warn(`[TapHelper] Error deleting TAP: ${error}`);

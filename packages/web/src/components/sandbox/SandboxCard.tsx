@@ -538,7 +538,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
             </div>
 
             {/* Actions */}
-            {(isBuilding || isFailed) ? (
+            {isBuilding ? (
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={() => setShowLogs(true)}
@@ -640,6 +640,15 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                     </div>
                   </>
                 )}
+                {isFailed && (
+                  <button
+                    onClick={() => setShowLogs(true)}
+                    className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
+                    title="View Logs"
+                  >
+                    <ScrollText className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 {isRunning ? (
                   <button
                     onClick={handleStop}
@@ -653,7 +662,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                       <Square className="h-3.5 w-3.5" />
                     )}
                   </button>
-                ) : isStopped && (
+                ) : (isStopped || isFailed) && (
                   <button
                     onClick={handleStart}
                     disabled={isPending}

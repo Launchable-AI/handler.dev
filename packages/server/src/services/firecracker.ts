@@ -464,6 +464,31 @@ export class FirecrackerService extends EventEmitter {
     const logFile = path.join(vmDir, 'firecracker.log');
 
     try {
+      // Clean up stale resources from a previous failed start attempt
+      if (vm.status === 'error' || vm.status === 'creating') {
+        console.log(`[FirecrackerService] Cleaning up stale resources for VM ${id} (was ${vm.status})`);
+        // Kill any lingering Firecracker process
+        if (vm.pid && this.isProcessRunning(vm.pid)) {
+          try {
+            process.kill(vm.pid, 'SIGKILL');
+            await this.waitForProcessExit(vm.pid, 3000);
+          } catch {}
+        }
+        // Release stale TAP device so it can be re-allocated cleanly
+        if (vm.networkConfig.tapDevice) {
+          try {
+            await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id);
+          } catch {}
+          vm.networkConfig.tapDevice = undefined;
+          vm.networkConfig.guestIp = undefined;
+          vm.networkConfig.mode = 'none';
+          vm.guestIp = undefined;
+        }
+        this.processes.delete(id);
+        vm.pid = undefined;
+        vm.error = undefined;
+      }
+
       // Re-allocate TAP device if we don't have one (e.g., VM was stopped)
       if (!vm.networkConfig.tapDevice || vm.networkConfig.mode !== 'tap') {
         try {
@@ -1094,7 +1119,7 @@ export class FirecrackerService extends EventEmitter {
       throw new Error(`VM ${id} not found`);
     }
 
-    if (vm.status !== 'running' && vm.status !== 'booting' && vm.status !== 'paused') {
+    if (vm.status !== 'running' && vm.status !== 'booting' && vm.status !== 'paused' && vm.status !== 'error' && vm.status !== 'creating') {
       console.warn(`[FirecrackerService] VM ${id} is not running (status: ${vm.status})`);
       return this.vmToInfo(vm);
     }
