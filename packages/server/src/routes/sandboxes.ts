@@ -1396,4 +1396,188 @@ sandboxes.post('/:id/upload-directory', async (c) => {
   }
 });
 
+/**
+ * GET /api/sandboxes/:id/files/download?path=...
+ * Download a file from the sandbox
+ */
+sandboxes.get('/:id/files/download', async (c) => {
+  const id = c.req.param('id');
+  const filePath = c.req.query('path');
+
+  if (!filePath) {
+    return c.json({ error: 'File path is required (use ?path=...)' }, 400);
+  }
+
+  const service = await ensureSandboxServiceInitialized();
+
+  try {
+    const sandbox = await service.get(id);
+    if (!sandbox) {
+      return c.json({ error: 'Sandbox not found' }, 404);
+    }
+
+    if (sandbox.status !== 'running') {
+      return c.json({ error: 'Sandbox must be running to download files' }, 400);
+    }
+
+    const fileName = filePath.split('/').pop() || 'file';
+    const fs = await import('fs');
+    const path = await import('path');
+    const os = await import('os');
+    const { execSync } = await import('child_process');
+
+    if (sandbox.backend === 'docker') {
+      const containerId = id.startsWith('docker-') ? id.slice(7) : id;
+      const tmpFile = path.join(os.tmpdir(), `sandbox-download-${Date.now()}`);
+
+      try {
+        execSync(`docker cp ${containerId}:"${filePath}" "${tmpFile}"`, { stdio: 'pipe', timeout: 60000 });
+        const content = fs.readFileSync(tmpFile);
+        return new Response(new Uint8Array(content), {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+          },
+        });
+      } finally {
+        if (fs.existsSync(tmpFile)) {
+          fs.unlinkSync(tmpFile);
+        }
+      }
+    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+      // Delegate to existing VM service downloadFileFromVm
+      const vmService = sandbox.backend === 'cloud-hypervisor'
+        ? service.getHypervisorService()
+        : service.getFirecrackerService();
+
+      if (!vmService) {
+        return c.json({ error: 'VM service not available' }, 500);
+      }
+
+      const content = await vmService.downloadFileFromVm(id, filePath);
+      return new Response(new Uint8Array(content), {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${fileName}"`,
+        },
+      });
+    } else if (sandbox.backend === 'daytona') {
+      if (!sandbox.guestIp) {
+        return c.json({ error: 'Daytona workspace does not have SSH access configured' }, 400);
+      }
+
+      const daytonaMeta = sandbox.backendMeta as { type: 'daytona'; sshKey?: string; sshPort?: number } | undefined;
+      if (!daytonaMeta?.sshKey) {
+        return c.json({ error: 'SSH key not available for this Daytona workspace' }, 400);
+      }
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-download-'));
+      const tempKeyPath = path.join(tempDir, 'key');
+      const tmpFile = path.join(tempDir, 'downloaded-file');
+
+      fs.writeFileSync(tempKeyPath, daytonaMeta.sshKey, { mode: 0o600 });
+
+      try {
+        const port = daytonaMeta.sshPort || 22;
+        execSync(
+          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 dev@${sandbox.guestIp}:"${filePath}" "${tmpFile}"`,
+          { stdio: 'pipe', timeout: 300000 }
+        );
+        const content = fs.readFileSync(tmpFile);
+        return new Response(new Uint8Array(content), {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+          },
+        });
+      } finally {
+        fs.rmSync(tempDir, { recursive: true });
+      }
+    } else if (sandbox.backend === 'aws') {
+      if (!sandbox.guestIp) {
+        return c.json({ error: 'AWS instance does not have a public IP address' }, 400);
+      }
+
+      const awsService = service.getAwsService();
+      if (!awsService) {
+        return c.json({ error: 'AWS service not available' }, 500);
+      }
+
+      const sshPrivateKey = await awsService.getSshPrivateKey();
+      if (!sshPrivateKey) {
+        return c.json({ error: 'SSH key not available for AWS instances' }, 400);
+      }
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-download-'));
+      const tempKeyPath = path.join(tempDir, 'key');
+      const tmpFile = path.join(tempDir, 'downloaded-file');
+
+      fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
+
+      try {
+        execSync(
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ubuntu@${sandbox.guestIp}:"${filePath}" "${tmpFile}"`,
+          { stdio: 'pipe', timeout: 300000 }
+        );
+        const content = fs.readFileSync(tmpFile);
+        return new Response(new Uint8Array(content), {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+          },
+        });
+      } finally {
+        fs.rmSync(tempDir, { recursive: true });
+      }
+    } else if (sandbox.backend === 'azure' || sandbox.backend === 'gcp' || sandbox.backend === 'digitalocean' || sandbox.backend === 'linode') {
+      if (!sandbox.guestIp) {
+        return c.json({ error: 'Instance does not have a public IP address' }, 400);
+      }
+
+      const backendService = sandbox.backend === 'azure' ? service.getAzureService()
+        : sandbox.backend === 'gcp' ? service.getGcpService()
+        : sandbox.backend === 'digitalocean' ? service.getDigitalOceanService()
+        : service.getLinodeService();
+
+      if (!backendService) {
+        return c.json({ error: `${sandbox.backend} service not available` }, 500);
+      }
+
+      const sshPrivateKey = await backendService.getSshPrivateKey();
+      if (!sshPrivateKey) {
+        return c.json({ error: 'SSH key not available' }, 400);
+      }
+
+      const sshUser = sandbox.sshUser || 'root';
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-download-'));
+      const tempKeyPath = path.join(tempDir, 'key');
+      const tmpFile = path.join(tempDir, 'downloaded-file');
+
+      fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
+
+      try {
+        execSync(
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp}:"${filePath}" "${tmpFile}"`,
+          { stdio: 'pipe', timeout: 300000 }
+        );
+        const content = fs.readFileSync(tmpFile);
+        return new Response(new Uint8Array(content), {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+          },
+        });
+      } finally {
+        fs.rmSync(tempDir, { recursive: true });
+      }
+    }
+
+    return c.json({ error: 'Download not supported for this backend' }, 400);
+  } catch (error) {
+    console.error('[SandboxRoutes] Download error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to download file';
+    return c.json({ error: message }, 500);
+  }
+});
+
 export default sandboxes;

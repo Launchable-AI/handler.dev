@@ -97,6 +97,28 @@ Six PS1 prompt themes: `minimal`, `clean`, `bracket`, `lambda`, `cyberpunk`, `mu
 - `packages/web/src/lib/prompt-themes.ts` — Preview definitions with dark/light color variants
 - Themes are injected via stdin after shell start, with live-switching support
 
+### File Transfer
+
+File upload and download for all sandbox backends through a unified API:
+
+- **Upload**: `POST /api/sandboxes/:id/upload` — multipart form upload to any backend
+- **Directory upload**: `POST /api/sandboxes/:id/upload-directory` — tar-based batch upload
+- **Download**: `GET /api/sandboxes/:id/files/download?path=...` — download a single file from any backend
+
+Backend-specific transport:
+- Docker: `docker cp` for file transfer
+- VMs (Firecracker/Cloud-Hypervisor): delegates to `downloadFileFromVm()` on the respective service (SCP-based)
+- Daytona/AWS/Azure/GCP/DigitalOcean/Linode: SCP with backend-specific SSH keys
+
+The sandbox card/row actions include a download button (visible when running) that opens a popover for entering an absolute file path. The browser download is triggered via `URL.createObjectURL` + anchor click.
+
+Key files:
+- `packages/server/src/routes/sandboxes.ts` — Unified upload/download routes
+- `packages/web/src/api/client.ts` — `uploadFileToSandbox`, `downloadFileFromSandbox` client functions
+- `packages/web/src/components/sandbox/SandboxCard.tsx` — Download button in card actions
+- `packages/web/src/components/sandbox/SandboxRow.tsx` — Download button in table row actions
+- `packages/web/src/components/sandbox/SandboxCardCompact.tsx` — Download button in compact card actions
+
 ### Docker in Firecracker
 
 Firecracker VM images include Docker CE pre-installed. Docker uses a **dedicated ext4 block device** for `/var/lib/docker` so overlay2 works natively (avoiding nested overlayfs issues):

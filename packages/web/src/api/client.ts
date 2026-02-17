@@ -2596,6 +2596,27 @@ export function uploadDirectoryToSandbox(
   };
 }
 
+/**
+ * Download a file from a sandbox
+ */
+export async function downloadFileFromSandbox(id: string, filePath: string): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/sandboxes/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(filePath)}`);
+
+  if (!response.ok) {
+    let errorMsg = 'Failed to download file';
+    try {
+      const error = await response.json();
+      errorMsg = error.error || errorMsg;
+    } catch {
+      // use default message
+    }
+    throw new Error(errorMsg);
+  }
+
+  return response.blob();
+}
+
 // ==================== Unified Volume API ====================
 
 /**
