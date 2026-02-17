@@ -345,6 +345,40 @@ export class SandboxService {
   }
 
   /**
+   * Update sandbox resources (vCPUs, memory, disk)
+   * For VMs: updates state, applied on next boot. VM must be stopped.
+   * For Docker: uses docker update for CPU/memory on running containers.
+   */
+  async updateResources(id: string, resources: { vcpus?: number; memoryMb?: number; diskGb?: number }): Promise<Sandbox> {
+    const backend = this.getBackendFromId(id);
+
+    if (backend === 'firecracker') {
+      if (!this.firecrackerService) {
+        throw new Error('Firecracker service is not available');
+      }
+      await this.firecrackerService.updateVmResources(id, resources);
+    } else if (backend === 'cloud-hypervisor') {
+      if (!this.hypervisorService) {
+        throw new Error('Cloud-Hypervisor service is not available');
+      }
+      const vmId = id.startsWith('vm-') ? id.slice(3) : id;
+      await this.hypervisorService.updateVmResources(vmId, resources);
+    } else if (backend === 'docker') {
+      const dockerService = await import('../docker.js');
+      const containerId = id.replace(/^docker-/, '');
+      await dockerService.updateContainerResources(containerId, resources);
+    } else {
+      throw new Error(`Resource reconfiguration is not supported for ${backend} sandboxes`);
+    }
+
+    const result = await this.get(id);
+    if (!result) {
+      throw new Error(`Sandbox ${id} not found after resource update`);
+    }
+    return result;
+  }
+
+  /**
    * Determine the backend type from a sandbox ID
    */
   private getBackendFromId(id: string): SandboxBackend {

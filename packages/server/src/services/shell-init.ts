@@ -88,6 +88,14 @@ export function getPromptThemeScript(theme: ShellPromptTheme): string {
 const SHELL_INIT_SCRIPT = [
   // Set up Claude Code hooks for status tracking
   CLAUDE_HOOKS_INIT,
+  // Enable colors for ls, grep, and other commands
+  `alias ls='ls --color=auto'`,
+  `alias grep='grep --color=auto'`,
+  `alias fgrep='fgrep --color=auto'`,
+  `alias egrep='egrep --color=auto'`,
+  // Set up dircolors for colorized ls output
+  `command -v dircolors >/dev/null 2>&1 && eval "$(dircolors -b)" 2>/dev/null`,
+  `export CLICOLOR=1`,
   // Helper to read Claude Code status from hook-written file, falling back to process detection
   `__handler_claude_status() { if [ -f ~/.claude-status ]; then cat ~/.claude-status; elif pgrep -x claude >/dev/null 2>&1; then echo idle; else echo off; fi; }`,
   // Define the prompt hook function

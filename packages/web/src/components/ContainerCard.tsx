@@ -203,7 +203,7 @@ export function ContainerCard({ container }: ContainerCardProps) {
               {isRunning && (
                 <>
                   <button
-                    onClick={() => terminalPanel.openContainerTerminal(container.id, container.name, true)}
+                    onClick={() => terminalPanel.openContainerTerminal(container.id, container.name)}
                     className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
                     title="Open Terminal"
                   >

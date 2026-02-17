@@ -127,6 +127,7 @@ export interface AppConfig {
   containerRegistries?: ContainerRegistriesConfig; // Container registry configurations
   quickLaunch?: QuickLaunchConfig; // Quick launch defaults for "New Sandbox" button
   shellPromptTheme?: ShellPromptTheme; // Shell prompt PS1 theme
+  tmuxEnabled?: boolean; // Enable/disable tmux for terminal sessions (default: true)
 }
 
 const DEFAULT_CONFIG: AppConfig = {

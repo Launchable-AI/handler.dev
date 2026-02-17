@@ -5,7 +5,7 @@
  * to create and delete TAP devices without requiring root privileges
  * for the main application.
  *
- * Installation: sudo ./scripts/install-tap-helper.sh --setup-bridge
+ * Installation: sudo ./scripts/user/install-tap-helper.sh --setup-bridge
  */
 
 import { spawn } from 'child_process';
@@ -159,7 +159,7 @@ export class TapHelper {
    */
   private async runHelper(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     if (!this.helperPath) {
-      throw new Error('TAP helper not installed. Run: sudo ./scripts/install-tap-helper.sh');
+      throw new Error('TAP helper not installed. Run: sudo ./scripts/user/install-tap-helper.sh');
     }
 
     return new Promise((resolve, reject) => {
@@ -199,7 +199,7 @@ export class TapHelper {
         hasCapability: false,
         bridgeExists: false,
         bridgeName: this.bridgeName,
-        message: 'TAP helper not found. Run: sudo ./scripts/install-tap-helper.sh',
+        message: 'TAP helper not found. Run: sudo ./scripts/user/install-tap-helper.sh',
       };
     }
 
@@ -210,9 +210,9 @@ export class TapHelper {
 
       let message = '';
       if (!hasCapability) {
-        message = 'TAP helper missing CAP_NET_ADMIN. Run: sudo ./scripts/install-tap-helper.sh';
+        message = 'TAP helper missing CAP_NET_ADMIN. Run: sudo ./scripts/user/install-tap-helper.sh';
       } else if (!bridgeExists) {
-        message = `Bridge ${this.bridgeName} not found. Run: sudo ./scripts/install-tap-helper.sh --setup-bridge`;
+        message = `Bridge ${this.bridgeName} not found. Run: sudo ./scripts/user/install-tap-helper.sh --setup-bridge`;
       } else {
         message = 'TAP helper ready for on-demand TAP creation';
       }
@@ -251,7 +251,7 @@ export class TapHelper {
     // Skip status check for performance - it's checked during initialize()
     // Only verify the helper path exists
     if (!this.helperPath) {
-      throw new Error('TAP helper not installed. Run: sudo ./scripts/install-tap-helper.sh');
+      throw new Error('TAP helper not installed. Run: sudo ./scripts/user/install-tap-helper.sh');
     }
 
     // Generate TAP name based on VM ID (sanitized)

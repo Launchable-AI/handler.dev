@@ -137,6 +137,24 @@ export async function renameContainer(id: string, newName: string): Promise<void
   await container.rename({ name: newName });
 }
 
+export async function updateContainerResources(id: string, resources: { vcpus?: number; memoryMb?: number; diskGb?: number }): Promise<void> {
+  const container = docker.getContainer(id);
+  const updateConfig: Record<string, unknown> = {};
+
+  if (resources.memoryMb !== undefined) {
+    updateConfig.Memory = resources.memoryMb * 1024 * 1024; // Convert MB to bytes
+    updateConfig.MemorySwap = resources.memoryMb * 1024 * 1024 * 2; // 2x for swap
+  }
+  if (resources.vcpus !== undefined) {
+    // NanoCPUs: number of CPUs * 1e9
+    updateConfig.NanoCpus = resources.vcpus * 1e9;
+  }
+
+  if (Object.keys(updateConfig).length > 0) {
+    await container.update(updateConfig);
+  }
+}
+
 export async function listImages(): Promise<ImageInfo[]> {
   // Get handler-labeled images
   const handlerImages = await docker.listImages({

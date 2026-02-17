@@ -27,16 +27,188 @@ import {
   ChevronDown,
   ChevronRight,
   RotateCcw,
+  Cpu,
+  MemoryStick,
+  Network,
+  Clock,
+  Settings,
 } from 'lucide-react';
 import type { Sandbox, DockerMeta, VmMeta, VmSnapshotInfo } from '../../api/client';
 import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox, uploadDirectoryToSandbox, getSandboxSshCommand } from '../../api/client';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
-import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
+import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox, useUpdateSandboxResources } from '../../hooks/useSandboxes';
 import { useVmSnapshots, useDeleteVmSnapshot, useRollbackVmToSnapshot, useCreateVm } from '../../hooks/useContainers';
 import { useConfirm } from '../ConfirmModal';
 import { useTerminalPanel } from '../TerminalPanel';
 import { SandboxLogViewer } from './SandboxLogViewer';
+
+interface ReconfigureDialogProps {
+  sandbox: Sandbox;
+  onClose: () => void;
+  onSave: (resources: { vcpus?: number; memoryMb?: number; diskGb?: number }) => void;
+  isPending: boolean;
+  error: string | null;
+}
+
+function ReconfigureDialog({ sandbox, onClose, onSave, isPending, error }: ReconfigureDialogProps) {
+  const [vcpus, setVcpus] = useState(sandbox.vcpus);
+  const [memoryMb, setMemoryMb] = useState(sandbox.memoryMb);
+  const [diskGb, setDiskGb] = useState(sandbox.diskGb);
+
+  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const isDocker = sandbox.backend === 'docker';
+  const isStopped = sandbox.status === 'stopped' || sandbox.status === 'error' || sandbox.status === 'archived';
+
+  const hasChanges = vcpus !== sandbox.vcpus || memoryMb !== sandbox.memoryMb || diskGb !== sandbox.diskGb;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const resources: { vcpus?: number; memoryMb?: number; diskGb?: number } = {};
+    if (vcpus !== sandbox.vcpus) resources.vcpus = vcpus;
+    if (memoryMb !== sandbox.memoryMb) resources.memoryMb = memoryMb;
+    if (diskGb !== sandbox.diskGb) resources.diskGb = diskGb;
+    onSave(resources);
+  };
+
+  // Memory presets in MB
+  const memoryPresets = [512, 1024, 2048, 4096, 8192, 16384];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] w-full max-w-md shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 border-b border-[hsl(var(--border))] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings className="h-4 w-4 text-[hsl(var(--text-muted))]" />
+            <h2 className="text-sm font-medium text-[hsl(var(--text-primary))]">
+              Configure Resources
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-4 py-4 space-y-4">
+          {isVm && !isStopped && (
+            <div className="p-2 bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] text-[11px] text-[hsl(var(--amber))]">
+              VM must be stopped to change resources. Changes will apply on next boot.
+            </div>
+          )}
+
+          {/* vCPUs */}
+          <div>
+            <label className="flex items-center gap-1.5 text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">
+              <Cpu className="h-3.5 w-3.5" />
+              vCPUs
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={1}
+                max={isDocker ? 16 : 32}
+                value={vcpus}
+                onChange={(e) => setVcpus(parseInt(e.target.value))}
+                className="flex-1 accent-[hsl(var(--cyan))]"
+                disabled={isVm && !isStopped}
+              />
+              <span className="text-xs text-[hsl(var(--text-primary))] w-8 text-right tabular-nums">{vcpus}</span>
+            </div>
+          </div>
+
+          {/* Memory */}
+          <div>
+            <label className="flex items-center gap-1.5 text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">
+              <MemoryStick className="h-3.5 w-3.5" />
+              Memory
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {memoryPresets.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setMemoryMb(preset)}
+                  disabled={isVm && !isStopped}
+                  className={`px-2 py-1 text-[10px] border transition-colors disabled:opacity-50 ${
+                    memoryMb === preset
+                      ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] text-[hsl(var(--cyan))]'
+                      : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--text-muted))]'
+                  }`}
+                >
+                  {preset >= 1024 ? `${preset / 1024} GB` : `${preset} MB`}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="number"
+                min={isDocker ? 128 : 128}
+                max={65536}
+                step={128}
+                value={memoryMb}
+                onChange={(e) => setMemoryMb(parseInt(e.target.value) || 512)}
+                disabled={isVm && !isStopped}
+                className="w-24 px-2 py-1 text-xs bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] outline-none disabled:opacity-50"
+              />
+              <span className="text-[10px] text-[hsl(var(--text-muted))]">MB</span>
+            </div>
+          </div>
+
+          {/* Disk (VMs only) */}
+          {isVm && (
+            <div>
+              <label className="flex items-center gap-1.5 text-[11px] font-medium text-[hsl(var(--text-secondary))] mb-1.5">
+                <HardDrive className="h-3.5 w-3.5" />
+                Disk
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={sandbox.diskGb}
+                  max={1000}
+                  value={diskGb}
+                  onChange={(e) => setDiskGb(parseInt(e.target.value) || sandbox.diskGb)}
+                  disabled={!isStopped}
+                  className="w-24 px-2 py-1 text-xs bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:border-[hsl(var(--cyan))] outline-none disabled:opacity-50"
+                />
+                <span className="text-[10px] text-[hsl(var(--text-muted))]">GB (cannot be reduced)</span>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-2 bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.3)] text-[11px] text-[hsl(var(--red))]">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 text-xs text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!hasChanges || isPending || (isVm && !isStopped)}
+              className="px-3 py-1.5 text-xs bg-[hsl(var(--cyan))] text-[hsl(var(--bg-base))] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+            >
+              {isPending ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 interface SandboxCardProps {
   sandbox: Sandbox;
@@ -74,11 +246,14 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const stopSandbox = useStopSandbox();
   const deleteSandbox = useDeleteSandbox();
   const renameSandbox = useRenameSandbox();
+  const updateResources = useUpdateSandboxResources();
   const confirm = useConfirm();
   const terminalPanel = useTerminalPanel();
 
   const [copied, setCopied] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [showReconfigure, setShowReconfigure] = useState(false);
+  const [reconfigureError, setReconfigureError] = useState<string | null>(null);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
   const [launchingSnapshot, setLaunchingSnapshot] = useState<string | null>(null);
@@ -122,6 +297,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   // Check if this is a VM-based sandbox that supports snapshots
   const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
+  const canReconfigure = isVm || isDocker;
 
   // Snapshot hooks (only fetch for VMs)
   const { data: snapshots, isLoading: snapshotsLoading } = useVmSnapshots(isVm ? sandbox.id : '');
@@ -257,7 +433,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const handleOpenTerminal = () => {
     if (sandbox.terminalType === 'docker-exec') {
       const containerId = dockerMeta?.containerId || sandbox.id.replace('docker-', '');
-      terminalPanel.openContainerTerminal(containerId, sandbox.name, true);
+      terminalPanel.openContainerTerminal(containerId, sandbox.name);
     } else if (sandbox.backend === 'daytona') {
       // Daytona uses its own SSH access API
       terminalPanel.openDaytonaTerminal(sandbox.id, sandbox.name);
@@ -373,6 +549,16 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     } else if (e.key === 'Escape') {
       setIsEditing(false);
       setEditName(sandbox.name);
+    }
+  };
+
+  const handleReconfigure = async (resources: { vcpus?: number; memoryMb?: number; diskGb?: number }) => {
+    setReconfigureError(null);
+    try {
+      await updateResources.mutateAsync({ id: sandbox.id, resources });
+      setShowReconfigure(false);
+    } catch (err) {
+      setReconfigureError(err instanceof Error ? err.message : 'Failed to update resources');
     }
   };
 
@@ -571,13 +757,6 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                     >
                       <TerminalSquare className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                      onClick={() => setShowLogs(true)}
-                      className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
-                      title="View Logs"
-                    >
-                      <ScrollText className="h-3.5 w-3.5" />
-                    </button>
                     {canSnapshot && (
                       <button
                         onClick={handleCreateSnapshot}
@@ -640,15 +819,14 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                     </div>
                   </>
                 )}
-                {isFailed && (
-                  <button
-                    onClick={() => setShowLogs(true)}
-                    className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
-                    title="View Logs"
-                  >
-                    <ScrollText className="h-3.5 w-3.5" />
-                  </button>
-                )}
+                {/* Logs button - always visible (except during building which has its own) */}
+                <button
+                  onClick={() => setShowLogs(true)}
+                  className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
+                  title="View Logs"
+                >
+                  <ScrollText className="h-3.5 w-3.5" />
+                </button>
                 {isRunning ? (
                   <button
                     onClick={handleStop}
@@ -691,6 +869,49 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Resource Specs */}
+        <div className="px-3 py-1.5 border-b border-[hsl(var(--border))] flex items-center gap-4 text-[10px] text-[hsl(var(--text-muted))]">
+          <span className="flex items-center gap-1" title="vCPUs">
+            <Cpu className="h-3 w-3" />
+            {sandbox.vcpus} vCPU{sandbox.vcpus !== 1 ? 's' : ''}
+          </span>
+          <span className="flex items-center gap-1" title="Memory">
+            <MemoryStick className="h-3 w-3" />
+            {sandbox.memoryMb >= 1024
+              ? `${(sandbox.memoryMb / 1024).toFixed(sandbox.memoryMb % 1024 === 0 ? 0 : 1)} GB`
+              : `${sandbox.memoryMb} MB`}
+          </span>
+          {sandbox.diskGb > 0 && (
+            <span className="flex items-center gap-1" title="Disk">
+              <HardDrive className="h-3 w-3" />
+              {sandbox.diskGb} GB
+            </span>
+          )}
+          {sandbox.guestIp && (
+            <span className="flex items-center gap-1" title="Guest IP">
+              <Network className="h-3 w-3" />
+              {sandbox.guestIp}
+            </span>
+          )}
+          {isVm && vmMeta?.bootTimeMs != null && vmMeta.bootTimeMs > 0 && (
+            <span className="flex items-center gap-1" title="Boot time">
+              <Clock className="h-3 w-3" />
+              {vmMeta.bootTimeMs < 1000
+                ? `${vmMeta.bootTimeMs}ms`
+                : `${(vmMeta.bootTimeMs / 1000).toFixed(1)}s`}
+            </span>
+          )}
+          {canReconfigure && (
+            <button
+              onClick={() => { setReconfigureError(null); setShowReconfigure(true); }}
+              className="ml-auto p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] transition-colors"
+              title="Configure resources"
+            >
+              <Settings className="h-3 w-3" />
+            </button>
+          )}
         </div>
 
         {/* Error Message */}
@@ -1035,6 +1256,17 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
           isAttached={true}
           isVmRunning={isRunning}
           onClose={() => setBrowsingVolume(null)}
+        />
+      )}
+
+      {/* Reconfigure Resources Dialog */}
+      {showReconfigure && (
+        <ReconfigureDialog
+          sandbox={sandbox}
+          onClose={() => setShowReconfigure(false)}
+          onSave={handleReconfigure}
+          isPending={updateResources.isPending}
+          error={reconfigureError}
         />
       )}
     </>

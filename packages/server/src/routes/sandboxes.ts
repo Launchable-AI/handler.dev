@@ -487,6 +487,31 @@ sandboxes.patch('/:id', zValidator('json', UpdateSandboxSchema), async (c) => {
 });
 
 /**
+ * PATCH /api/sandboxes/:id/resources
+ * Update sandbox resources (vCPUs, memory, disk)
+ */
+const UpdateResourcesSchema = z.object({
+  vcpus: z.number().min(1).max(32).optional(),
+  memoryMb: z.number().min(128).max(65536).optional(),
+  diskGb: z.number().min(1).max(1000).optional(),
+});
+
+sandboxes.patch('/:id/resources', zValidator('json', UpdateResourcesSchema), async (c) => {
+  const id = c.req.param('id');
+  const body = c.req.valid('json');
+  const service = await ensureSandboxServiceInitialized();
+
+  try {
+    const sandbox = await service.updateResources(id, body);
+    return c.json(sandbox);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update sandbox resources';
+    const status = message.includes('must be stopped') ? 409 : 500;
+    return c.json({ error: message }, status);
+  }
+});
+
+/**
  * DELETE /api/sandboxes/:id
  * Delete a sandbox
  */

@@ -474,6 +474,7 @@ export interface AppConfig {
   dataDirectory: string;
   cloudBackends?: CloudBackendsConfig;
   shellPromptTheme?: ShellPromptTheme;
+  tmuxEnabled?: boolean; // Enable/disable tmux for terminal sessions (default: true)
 }
 
 export async function getConfig(): Promise<AppConfig> {
@@ -2342,6 +2343,17 @@ export async function renameSandbox(id: string, newName: string): Promise<Sandbo
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: newName }),
+  });
+}
+
+/**
+ * Update sandbox resources (vCPUs, memory, disk)
+ */
+export async function updateSandboxResources(id: string, resources: { vcpus?: number; memoryMb?: number; diskGb?: number }): Promise<Sandbox> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}/resources`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(resources),
   });
 }
 

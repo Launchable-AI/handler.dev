@@ -77,7 +77,6 @@ export function MinimizedNodeMonitor({ sandboxId, onShellState }: MinimizedNodeM
         shell: '/bin/bash',
         cols: 80,
         rows: 24,
-        isDevNode: false,
       }));
     };
 

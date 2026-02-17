@@ -8,6 +8,7 @@ import { spawn, ChildProcess, exec } from 'child_process';
 import { promisify } from 'util';
 import { WebSocket } from 'ws';
 import { injectShellInit } from './shell-init.js';
+import { getConfig } from './config.js';
 import {
   getSession as getPersistedSession,
   setSession as setPersistedSession,
@@ -23,8 +24,6 @@ interface TerminalSession {
   ws: WebSocket;
   containerId: string;
   tmuxSession: string;
-  user: string;
-  workdir: string;
 }
 
 const sessions = new Map<string, TerminalSession>();
@@ -86,30 +85,32 @@ export function createTerminalSession(
   shell: string = '/bin/bash',
   cols: number = 80,
   rows: number = 24,
-  isDevNode: boolean = false,
   customWorkdir?: string
 ): string {
   const sessionId = `${containerId}-${Date.now()}`;
   const tmuxSession = generateTmuxSessionName(containerId);
 
-  console.log(`🔧 Creating terminal session: ${sessionId} (tmux: ${tmuxSession}, isDevNode: ${isDevNode}, workdir: ${customWorkdir || 'default'})`);
+  console.log(`🔧 Creating terminal session: ${sessionId} (tmux: ${tmuxSession}, workdir: ${customWorkdir || 'default'})`);
 
-  // For dev-node containers: connect as 'dev' user in /home/dev/workspace
-  // For other containers: connect as 'root' in /root
-  const user = isDevNode ? 'dev' : 'root';
-  const workdir = customWorkdir || (isDevNode ? '/home/dev/workspace' : '/root');
-
-  // Check if tmux is available, fall back to script if not
-  hasTmux(containerId).then(useTmux => {
-    if (useTmux) {
-      startTmuxSession(ws, sessionId, containerId, tmuxSession, user, workdir, shell, cols, rows);
-    } else {
-      console.log(`[Terminal] tmux not available in ${containerId}, falling back to script`);
-      startScriptSession(ws, sessionId, containerId, user, workdir, shell, cols, rows);
+  // Check if tmux is enabled in config and available in container
+  getConfig().then(config => {
+    if (config.tmuxEnabled === false) {
+      console.log(`[Terminal] tmux disabled in config, using script session`);
+      startScriptSession(ws, sessionId, containerId, customWorkdir, shell, cols, rows);
+      return;
     }
+
+    return hasTmux(containerId).then(useTmux => {
+      if (useTmux) {
+        startTmuxSession(ws, sessionId, containerId, tmuxSession, customWorkdir, shell, cols, rows);
+      } else {
+        console.log(`[Terminal] tmux not available in ${containerId}, falling back to script`);
+        startScriptSession(ws, sessionId, containerId, customWorkdir, shell, cols, rows);
+      }
+    });
   }).catch(() => {
     // Fall back to script on error
-    startScriptSession(ws, sessionId, containerId, user, workdir, shell, cols, rows);
+    startScriptSession(ws, sessionId, containerId, customWorkdir, shell, cols, rows);
   });
 
   return sessionId;
@@ -124,8 +125,7 @@ function startTmuxSession(
   sessionId: string,
   containerId: string,
   tmuxSession: string,
-  user: string,
-  workdir: string,
+  customWorkdir: string | undefined,
   shell: string,
   cols: number,
   rows: number
@@ -136,22 +136,23 @@ function startTmuxSession(
   // -x/-y set dimensions, set-option status off hides the status bar (we have our own UI)
   const tmuxCmd = `tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} \\; set-option status off`;
 
-  const process = spawn('docker', [
+  const args = [
     'exec',
     '-i',                        // Interactive mode
-    '-u', user,                  // Run as specified user
     '-e', 'TERM=xterm-256color', // Set terminal type
     '-e', `COLUMNS=${cols}`,     // Terminal width
     '-e', `LINES=${rows}`,       // Terminal height
-    '-w', workdir,               // Start in appropriate directory
+    ...(customWorkdir ? ['-w', customWorkdir] : []),
     containerId,
     'script',                    // Use script for PTY emulation
     '-qec',                      // Quiet, execute command
     tmuxCmd,                     // tmux command
     '/dev/null',                 // Output to /dev/null (we capture via stdout)
-  ]);
+  ];
 
-  setupSessionHandlers(ws, sessionId, containerId, tmuxSession, user, workdir, process, true);
+  const process = spawn('docker', args);
+
+  setupSessionHandlers(ws, sessionId, containerId, tmuxSession, process, true);
 }
 
 /**
@@ -161,28 +162,28 @@ function startScriptSession(
   ws: WebSocket,
   sessionId: string,
   containerId: string,
-  user: string,
-  workdir: string,
+  customWorkdir: string | undefined,
   shell: string,
   cols: number,
   rows: number
 ): void {
-  const process = spawn('docker', [
+  const args = [
     'exec',
     '-i',
-    '-u', user,
     '-e', 'TERM=xterm-256color',
     '-e', `COLUMNS=${cols}`,
     '-e', `LINES=${rows}`,
-    '-w', workdir,
+    ...(customWorkdir ? ['-w', customWorkdir] : []),
     containerId,
     'script',
     '-qec',
     shell,
     '/dev/null',
-  ]);
+  ];
 
-  setupSessionHandlers(ws, sessionId, containerId, '', user, workdir, process, false);
+  const process = spawn('docker', args);
+
+  setupSessionHandlers(ws, sessionId, containerId, '', process, false);
 }
 
 /**
@@ -193,8 +194,6 @@ function setupSessionHandlers(
   sessionId: string,
   containerId: string,
   tmuxSession: string,
-  user: string,
-  workdir: string,
   process: ChildProcess,
   isTmux: boolean
 ): void {
@@ -231,7 +230,7 @@ function setupSessionHandlers(
     sessions.delete(sessionId);
   });
 
-  sessions.set(sessionId, { process, ws, containerId, tmuxSession, user, workdir });
+  sessions.set(sessionId, { process, ws, containerId, tmuxSession });
 
   // Persist session metadata for reconnection (only for tmux sessions)
   if (isTmux && tmuxSession) {
@@ -241,8 +240,8 @@ function setupSessionHandlers(
       tmuxSession,
       createdAt: Date.now(),
       lastAccessedAt: Date.now(),
-      user,
-      workdir,
+      user: 'root',
+      workdir: '/root',
     });
   }
 
@@ -263,6 +262,12 @@ export async function resumeTerminalSession(
   cols: number = 80,
   rows: number = 24
 ): Promise<{ sessionId: string; scrollback: string } | null> {
+  // Short-circuit if tmux is disabled
+  const config = await getConfig();
+  if (config.tmuxEnabled === false) {
+    return null;
+  }
+
   // Look up the persisted session
   const persisted = getPersistedSession(oldSessionId);
   if (!persisted) {
@@ -270,7 +275,7 @@ export async function resumeTerminalSession(
     return null;
   }
 
-  const { containerId, tmuxSession, user, workdir } = persisted;
+  const { containerId, tmuxSession } = persisted;
 
   if (!containerId) {
     console.log(`[Terminal] Session ${oldSessionId} is not a container session`);
@@ -299,7 +304,6 @@ export async function resumeTerminalSession(
   const process = spawn('docker', [
     'exec',
     '-i',
-    '-u', user,
     '-e', 'TERM=xterm-256color',
     '-e', `COLUMNS=${cols}`,
     '-e', `LINES=${rows}`,
@@ -340,7 +344,7 @@ export async function resumeTerminalSession(
     sessions.delete(sessionId);
   });
 
-  sessions.set(sessionId, { process, ws, containerId, tmuxSession, user, workdir });
+  sessions.set(sessionId, { process, ws, containerId, tmuxSession });
 
   // Update persisted session with new sessionId
   setPersistedSession({

@@ -9,12 +9,11 @@ interface TerminalProps {
   containerId: string;
   containerName: string;
   onClose: () => void;
-  isDevNode?: boolean;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
 
-export function Terminal({ containerId, containerName, onClose, isDevNode = false }: TerminalProps) {
+export function Terminal({ containerId, containerName, onClose }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -97,7 +96,6 @@ export function Terminal({ containerId, containerName, onClose, isDevNode = fals
         shell: '/bin/bash',
         cols: term.cols,
         rows: term.rows,
-        isDevNode,
       }));
     };
 
@@ -165,7 +163,7 @@ export function Terminal({ containerId, containerName, onClose, isDevNode = fals
       ws.close();
       term.dispose();
     };
-  }, [containerId, getWsUrl, isDevNode]);
+  }, [containerId, getWsUrl]);
 
   // Handle maximize toggle resize
   useEffect(() => {

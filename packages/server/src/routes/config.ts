@@ -15,6 +15,7 @@ const UpdateConfigSchema = z.object({
   sshJumpHostKeyPath: z.string().optional(),
   dataDirectory: z.string().optional(),
   shellPromptTheme: z.enum(['minimal', 'clean', 'bracket', 'lambda', 'cyberpunk', 'multiline']).optional(),
+  tmuxEnabled: z.boolean().optional(),
 });
 
 const BrowseDirectorySchema = z.object({

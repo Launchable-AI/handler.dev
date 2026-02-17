@@ -10,12 +10,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 GUEST_INIT_DIR="$PROJECT_DIR/guest-init"
 IMAGES_MANIFEST="$SCRIPT_DIR/base-images.json"
 
 # Source OS utilities for cross-platform package management
-source "$SCRIPT_DIR/lib/os-utils.sh"
+source "$(dirname "$SCRIPT_DIR")/lib/os-utils.sh"
 
 # Handle sudo: use SUDO_USER's home if running as root via sudo
 if [ -n "$SUDO_USER" ]; then
@@ -172,6 +172,13 @@ mkdir-p /rom
 # This is a no-op if already installed
 command "which jq || apt-get update -qq && apt-get install -y -qq jq curl tmux"
 
+# Install Docker CE for Docker-in-Firecracker support
+# Configure daemon to work inside VMs (no iptables, vfs storage driver)
+command "which docker || (apt-get update -qq && apt-get install -y -qq ca-certificates gnupg && install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && chmod a+r /etc/apt/keyrings/docker.gpg && echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\" > /etc/apt/sources.list.d/docker.list && apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io)"
+mkdir-p /etc/docker
+write /etc/docker/daemon.json "{\"iptables\":false,\"storage-driver\":\"vfs\"}"
+command "systemctl disable docker.service containerd.service 2>/dev/null || true"
+
 # Download kernel
 download /boot/vmlinuz* KERNEL_PATH_PLACEHOLDER
 GFEOF
@@ -300,16 +307,42 @@ if [ "${USE_MOUNT:-0}" = "1" ]; then
         fi
     fi
 
-    # Install jq, curl, tmux if needed (chroot)
-    if [ ! -f "$MOUNT_POINT/usr/bin/jq" ] || [ ! -f "$MOUNT_POINT/usr/bin/tmux" ]; then
-        log "Installing jq, curl, tmux in guest image..."
+    # Install packages via chroot
+    NEED_CHROOT=0
+    [ ! -f "$MOUNT_POINT/usr/bin/jq" ] || [ ! -f "$MOUNT_POINT/usr/bin/tmux" ] && NEED_CHROOT=1
+    [ ! -f "$MOUNT_POINT/usr/bin/docker" ] && NEED_CHROOT=1
+
+    if [ "$NEED_CHROOT" = "1" ]; then
+        log "Installing packages in guest image via chroot..."
         # Need to mount /proc, /sys, /dev for chroot to work properly
         mount --bind /proc "$MOUNT_POINT/proc" 2>/dev/null || true
         mount --bind /sys "$MOUNT_POINT/sys" 2>/dev/null || true
         mount --bind /dev "$MOUNT_POINT/dev" 2>/dev/null || true
 
+        # Install jq, curl, tmux
         chroot "$MOUNT_POINT" /bin/bash -c "apt-get update -qq && apt-get install -y -qq jq curl tmux" 2>/dev/null || \
-            warn "Failed to install packages - you may need to install them manually"
+            warn "Failed to install jq/curl/tmux - you may need to install them manually"
+
+        # Install Docker CE
+        if [ ! -f "$MOUNT_POINT/usr/bin/docker" ]; then
+            log "Installing Docker CE in guest image..."
+            chroot "$MOUNT_POINT" /bin/bash -c '
+                apt-get install -y -qq ca-certificates gnupg
+                install -m 0755 -d /etc/apt/keyrings
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+                chmod a+r /etc/apt/keyrings/docker.gpg
+                echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+                apt-get update -qq
+                apt-get install -y -qq docker-ce docker-ce-cli containerd.io
+                systemctl disable docker.service containerd.service 2>/dev/null || true
+            ' 2>/dev/null || warn "Failed to install Docker CE - you may need to install it manually"
+
+            # Write Docker daemon config
+            mkdir -p "$MOUNT_POINT/etc/docker"
+            cat > "$MOUNT_POINT/etc/docker/daemon.json" << 'DOCKEREOF'
+{"iptables":false,"storage-driver":"vfs"}
+DOCKEREOF
+        fi
 
         umount "$MOUNT_POINT/proc" 2>/dev/null || true
         umount "$MOUNT_POINT/sys" 2>/dev/null || true

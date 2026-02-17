@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test script for Firecracker VM creation and SSH connectivity
 #
-# Usage: ./scripts/test-vm.sh [options]
+# Usage: ./scripts/dev/test-vm.sh [options]
 #
 # Options:
 #   --api-url URL    API base URL (default: http://localhost:3001/api)

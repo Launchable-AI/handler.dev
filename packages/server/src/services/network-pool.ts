@@ -8,7 +8,7 @@
  *    - TAPs are pre-created and managed via network.json
  *
  * 2. Helper Mode (recommended): Creates TAP devices on-demand using helper
- *    - Requires: sudo ./scripts/install-tap-helper.sh --setup-bridge
+ *    - Requires: sudo ./scripts/user/install-tap-helper.sh --setup-bridge
  *    - TAPs are created/deleted per VM lifecycle
  *    - No root required at runtime
  */
@@ -188,7 +188,7 @@ export class NetworkPool extends EventEmitter {
         tapDevicesExist: false,
         availableTaps: 0,
         totalTaps: 0,
-        message: 'Network not configured. Run: sudo ./scripts/install-tap-helper.sh --setup-bridge',
+        message: 'Network not configured. Run: sudo ./scripts/user/install-tap-helper.sh --setup-bridge',
       };
     }
 
@@ -225,7 +225,7 @@ export class NetworkPool extends EventEmitter {
 
     let message = '';
     if (!bridgeExists) {
-      message = `Bridge ${config.bridgeName} not found. Run: sudo ./scripts/install-tap-helper.sh --setup-bridge`;
+      message = `Bridge ${config.bridgeName} not found. Run: sudo ./scripts/user/install-tap-helper.sh --setup-bridge`;
     } else if (!tapDevicesExist) {
       message = `Only ${tapsExisting}/${config.tapDevices.length} TAP devices exist. Run: sudo ./scripts/setup-vm-network.sh`;
     } else if (tapsAvailable === 0) {
@@ -290,7 +290,7 @@ export class NetworkPool extends EventEmitter {
 
     const config = this.load();
     if (!config) {
-      throw new Error('Network not configured. Run: sudo ./scripts/install-tap-helper.sh --setup-bridge');
+      throw new Error('Network not configured. Run: sudo ./scripts/user/install-tap-helper.sh --setup-bridge');
     }
 
     // Find first available TAP device that exists

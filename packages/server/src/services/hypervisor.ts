@@ -111,7 +111,7 @@ export class CloudHypervisorService extends EventEmitter {
       console.warn('WARNING: VM networking is not configured!');
       console.warn('VMs will boot but will not have network connectivity.');
       console.warn('\nTo enable networking, run:');
-      console.warn('  sudo ./scripts/install-tap-helper.sh --setup-bridge');
+      console.warn('  sudo ./scripts/user/install-tap-helper.sh --setup-bridge');
       console.warn('='.repeat(60) + '\n');
     } else if (!this.networkStatus.healthy) {
       console.warn('\n' + '='.repeat(60));
@@ -1624,6 +1624,41 @@ ethernets:
       return fs.readFileSync(keyPath, 'utf-8');
     }
     return null;
+  }
+
+  /**
+   * Update VM resource configuration (vCPUs, memory, disk).
+   * VM must be stopped. Changes take effect on next boot.
+   */
+  async updateVmResources(id: string, resources: { vcpus?: number; memoryMb?: number; diskGb?: number }): Promise<VmInfo> {
+    const vm = this.vms.get(id);
+    if (!vm) {
+      throw new Error(`VM ${id} not found`);
+    }
+
+    if (vm.status !== 'stopped' && vm.status !== 'error') {
+      throw new Error(`VM must be stopped to reconfigure resources (current status: ${vm.status})`);
+    }
+
+    if (resources.vcpus !== undefined) {
+      if (resources.vcpus < 1 || resources.vcpus > 32) throw new Error('vCPUs must be between 1 and 32');
+      vm.vcpus = resources.vcpus;
+    }
+    if (resources.memoryMb !== undefined) {
+      if (resources.memoryMb < 128 || resources.memoryMb > 65536) throw new Error('Memory must be between 128 MB and 64 GB');
+      vm.memoryMb = resources.memoryMb;
+    }
+    if (resources.diskGb !== undefined) {
+      if (resources.diskGb < 1 || resources.diskGb > 1000) throw new Error('Disk must be between 1 and 1000 GB');
+      if (resources.diskGb < vm.diskGb) throw new Error('Disk size cannot be reduced');
+      vm.diskGb = resources.diskGb;
+    }
+
+    await this.saveVmState(vm);
+    this.emit('vm:reconfigured', { id, resources });
+    console.log(`[CloudHypervisorService] VM ${id} resources updated: vcpus=${vm.vcpus}, memoryMb=${vm.memoryMb}, diskGb=${vm.diskGb}`);
+
+    return this.vmToInfo(vm);
   }
 
   /**

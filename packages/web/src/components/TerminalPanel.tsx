@@ -14,6 +14,8 @@ import {
   GripHorizontal
 } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
+import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../lib/terminal-themes';
+import { useTheme } from '../hooks/useTheme';
 
 // Types
 export type PanelPosition = 'right' | 'bottom';
@@ -28,7 +30,6 @@ interface TerminalTab {
   vmIp?: string;
   // For containers
   containerId?: string;
-  isDevNode?: boolean;
   // For Daytona
   sandboxId?: string;
   // For AWS
@@ -37,6 +38,7 @@ interface TerminalTab {
   connectionState: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
   errorMessage?: string;
   retryCount?: number;
+  isTmuxSession?: boolean;
 }
 
 interface TerminalPanelContextType {
@@ -47,7 +49,7 @@ interface TerminalPanelContextType {
   size: number;
   isResizing: boolean;
   openTerminal: (vmId: string, vmName: string, vmIp: string) => void;
-  openContainerTerminal: (containerId: string, containerName: string, isDevNode?: boolean) => void;
+  openContainerTerminal: (containerId: string, containerName: string) => void;
   openDaytonaTerminal: (sandboxId: string, sandboxName: string) => void;
   openAwsTerminal: (instanceId: string, sandboxName: string, publicIp: string) => void;
   closeTerminal: (tabId: string) => void;
@@ -120,7 +122,7 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
     setIsOpen(true);
   }, [tabs]);
 
-  const openContainerTerminal = useCallback((containerId: string, containerName: string, isDevNode?: boolean) => {
+  const openContainerTerminal = useCallback((containerId: string, containerName: string) => {
     // Check if terminal for this container already exists
     const existingTab = tabs.find(t => t.type === 'container' && t.containerId === containerId);
     if (existingTab) {
@@ -134,7 +136,6 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
       name: containerName,
       type: 'container',
       containerId,
-      isDevNode: isDevNode ?? true,
       connectionState: 'connecting',
     };
 
@@ -449,6 +450,12 @@ const INITIAL_RETRY_DELAY = 1000; // 1 second
 const MAX_RETRY_DELAY = 30000; // 30 seconds
 
 function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps) {
+  const { isDark: systemIsDark } = useTheme();
+  const [terminalThemeMode, setTerminalThemeMode] = useState<TerminalThemeMode>(getStoredTerminalThemeMode);
+  const terminalIsDark = terminalThemeMode === 'system' ? systemIsDark : terminalThemeMode === 'dark';
+  const terminalIsDarkRef = useRef(terminalIsDark);
+  terminalIsDarkRef.current = terminalIsDark;
+
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -479,37 +486,14 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
     retryCountRef.current = 0;
     wasConnectedRef.current = false;
 
-    // Create terminal instance with theme matching the UI
+    // Create terminal instance with theme matching the terminal theme mode
     const term = new XTerm({
       cursorBlink: true,
       cursorStyle: 'block',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
       fontSize: 13,
       lineHeight: 1.2,
-      theme: {
-        background: 'hsl(220 20% 6%)',
-        foreground: 'hsl(220 10% 85%)',
-        cursor: 'hsl(190 90% 60%)',
-        cursorAccent: 'hsl(220 20% 6%)',
-        selectionBackground: 'hsl(190 90% 60% / 0.3)',
-        selectionForeground: '#ffffff',
-        black: 'hsl(220 20% 10%)',
-        red: 'hsl(0 70% 65%)',
-        green: 'hsl(140 60% 55%)',
-        yellow: 'hsl(40 80% 55%)',
-        blue: 'hsl(210 80% 65%)',
-        magenta: 'hsl(280 60% 70%)',
-        cyan: 'hsl(180 60% 55%)',
-        white: 'hsl(220 10% 85%)',
-        brightBlack: 'hsl(220 15% 35%)',
-        brightRed: 'hsl(0 80% 70%)',
-        brightGreen: 'hsl(140 70% 65%)',
-        brightYellow: 'hsl(40 90% 65%)',
-        brightBlue: 'hsl(210 90% 75%)',
-        brightMagenta: 'hsl(280 70% 80%)',
-        brightCyan: 'hsl(180 70% 65%)',
-        brightWhite: 'hsl(220 5% 95%)',
-      },
+      theme: getTerminalTheme(terminalIsDarkRef.current),
       allowProposedApi: true,
     });
 
@@ -588,7 +572,6 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
             shell: '/bin/bash',
             cols: term.cols,
             rows: term.rows,
-            isDevNode: tab.isDevNode,
           }));
         } else if (tab.type === 'daytona') {
           // Daytona terminal - uses Daytona SSH access API
@@ -627,7 +610,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
           switch (msg.type) {
             case 'connected':
               wasConnectedRef.current = true;
-              onStateChangeRef.current({ connectionState: 'connected', retryCount: 0 });
+              onStateChangeRef.current({ connectionState: 'connected', retryCount: 0, isTmuxSession: !!msg.tmuxSession });
               term.focus();
               // Fit again after connection and send resize to ensure shell has correct size
               setTimeout(fitAndResize, 50);
@@ -757,7 +740,24 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
       fitAddonRef.current = null;
       wsRef.current = null;
     };
-  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.isDevNode, tab.sandboxId, tab.instanceId, tab.publicIp, getWsUrl]);
+  }, [tab.vmId, tab.vmIp, tab.type, tab.containerId, tab.sandboxId, tab.instanceId, tab.publicIp, getWsUrl]);
+
+  // React to terminal theme changes
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = getTerminalTheme(terminalIsDark);
+    }
+  }, [terminalIsDark]);
+
+  // Listen for terminal theme mode changes from settings
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const mode = (e as CustomEvent<{ mode: TerminalThemeMode }>).detail.mode;
+      setTerminalThemeMode(mode);
+    };
+    window.addEventListener('handler-terminal-theme-mode', handler);
+    return () => window.removeEventListener('handler-terminal-theme-mode', handler);
+  }, []);
 
   return (
     <div className="h-full flex flex-col">
@@ -778,13 +778,19 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
         <span className="text-[hsl(var(--text-secondary))]">
           {tab.type === 'container' ? `dev@${tab.name}` : tab.type === 'daytona' ? `daytona@${tab.name}` : tab.type === 'aws' ? `ubuntu@${tab.publicIp}` : `agent@${tab.vmIp}`}
         </span>
+        {tab.isTmuxSession && (
+          <>
+            <span className="text-[hsl(var(--text-muted))]">|</span>
+            <span className="px-1 py-0.5 bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded text-[9px] uppercase tracking-wider">tmux</span>
+          </>
+        )}
       </div>
 
       {/* Terminal */}
       <div
         ref={terminalRef}
         className="flex-1 p-1"
-        style={{ backgroundColor: 'hsl(220 20% 6%)' }}
+        style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}
       />
 
       {/* Error overlay */}

@@ -297,6 +297,36 @@ export function useRenameSandbox() {
 }
 
 /**
+ * Update sandbox resources (vCPUs, memory, disk)
+ */
+export function useUpdateSandboxResources() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ['sandbox-state'],
+    mutationFn: ({ id, resources }: { id: string; resources: { vcpus?: number; memoryMb?: number; diskGb?: number } }) =>
+      api.updateSandboxResources(id, resources),
+    onSuccess: (updatedSandbox, { id }) => {
+      queryClient.setQueriesData<api.SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            sandboxes: old.sandboxes.map((s) =>
+              s.id === id ? updatedSandbox : s
+            ),
+          };
+        }
+      );
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['sandboxes'] });
+    },
+  });
+}
+
+/**
  * Utility hook to get sandbox counts by status
  */
 export function useSandboxCounts(filter?: SandboxListFilter) {

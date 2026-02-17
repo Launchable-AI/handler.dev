@@ -8,8 +8,8 @@
 #   1. AWS CLI configured with credentials that can write to the bucket
 #   2. Image prepared with prepare-fc-image.sh (rootfs.ext4 + vmlinux exist)
 #
-# Usage: ./scripts/upload-fc-image.sh <image-name>
-# Example: ./scripts/upload-fc-image.sh ubuntu-24.04
+# Usage: ./scripts/dev/upload-fc-image.sh <image-name>
+# Example: ./scripts/dev/upload-fc-image.sh ubuntu-24.04
 #
 # What this script does:
 #   1. Validates the local image files exist
@@ -30,8 +30,13 @@ set -e
 # Configuration
 # ============================================================================
 
-S3_BUCKET="handler.dev-public"
-S3_REGION="us-east-2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source .env if present (for AWS_PROFILE, S3_BUCKET, etc.)
+[ -f "$SCRIPT_DIR/.env" ] && source "$SCRIPT_DIR/.env"
+
+S3_BUCKET="${S3_BUCKET:-handler.dev-public}"
+S3_REGION="${S3_REGION:-us-east-2}"
 S3_BASE_PATH="images"
 
 # Local paths
@@ -78,7 +83,7 @@ usage() {
     echo ""
     echo "Prerequisites:"
     echo "  - AWS CLI configured: aws configure"
-    echo "  - Image prepared: ./scripts/prepare-fc-image.sh <image-name>"
+    echo "  - Image prepared: ./scripts/dev/prepare-fc-image.sh <image-name>"
     exit 0
 }
 
@@ -139,6 +144,24 @@ echo "Dry run:     $DRY_RUN"
 echo ""
 
 # ----------------------------------------------------------------------------
+# Step 0: Verify AWS credentials
+# ----------------------------------------------------------------------------
+
+step "Step 0: Verifying AWS credentials"
+
+if [ "$DRY_RUN" = false ]; then
+    if ! aws sts get-caller-identity --region "$S3_REGION" >/dev/null 2>&1; then
+        error "AWS credentials not configured or expired.
+
+Configure with: aws configure
+Or set AWS_PROFILE in scripts/dev/.env (see .env.example)"
+    fi
+    log "AWS credentials OK: $(aws sts get-caller-identity --query 'Arn' --output text --region "$S3_REGION" 2>/dev/null)"
+else
+    log "[dry-run] Skipping credential check"
+fi
+
+# ----------------------------------------------------------------------------
 # Step 1: Validate local files exist
 # ----------------------------------------------------------------------------
 
@@ -148,7 +171,7 @@ if [ ! -f "$ROOTFS_PATH" ]; then
     error "Rootfs not found: $ROOTFS_PATH
 
 Run prepare-fc-image.sh first:
-    ./scripts/prepare-fc-image.sh $IMAGE_NAME"
+    ./scripts/dev/prepare-fc-image.sh $IMAGE_NAME"
 fi
 log "Found rootfs: $ROOTFS_PATH ($(du -h "$ROOTFS_PATH" | cut -f1))"
 
@@ -156,7 +179,7 @@ if [ ! -f "$KERNEL_PATH" ]; then
     error "Kernel not found: $KERNEL_PATH
 
 Run prepare-fc-image.sh first:
-    ./scripts/prepare-fc-image.sh $IMAGE_NAME"
+    ./scripts/dev/prepare-fc-image.sh $IMAGE_NAME"
 fi
 log "Found kernel: $KERNEL_PATH ($(du -h "$KERNEL_PATH" | cut -f1))"
 
@@ -265,6 +288,27 @@ if [ "$DRY_RUN" = false ]; then
 fi
 
 # ----------------------------------------------------------------------------
+# Step 6: CloudFront invalidation (optional)
+# ----------------------------------------------------------------------------
+
+if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+    step "Step 6: Invalidating CloudFront cache"
+
+    INVALIDATION_PATH="/images/${IMAGE_NAME}/*"
+    cmd "aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths \"$INVALIDATION_PATH\""
+
+    if [ "$DRY_RUN" = false ]; then
+        aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "$INVALIDATION_PATH" \
+            --region "$S3_REGION"
+        log "CloudFront invalidation created for $INVALIDATION_PATH"
+    fi
+else
+    step "Step 6: Skipping CloudFront invalidation (no CLOUDFRONT_DISTRIBUTION_ID set)"
+fi
+
+# ----------------------------------------------------------------------------
 # Done
 # ----------------------------------------------------------------------------
 
@@ -287,5 +331,5 @@ echo "Verify with:"
 cmd "aws s3 ls $S3_DEST/ --region $S3_REGION"
 echo ""
 echo "Users can download with:"
-echo "  ./scripts/download-fc-image.sh --image $IMAGE_NAME"
+echo "  ./scripts/user/download-image.sh --image $IMAGE_NAME"
 echo ""

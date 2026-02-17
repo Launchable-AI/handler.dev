@@ -11,6 +11,7 @@ import { WebSocket } from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
 import { injectShellInit } from './shell-init.js';
+import { getConfig } from './config.js';
 import {
   getSession as getPersistedSession,
   setSession as setPersistedSession,
@@ -122,14 +123,22 @@ export function createVmTerminalSession(
 
   console.log(`[VM Terminal] SSH key exists, connecting to ${vmIp}...`);
 
-  // Check if tmux is available, then start with or without it
-  hasTmuxInVm(vmIp, dataDir).then(useTmux => {
-    if (useTmux) {
-      startVmTmuxSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
-    } else {
-      console.log(`[VM Terminal] tmux not available in VM ${vmId}, falling back to bare shell`);
+  // Check if tmux is enabled in config and available in VM
+  getConfig().then(config => {
+    if (config.tmuxEnabled === false) {
+      console.log(`[VM Terminal] tmux disabled in config, using bare shell`);
       startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
+      return;
     }
+
+    return hasTmuxInVm(vmIp, dataDir).then(useTmux => {
+      if (useTmux) {
+        startVmTmuxSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
+      } else {
+        console.log(`[VM Terminal] tmux not available in VM ${vmId}, falling back to bare shell`);
+        startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
+      }
+    });
   }).catch(() => {
     startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
   });
@@ -299,6 +308,12 @@ export async function resumeVmTerminalSession(
   cols: number = 80,
   rows: number = 24
 ): Promise<{ sessionId: string; scrollback: string } | null> {
+  // Short-circuit if tmux is disabled
+  const config = await getConfig();
+  if (config.tmuxEnabled === false) {
+    return null;
+  }
+
   const persisted = getPersistedSession(oldSessionId);
   if (!persisted || !persisted.vmId || !persisted.vmIp || !persisted.dataDir) {
     console.log(`[VM Terminal] No persisted VM session found for ${oldSessionId}`);

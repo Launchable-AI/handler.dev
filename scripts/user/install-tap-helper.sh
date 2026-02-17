@@ -4,7 +4,7 @@
 # This script needs to be run with sudo, but after installation,
 # the main application can create TAP devices without root.
 #
-# Usage: sudo ./scripts/install-tap-helper.sh [options]
+# Usage: sudo ./scripts/user/install-tap-helper.sh [options]
 #
 # Options:
 #   --setup-bridge    Also set up the network bridge and NAT rules
@@ -17,11 +17,11 @@ set -e
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/lib/handler}"
 BINARY_NAME="handler-tap-helper"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 HELPER_DIR="$PROJECT_ROOT/helpers/tap-helper"
 
 # Source OS utilities for cross-platform package management
-source "$SCRIPT_DIR/lib/os-utils.sh"
+source "$(dirname "$SCRIPT_DIR")/lib/os-utils.sh"
 
 # Default bridge settings
 SETUP_BRIDGE=false

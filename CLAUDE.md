@@ -33,7 +33,11 @@ Requires Node 22+. Uses pnpm workspaces.
 - `packages/server/` — Hono (Node.js) backend API
 - `packages/web/` — React 19 + Vite frontend
 - `helpers/tap-helper/` — Rust TAP device helper for VM networking
-- `scripts/` — VM setup scripts
+- `scripts/` — VM image and setup scripts
+  - `scripts/setup.sh`, `scripts/uninstall.sh`, `scripts/status.sh` — Top-level user entry points
+  - `scripts/lib/` — Shared shell utilities (`os-utils.sh`)
+  - `scripts/user/` — End-user scripts (public read): `download-image.sh`, `install-firecracker.sh`, `install-tap-helper.sh`
+  - `scripts/dev/` — Developer/maintainer scripts (requires AWS write): `prepare-fc-image.sh`, `upload-fc-image.sh`, `test-vm.sh`, `download-ubuntu-minimal.sh`, `base-images.json`, `global-manifest.json`, `migrations/`
 - `guest-init/` — Init scripts baked into VM images
 - `data/` — Runtime config, SSH keys, volumes, Dockerfiles
 
@@ -64,18 +68,41 @@ Adapters live in `packages/server/src/services/sandbox/` (docker, vm, daytona, a
 
 ### Terminal Session Persistence
 
-Terminal sessions for Docker containers use **tmux** for persistence:
+Terminal sessions for Docker containers and VMs use **tmux** for persistence (configurable via `tmuxEnabled` in app config, default: `true`):
 - Sessions survive WebSocket disconnects and server restarts
 - Clients automatically reconnect to existing tmux sessions
 - Scrollback history is restored on reconnection
 - Session metadata stored in `data/terminal-sessions.json`
+- A "tmux" badge appears in the terminal status bar when a session uses tmux
 
 Key files:
-- `packages/server/src/services/terminal.ts` — tmux-based terminal sessions
+- `packages/server/src/services/terminal.ts` — tmux-based terminal sessions (Docker)
+- `packages/server/src/services/vm-terminal.ts` — tmux-based terminal sessions (VMs)
 - `packages/server/src/services/session-store.ts` — session persistence
 - `packages/web/src/components/Terminal/TerminalInstance.tsx` — auto-reconnection logic
 
-For tmux persistence to work, containers must have `tmux` installed (the default.dockerfile includes it).
+For tmux persistence to work, containers/VMs must have `tmux` installed (the default.dockerfile and Firecracker images include it). When `tmuxEnabled` is set to `false` in config, plain shell sessions are used instead.
+
+### Terminal Theming
+
+Terminal background supports independent dark/light mode control (can differ from the system theme):
+- `packages/web/src/lib/terminal-themes.ts` — Dark and light xterm ITheme definitions, `TerminalThemeMode` type (`'dark' | 'light' | 'system'`)
+- Terminal theme mode is stored in localStorage and can be set to System (follows app theme), Dark, or Light
+- Shell init (`packages/server/src/services/shell-init.ts`) injects color aliases (`ls --color=auto`, `grep --color=auto`) and `dircolors` for colorized output
+
+### Shell Prompt Themes
+
+Six PS1 prompt themes: `minimal`, `clean`, `bracket`, `lambda`, `cyberpunk`, `multiline`. Configured via `shellPromptTheme` in app config.
+- `packages/server/src/services/shell-init.ts` — Theme definitions (ANSI escape sequences) and shell initialization
+- `packages/web/src/lib/prompt-themes.ts` — Preview definitions with dark/light color variants
+- Themes are injected via stdin after shell start, with live-switching support
+
+### Docker in Firecracker
+
+Firecracker VM images include Docker CE pre-installed with special configuration for nested operation:
+- `/etc/docker/daemon.json` uses `{"iptables": false, "storage-driver": "vfs"}` (no iptables in microVM, no overlay2 nesting)
+- Docker and containerd are disabled at boot; start manually with `sudo systemctl start docker`
+- Image preparation: `scripts/dev/prepare-fc-image.sh`
 
 ### Key tech choices
 

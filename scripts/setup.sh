@@ -274,7 +274,7 @@ log "Prerequisites OK"
 step "Installing TAP helper..."
 
 # Run the install script (it handles building if needed)
-"$SCRIPT_DIR/install-tap-helper.sh" --setup-bridge --bridge-name "$BRIDGE_NAME" --bridge-ip "$BRIDGE_IP"
+"$SCRIPT_DIR/user/install-tap-helper.sh" --setup-bridge --bridge-name "$BRIDGE_NAME" --bridge-ip "$BRIDGE_IP"
 
 #
 # Step 3: Download base images
@@ -292,7 +292,7 @@ if [ "$SKIP_IMAGE" = false ] && { [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$
             log "Cloud-Hypervisor image already exists"
         else
             log "Downloading Cloud-Hypervisor image..."
-            sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/download-ubuntu-minimal.sh"
+            sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/dev/download-ubuntu-minimal.sh"
         fi
     fi
 
@@ -302,7 +302,7 @@ if [ "$SKIP_IMAGE" = false ] && { [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$
             log "Firecracker image already exists"
         else
             log "Downloading Firecracker image..."
-            sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/download-fc-image.sh"
+            sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/user/download-image.sh"
         fi
     fi
 else
@@ -337,7 +337,7 @@ if [ "$INSTALL_FIRECRACKER" = true ]; then
         FC_VERSION=$(firecracker --version 2>&1 | head -1)
         log "Firecracker already installed: $FC_VERSION"
     else
-        "$SCRIPT_DIR/install-firecracker.sh"
+        "$SCRIPT_DIR/user/install-firecracker.sh"
     fi
 fi
 

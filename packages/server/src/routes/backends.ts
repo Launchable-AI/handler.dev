@@ -510,7 +510,7 @@ backends.post('/:backend/install', async (c) => {
     case 'firecracker':
       try {
         // Use the install script if available
-        const scriptPath = `${process.cwd()}/scripts/install-firecracker.sh`;
+        const scriptPath = `${process.cwd()}/scripts/user/install-firecracker.sh`;
         if (existsSync(scriptPath)) {
           await execAsync(`bash ${scriptPath}`, { timeout: 300000 });
         } else {
@@ -526,7 +526,7 @@ backends.post('/:backend/install', async (c) => {
         }
         return c.json({ success: true, message: 'Firecracker installed' });
       } catch (err) {
-        return c.json({ success: false, message: 'Run: sudo ./scripts/install-firecracker.sh' }, 500);
+        return c.json({ success: false, message: 'Run: sudo ./scripts/user/install-firecracker.sh' }, 500);
       }
 
     case 'daytona':

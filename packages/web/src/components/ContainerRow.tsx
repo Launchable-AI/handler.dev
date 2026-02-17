@@ -181,7 +181,7 @@ export function ContainerRow({ container }: ContainerRowProps) {
               {isRunning && (
                 <>
                   <button
-                    onClick={() => terminalPanel.openContainerTerminal(container.id, container.name, true)}
+                    onClick={() => terminalPanel.openContainerTerminal(container.id, container.name)}
                     className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-base))] transition-colors"
                     title="Open Terminal"
                   >

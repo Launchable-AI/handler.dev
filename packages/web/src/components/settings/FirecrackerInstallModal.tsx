@@ -121,7 +121,7 @@ export function FirecrackerInstallModal({ onClose }: FirecrackerInstallModalProp
               </div>
 
               <CommandBlock
-                command="sudo ./scripts/install-firecracker.sh"
+                command="sudo ./scripts/user/install-firecracker.sh"
                 id="binary"
                 copied={copiedCommand === 'binary'}
                 onCopy={copyCommand}
@@ -157,7 +157,7 @@ export function FirecrackerInstallModal({ onClose }: FirecrackerInstallModalProp
               </div>
 
               <CommandBlock
-                command="./scripts/download-fc-image.sh"
+                command="./scripts/user/download-image.sh"
                 id="image"
                 copied={copiedCommand === 'image'}
                 onCopy={copyCommand}

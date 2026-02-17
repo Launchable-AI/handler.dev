@@ -4,7 +4,7 @@
 # This downloads a pre-built Ubuntu 24.04 image that's ready for Firecracker,
 # with MMDS networking scripts already installed.
 #
-# Usage: ./scripts/download-fc-image.sh [options]
+# Usage: ./scripts/user/download-image.sh [options]
 #
 # Options:
 #   --image NAME       Image to download (default: ubuntu-24.04)
@@ -15,6 +15,8 @@
 set -e
 
 # Configuration
+# When a CloudFront distribution is set up, update this default URL to the CDN endpoint.
+# Example: https://cdn.handler.dev/images
 BASE_URL="${HANDLER_IMAGE_URL:-https://s3.us-east-2.amazonaws.com/handler.dev-public/images}"
 
 # Handle sudo: use SUDO_USER's home if running as root via sudo

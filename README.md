@@ -407,7 +407,7 @@ VM data is stored in the user's home directory:
 - Run setup: `sudo ./scripts/setup.sh`
 
 **"TAP helper missing capabilities"**
-- Reinstall: `sudo ./scripts/install-tap-helper.sh --setup-bridge`
+- Reinstall: `sudo ./scripts/user/install-tap-helper.sh --setup-bridge`
 
 ## Contributing
 

@@ -121,7 +121,7 @@ export class FirecrackerService extends EventEmitter {
         }
       } catch {
         console.warn('[FirecrackerService] Firecracker not found in PATH. VMs will fail to start.');
-        console.warn('[FirecrackerService] Run: sudo ./scripts/install-firecracker.sh');
+        console.warn('[FirecrackerService] Run: sudo ./scripts/user/install-firecracker.sh');
       }
     }
   }
@@ -609,7 +609,7 @@ export class FirecrackerService extends EventEmitter {
           stdio: 'pipe',
         });
       } else {
-        throw new Error(`Base image not found: ${rootImageName}. Run scripts/prepare-fc-image.sh first.`);
+        throw new Error(`Base image not found: ${rootImageName}. Run scripts/dev/prepare-fc-image.sh first.`);
       }
     }
 
@@ -753,7 +753,7 @@ export class FirecrackerService extends EventEmitter {
       const kernelPath = fs.existsSync(fcKernelPath) ? fcKernelPath : defaultKernelPath;
 
       if (!fs.existsSync(kernelPath)) {
-        throw new Error(`Kernel not found: ${kernelPath}. Run scripts/prepare-fc-image.sh first.`);
+        throw new Error(`Kernel not found: ${kernelPath}. Run scripts/dev/prepare-fc-image.sh first.`);
       }
 
       // Device assignment:
@@ -1848,6 +1848,41 @@ export class FirecrackerService extends EventEmitter {
 
     this.emit('vm:renamed', { id, newName });
     console.log(`[FirecrackerService] VM ${id} renamed to ${newName}`);
+
+    return this.vmToInfo(vm);
+  }
+
+  /**
+   * Update VM resource configuration (vCPUs, memory, disk).
+   * VM must be stopped. Changes take effect on next boot.
+   */
+  async updateVmResources(id: string, resources: { vcpus?: number; memoryMb?: number; diskGb?: number }): Promise<VmInfo> {
+    const vm = this.vms.get(id);
+    if (!vm) {
+      throw new Error(`VM ${id} not found`);
+    }
+
+    if (vm.status !== 'stopped' && vm.status !== 'error') {
+      throw new Error(`VM must be stopped to reconfigure resources (current status: ${vm.status})`);
+    }
+
+    if (resources.vcpus !== undefined) {
+      if (resources.vcpus < 1 || resources.vcpus > 32) throw new Error('vCPUs must be between 1 and 32');
+      vm.vcpus = resources.vcpus;
+    }
+    if (resources.memoryMb !== undefined) {
+      if (resources.memoryMb < 128 || resources.memoryMb > 65536) throw new Error('Memory must be between 128 MB and 64 GB');
+      vm.memoryMb = resources.memoryMb;
+    }
+    if (resources.diskGb !== undefined) {
+      if (resources.diskGb < 1 || resources.diskGb > 1000) throw new Error('Disk must be between 1 and 1000 GB');
+      if (resources.diskGb < vm.diskGb) throw new Error('Disk size cannot be reduced');
+      vm.diskGb = resources.diskGb;
+    }
+
+    await this.saveVmState(vm);
+    this.emit('vm:reconfigured', { id, resources });
+    console.log(`[FirecrackerService] VM ${id} resources updated: vcpus=${vm.vcpus}, memoryMb=${vm.memoryMb}, diskGb=${vm.diskGb}`);
 
     return this.vmToInfo(vm);
   }

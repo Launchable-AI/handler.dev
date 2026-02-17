@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Moon, Sun, Check } from 'lucide-react';
+import { Moon, Sun, Check, Monitor } from 'lucide-react';
 import { useTheme, DARK_THEMES, LIGHT_THEMES, type Theme, type ThemeConfig } from '../../hooks/useTheme';
 import { PROMPT_THEMES, type ShellPromptTheme } from '../../lib/prompt-themes';
+import { getStoredTerminalThemeMode, setStoredTerminalThemeMode, getTerminalBgColor, type TerminalThemeMode } from '../../lib/terminal-themes';
 
 // Representative swatch colors per theme (hardcoded HSL strings for preview)
 const THEME_SWATCHES: Record<Theme, string[]> = {
@@ -51,6 +52,15 @@ function ThemeCard({ config, isSelected, onClick }: { config: ThemeConfig; isSel
 export function AppearanceSettings() {
   const { isDark, toggleTheme, preferredDark, preferredLight, setPreferredDark, setPreferredLight } = useTheme();
   const [activePromptTheme, setActivePromptTheme] = useState<ShellPromptTheme>('minimal');
+  const [terminalThemeMode, setTerminalThemeMode] = useState<TerminalThemeMode>(getStoredTerminalThemeMode);
+  const terminalIsDark = terminalThemeMode === 'system' ? isDark : terminalThemeMode === 'dark';
+
+  const handleTerminalThemeMode = useCallback((mode: TerminalThemeMode) => {
+    setTerminalThemeMode(mode);
+    setStoredTerminalThemeMode(mode);
+    // Notify all terminal instances
+    window.dispatchEvent(new CustomEvent('handler-terminal-theme-mode', { detail: { mode } }));
+  }, []);
 
   // Load initial prompt theme from config
   useEffect(() => {
@@ -158,6 +168,49 @@ export function AppearanceSettings() {
         </div>
       </div>
 
+      {/* Terminal Theme */}
+      <div>
+        <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Terminal Theme</h3>
+        <p className="text-[10px] text-[hsl(var(--text-muted))] mt-1 mb-3">
+          Terminal background can follow the system theme or be set independently
+        </p>
+        <div className="flex items-center gap-1 p-1 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] w-fit">
+          <button
+            onClick={() => handleTerminalThemeMode('system')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
+              terminalThemeMode === 'system'
+                ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] border border-[hsl(var(--cyan)/0.3)]'
+                : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+            }`}
+          >
+            <Monitor className="h-3.5 w-3.5" />
+            System
+          </button>
+          <button
+            onClick={() => handleTerminalThemeMode('dark')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
+              terminalThemeMode === 'dark'
+                ? 'bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] border border-[hsl(var(--cyan)/0.3)]'
+                : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+            }`}
+          >
+            <Moon className="h-3.5 w-3.5" />
+            Dark
+          </button>
+          <button
+            onClick={() => handleTerminalThemeMode('light')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
+              terminalThemeMode === 'light'
+                ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))] border border-[hsl(var(--amber)/0.3)]'
+                : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+            }`}
+          >
+            <Sun className="h-3.5 w-3.5" />
+            Light
+          </button>
+        </div>
+      </div>
+
       {/* Shell Prompt Theme */}
       <div>
         <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Shell Prompt</h3>
@@ -191,16 +244,24 @@ export function AppearanceSettings() {
                     )}
                   </div>
                 </div>
-                <div className="px-2 py-1.5 rounded bg-[hsl(220_20%_6%)] font-mono text-[11px] leading-relaxed whitespace-pre">
-                  {theme.previewSegments.map((seg, i) => (
-                    <span
-                      key={i}
-                      style={{ color: seg.color === 'inherit' ? undefined : seg.color }}
-                    >
-                      {seg.text}
-                    </span>
-                  ))}
-                  <span className="animate-pulse text-[hsl(180_60%_55%)]">▎</span>
+                <div
+                  className="px-2 py-1.5 rounded font-mono text-[11px] leading-relaxed whitespace-pre"
+                  style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}
+                >
+                  {theme.previewSegments.map((seg, i) => {
+                    const color = seg.color === 'inherit'
+                      ? undefined
+                      : (!terminalIsDark && seg.lightColor) ? seg.lightColor : seg.color;
+                    return (
+                      <span
+                        key={i}
+                        style={{ color }}
+                      >
+                        {seg.text}
+                      </span>
+                    );
+                  })}
+                  <span className="animate-pulse" style={{ color: terminalIsDark ? 'hsl(180 60% 55%)' : '#0070c0' }}>▎</span>
                 </div>
               </button>
             );

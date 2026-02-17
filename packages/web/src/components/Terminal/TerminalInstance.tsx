@@ -5,6 +5,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Loader2, Copy, Check, RefreshCw } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import type { ShellPromptTheme } from '../../lib/prompt-themes';
+import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../../lib/terminal-themes';
+import { useTheme } from '../../hooks/useTheme';
 
 // Connection state type
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
@@ -13,8 +15,6 @@ export interface TerminalTarget {
   type: 'vm' | 'container';
   id: string;
   ip?: string;
-  /** For containers: connect as 'dev' user in /home/dev/workspace instead of root */
-  isDevNode?: boolean;
   /** Override the working directory for the shell session */
   workdir?: string;
 }
@@ -47,10 +47,18 @@ export function TerminalInstance({
   className = '',
   fontSize = 13,
 }: TerminalInstanceProps) {
+  const { isDark: systemIsDark } = useTheme();
+  const [terminalThemeMode, setTerminalThemeMode] = useState<TerminalThemeMode>(getStoredTerminalThemeMode);
+  const terminalIsDark = terminalThemeMode === 'system' ? systemIsDark : terminalThemeMode === 'dark';
+
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [isTmuxSession, setIsTmuxSession] = useState(false);
   const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const terminalIsDarkRef = useRef(terminalIsDark);
+  terminalIsDarkRef.current = terminalIsDark;
+
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -134,37 +142,14 @@ export function TerminalInstance({
     function init() {
     if (isDisposedRef.current) return;
 
-    // Create terminal instance with theme matching the UI
+    // Create terminal instance with theme matching the terminal theme mode
     const term = new XTerm({
       cursorBlink: true,
       cursorStyle: 'block',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
       fontSize,
       lineHeight: 1.2,
-      theme: {
-        background: 'hsl(220 20% 6%)',
-        foreground: 'hsl(220 10% 85%)',
-        cursor: 'hsl(190 90% 60%)',
-        cursorAccent: 'hsl(220 20% 6%)',
-        selectionBackground: 'hsl(190 90% 60% / 0.3)',
-        selectionForeground: '#ffffff',
-        black: 'hsl(220 20% 10%)',
-        red: 'hsl(0 70% 65%)',
-        green: 'hsl(140 60% 55%)',
-        yellow: 'hsl(40 80% 55%)',
-        blue: 'hsl(210 80% 65%)',
-        magenta: 'hsl(280 60% 70%)',
-        cyan: 'hsl(180 60% 55%)',
-        white: 'hsl(220 10% 85%)',
-        brightBlack: 'hsl(220 15% 35%)',
-        brightRed: 'hsl(0 80% 70%)',
-        brightGreen: 'hsl(140 70% 65%)',
-        brightYellow: 'hsl(40 90% 65%)',
-        brightBlue: 'hsl(210 90% 75%)',
-        brightMagenta: 'hsl(280 70% 80%)',
-        brightCyan: 'hsl(180 70% 65%)',
-        brightWhite: 'hsl(220 5% 95%)',
-      },
+      theme: getTerminalTheme(terminalIsDarkRef.current),
       allowProposedApi: true,
     });
 
@@ -305,7 +290,6 @@ export function TerminalInstance({
             shell: '/bin/bash',
             cols: term.cols,
             rows: term.rows,
-            isDevNode: target.isDevNode ?? true,
             ...(target.workdir ? { workdir: target.workdir } : {}),
           }));
         }
@@ -318,6 +302,7 @@ export function TerminalInstance({
           switch (msg.type) {
             case 'connected':
               updateState('connected');
+              setIsTmuxSession(!!msg.tmuxSession);
               term.focus();
               setTimeout(fitAndResize, 50);
               setTimeout(fitAndResize, 200);
@@ -356,7 +341,6 @@ export function TerminalInstance({
                   shell: '/bin/bash',
                   cols: term.cols,
                   rows: term.rows,
-                  isDevNode: target.isDevNode ?? true,
                   ...(target.workdir ? { workdir: target.workdir } : {}),
                 }));
               }
@@ -482,7 +466,7 @@ export function TerminalInstance({
         cleanupRef.current = null;
       }
     };
-  }, [target.type, target.id, target.ip, target.isDevNode, target.workdir, getWsUrl, updateState, saveSession, getSavedSession, clearSavedSession]);
+  }, [target.type, target.id, target.ip, target.workdir, getWsUrl, updateState, saveSession, getSavedSession, clearSavedSession]);
 
   // Update font size when prop changes
   useEffect(() => {
@@ -517,6 +501,23 @@ export function TerminalInstance({
     return () => window.removeEventListener('handler-prompt-theme', handler);
   }, []);
 
+  // React to terminal theme changes
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = getTerminalTheme(terminalIsDark);
+    }
+  }, [terminalIsDark]);
+
+  // Listen for terminal theme mode changes from settings
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const mode = (e as CustomEvent<{ mode: TerminalThemeMode }>).detail.mode;
+      setTerminalThemeMode(mode);
+    };
+    window.addEventListener('handler-terminal-theme-mode', handler);
+    return () => window.removeEventListener('handler-terminal-theme-mode', handler);
+  }, []);
+
   // Focus the terminal when this component is clicked
   const handleClick = useCallback(() => {
     xtermRef.current?.focus();
@@ -542,6 +543,12 @@ export function TerminalInstance({
               <span className="text-[hsl(var(--text-secondary))]">agent@{target.ip}</span>
             </>
           )}
+          {isTmuxSession && (
+            <>
+              <span className="text-[hsl(var(--text-muted))]">|</span>
+              <span className="px-1 py-0.5 bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded text-[9px] uppercase tracking-wider">tmux</span>
+            </>
+          )}
         </div>
       )}
 
@@ -549,7 +556,7 @@ export function TerminalInstance({
       <div
         ref={terminalRef}
         className="flex-1 p-1"
-        style={{ backgroundColor: 'hsl(220 20% 6%)' }}
+        style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}
       />
 
       {/* Detected URLs bar */}

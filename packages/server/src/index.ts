@@ -307,7 +307,6 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
                 msg.shell || '/bin/bash',
                 msg.cols || 80,
                 msg.rows || 24,
-                msg.isDevNode || false,
                 msg.workdir
               );
               isVmSession = false;
