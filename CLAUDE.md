@@ -37,7 +37,7 @@ Requires Node 22+. Uses pnpm workspaces.
   - `scripts/setup.sh`, `scripts/uninstall.sh`, `scripts/status.sh` — Top-level user entry points
   - `scripts/lib/` — Shared shell utilities (`os-utils.sh`)
   - `scripts/user/` — End-user scripts (public read): `download-image.sh`, `install-firecracker.sh`, `install-tap-helper.sh`
-  - `scripts/dev/` — Developer/maintainer scripts (requires AWS write): `prepare-fc-image.sh`, `upload-fc-image.sh`, `test-vm.sh`, `download-ubuntu-minimal.sh`, `base-images.json`, `global-manifest.json`, `migrations/`
+  - `scripts/dev/` — Developer/maintainer scripts (requires AWS write): `prepare-fc-image.sh`, `upload-fc-image.sh`, `build-fc-kernel.sh`, `test-vm.sh`, `download-ubuntu-minimal.sh`, `base-images.json`, `global-manifest.json`, `migrations/`
 - `guest-init/` — Init scripts baked into VM images
 - `data/` — Runtime config, SSH keys, volumes, Dockerfiles
 
@@ -99,16 +99,27 @@ Six PS1 prompt themes: `minimal`, `clean`, `bracket`, `lambda`, `cyberpunk`, `mu
 
 ### Docker in Firecracker
 
-Firecracker VM images include Docker CE pre-installed with special configuration for nested operation:
-- `/etc/docker/daemon.json` uses `{"iptables": false, "storage-driver": "vfs"}` (no iptables in microVM, no overlay2 nesting)
+Firecracker VM images include Docker CE pre-installed. Docker uses a **dedicated ext4 block device** for `/var/lib/docker` so overlay2 works natively (avoiding nested overlayfs issues):
+
+- **Custom kernel** (`scripts/dev/build-fc-kernel.sh`): Builds a Linux kernel with full Docker support (iptables, netfilter, overlay2, namespaces, cgroups) compiled as built-ins (`=y`), since Firecracker boots with `nomodule`
+- **Dedicated Docker volume**: Each VM gets a separate ext4 block device mounted at `/var/lib/docker` by `overlay-init` at boot. This lets Docker use overlay2 directly on ext4 instead of nesting overlayfs-on-overlayfs
+- **Boot-time config**: `guest-init/overlay-init` parses the `docker_volume=vdX` kernel boot arg, mounts the device, and writes `/etc/docker/daemon.json` with `{"storage-driver":"overlay2"}`
+- **Fallback**: The base image ships with `{"storage-driver":"vfs"}` in daemon.json as a fallback for VMs without a dedicated Docker volume
 - Docker and containerd are disabled at boot; start manually with `sudo systemctl start docker`
-- Image preparation: `scripts/dev/prepare-fc-image.sh`
+
+Device assignment order: vda (rootfs) → parent layers (vdb, vdc...) → overlay (next) → docker volume (next) → data volumes (remaining)
+
+Key files:
+- `scripts/dev/build-fc-kernel.sh` — Custom kernel builder (Firecracker CI config + Docker fragment)
+- `scripts/dev/prepare-fc-image.sh` — Image preparation (installs Docker CE, tmux, etc.)
+- `guest-init/overlay-init` — In-guest init that sets up overlayfs, Docker volume, and SSH
+- `packages/server/src/services/firecracker.ts` — VM creation with Docker volume allocation
 
 ### Key tech choices
 
 - Tailwind CSS v4 (beta) for styling
 - Monaco editor for Dockerfile editing
 - xterm.js with fit/webgl/web-links addons for terminal
-- tmux for terminal session persistence (Docker containers)
+- tmux for terminal session persistence (Docker containers and VMs)
 - ReactFlow for canvas workspace visualization
 - WebSocket for real-time terminal I/O and shell state

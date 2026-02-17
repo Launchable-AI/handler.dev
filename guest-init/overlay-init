@@ -7,6 +7,7 @@
 # Usage:
 #   Kernel boot args: init=/sbin/overlay-init overlay_root=vdc
 #   For layered images: init=/sbin/overlay-init overlay_root=vdd parent_layers=vdb,vdc
+#   For Docker volume:  init=/sbin/overlay-init overlay_root=vdb docker_volume=vdc
 #
 # IMPORTANT: The rootfs MUST have /overlay and /mnt directories pre-created!
 #
@@ -14,6 +15,7 @@
 #   - Base rootfs (vda) - read-only kernel root
 #   - Parent layers (vdb, vdc, ...) - read-only promoted snapshots
 #   - Overlay device (vdN) - read-write layer for this VM
+#   - Docker volume (vdN+1) - dedicated ext4 for /var/lib/docker (optional)
 #
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -24,7 +26,7 @@
 # Ensure required directories exist
 mkdir -p /overlay /mnt /rom
 
-# Parse kernel command line for overlay_root and parent_layers parameters
+# Parse kernel command line for overlay_root, parent_layers, and docker_volume parameters
 for arg in $(cat /proc/cmdline); do
     case "$arg" in
         overlay_root=*)
@@ -32,6 +34,9 @@ for arg in $(cat /proc/cmdline); do
             ;;
         parent_layers=*)
             parent_layers="${arg#parent_layers=}"
+            ;;
+        docker_volume=*)
+            docker_volume="${arg#docker_volume=}"
             ;;
     esac
 done
@@ -209,6 +214,23 @@ if [ -d /home/agent/.ssh ] && [ -f /home/agent/.ssh/authorized_keys ]; then
     echo "[overlay-init] Agent user setup complete"
 else
     echo "[overlay-init] No SSH keys found at /home/agent/.ssh/authorized_keys"
+fi
+
+# Mount dedicated Docker volume if specified
+# This gives Docker its own ext4 filesystem, avoiding nested overlayfs issues.
+# Docker overlay2 can then operate directly on ext4 instead of on the guest's overlayfs root.
+if [ -n "$docker_volume" ] && [ -b "/dev/${docker_volume}" ]; then
+    echo "[overlay-init] Mounting Docker volume /dev/${docker_volume} at /var/lib/docker"
+    mkdir -p /var/lib/docker
+    /bin/mount -t ext4 -o noatime "/dev/${docker_volume}" /var/lib/docker
+
+    # Write Docker daemon config for overlay2 (dedicated volume supports it natively)
+    # This overrides the default vfs config that exists as a fallback in the image
+    mkdir -p /etc/docker
+    echo '{"storage-driver":"overlay2"}' > /etc/docker/daemon.json
+    echo "[overlay-init] Docker configured for overlay2 on dedicated volume"
+elif [ -n "$docker_volume" ]; then
+    echo "[overlay-init] WARNING: Docker volume /dev/${docker_volume} not found"
 fi
 
 # Now exec real init (we're already in the new root after pivot_root)

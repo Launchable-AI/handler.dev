@@ -582,9 +582,9 @@ export class FirecrackerService extends EventEmitter {
    * - Each VM overlay is ~1MB initially, grows only as data is written
    * - Promoted images only store the diff (~100MB vs ~2.5GB)
    *
-   * Returns: { basePath, overlayPath, parentLayers? } for configuring Firecracker drives
+   * Returns: { basePath, overlayPath, dockerVolumePath?, parentLayers? } for configuring Firecracker drives
    */
-  private async prepareDiskImage(vm: FirecrackerVmState, vmDir: string): Promise<{ basePath: string; overlayPath: string; parentLayers?: string[] }> {
+  private async prepareDiskImage(vm: FirecrackerVmState, vmDir: string): Promise<{ basePath: string; overlayPath: string; dockerVolumePath?: string; parentLayers?: string[] }> {
     // Get the full layer chain for this image
     const layerChain = this.getImageLayerChain(vm.baseImage);
     const isLayered = layerChain.length > 1;
@@ -640,9 +640,21 @@ export class FirecrackerService extends EventEmitter {
       await this.injectSshKeysToOverlay(overlayPath, vm.mmdsMetadata?.ssh?.authorized_keys || []);
     }
 
+    // Create dedicated Docker volume (ext4, for /var/lib/docker)
+    // This avoids nested overlayfs issues: Docker overlay2 operates on ext4 directly
+    // instead of on top of the guest's overlayfs root.
+    const dockerVolumePath = path.join(vmDir, 'docker-volume.ext4');
+    if (!fs.existsSync(dockerVolumePath)) {
+      const dockerVolumeSize = Math.max(vm.diskGb || 10, 5); // At least 5GB for Docker images
+      console.log(`[FirecrackerService] Creating ${dockerVolumeSize}GB Docker volume for VM ${vm.id} (sparse)`);
+      execSync(`truncate -s ${dockerVolumeSize}G "${dockerVolumePath}"`, { stdio: 'pipe' });
+      execSync(`mkfs.ext4 -F -q "${dockerVolumePath}"`, { stdio: 'pipe' });
+    }
+
     return {
       basePath,
       overlayPath,
+      dockerVolumePath,
       parentLayers: parentLayers.length > 0 ? parentLayers : undefined,
     };
   }
@@ -726,7 +738,7 @@ export class FirecrackerService extends EventEmitter {
     id: string,
     vmDir: string,
     apiSocket: string,
-    diskPaths: { basePath: string; overlayPath: string; parentLayers?: string[] }
+    diskPaths: { basePath: string; overlayPath: string; dockerVolumePath?: string; parentLayers?: string[] }
   ): Promise<void> {
     const vm = this.vms.get(id);
     if (!vm) return;
@@ -760,14 +772,17 @@ export class FirecrackerService extends EventEmitter {
       // - vda: root base image (is_root_device: true)
       // - vdb, vdc, ...: parent layers (if any, read-only)
       // - next: overlay (writable)
+      // - next: docker volume (writable, dedicated ext4 for /var/lib/docker)
       // - after: data volumes
       //
       // Device letter for overlay depends on number of parent layers:
-      // - No parents: overlay = vdb
-      // - 1 parent: overlay = vdc
-      // - 2 parents: overlay = vdd
+      // - No parents: overlay = vdb, docker = vdc
+      // - 1 parent: overlay = vdc, docker = vdd
+      // - 2 parents: overlay = vdd, docker = vde
       const overlayDeviceLetter = String.fromCharCode('b'.charCodeAt(0) + numParentLayers);
       const overlayDevice = `vd${overlayDeviceLetter}`;
+      const dockerDeviceLetter = String.fromCharCode('b'.charCodeAt(0) + numParentLayers + 1);
+      const dockerDevice = diskPaths.dockerVolumePath ? `vd${dockerDeviceLetter}` : '';
 
       // 1. Configure boot source with overlay-init for per-VM writable layer
       // - init=/sbin/overlay-init: Use our custom init that sets up overlayfs
@@ -775,6 +790,12 @@ export class FirecrackerService extends EventEmitter {
       // - parent_layers=vdb,vdc: Specifies intermediate layer devices (if any)
       // - root=/dev/vda ro: Mount base rootfs read-only
       let bootArgs = `console=ttyS0 reboot=k panic=1 root=/dev/vda ro init=/sbin/overlay-init overlay_root=${overlayDevice}`;
+
+      // Add docker_volume device to boot args (dedicated ext4 for /var/lib/docker)
+      // This avoids nested overlayfs: Docker's overlay2 operates on ext4 directly
+      if (dockerDevice) {
+        bootArgs += ` docker_volume=${dockerDevice}`;
+      }
 
       // Add parent layer devices to boot args if this is a layered image
       if (hasParentLayers) {
@@ -831,9 +852,21 @@ export class FirecrackerService extends EventEmitter {
         is_read_only: false,  // WRITABLE: VM-specific changes go here
       } as Drive);
 
-      // 5. Configure attached volume drives (appear after overlay)
-      // First available letter after overlay
-      let dataVolumeOffset = numParentLayers + 1; // +1 for overlay
+      // 5. Configure Docker volume drive (WRITABLE - dedicated ext4 for /var/lib/docker)
+      // This avoids nested overlayfs issues: Docker overlay2 operates on ext4 directly
+      if (diskPaths.dockerVolumePath) {
+        console.log(`[FirecrackerService] Configuring Docker volume drive: ${diskPaths.dockerVolumePath} -> /dev/${dockerDevice}`);
+        await this.sendApiRequest(apiSocket, 'PUT', '/drives/docker', {
+          drive_id: 'docker',
+          path_on_host: diskPaths.dockerVolumePath,
+          is_root_device: false,
+          is_read_only: false,
+        } as Drive);
+      }
+
+      // 6. Configure attached volume drives (appear after overlay + docker)
+      // First available letter after overlay and docker volume
+      let dataVolumeOffset = numParentLayers + 1 + (diskPaths.dockerVolumePath ? 1 : 0); // +1 for overlay, +1 for docker
       if (vm.volumes && vm.volumes.length > 0) {
         for (let i = 0; i < vm.volumes.length; i++) {
           const volume = vm.volumes[i];
@@ -1084,8 +1117,8 @@ export class FirecrackerService extends EventEmitter {
     const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
     const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
 
-    // Device letters: vda=rootfs, vdb=overlay, vdc=data0, vdd=data1, etc.
-    const deviceLetters = 'cdefghijklmnop'; // Starting from 'c' for first data volume
+    // Device letters: vda=rootfs, vdb=overlay, vdc=docker, vdd=data0, vde=data1, etc.
+    const deviceLetters = 'defghijklmnop'; // Starting from 'd' for first data volume (after overlay+docker)
 
     for (let i = 0; i < vm.volumes.length; i++) {
       const volume = vm.volumes[i];

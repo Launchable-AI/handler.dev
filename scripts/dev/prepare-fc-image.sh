@@ -173,10 +173,11 @@ mkdir-p /rom
 command "which jq || apt-get update -qq && apt-get install -y -qq jq curl tmux"
 
 # Install Docker CE for Docker-in-Firecracker support
-# Configure daemon to work inside VMs (no iptables, vfs storage driver)
+# daemon.json is a fallback config (vfs + no iptables). When a dedicated Docker volume
+# is attached, overlay-init overrides this with overlay2 at boot time.
 command "which docker || (apt-get update -qq && apt-get install -y -qq ca-certificates gnupg && install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && chmod a+r /etc/apt/keyrings/docker.gpg && echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\" > /etc/apt/sources.list.d/docker.list && apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io)"
 mkdir-p /etc/docker
-write /etc/docker/daemon.json "{\"iptables\":false,\"storage-driver\":\"vfs\"}"
+write /etc/docker/daemon.json "{\"storage-driver\":\"vfs\"}"
 command "systemctl disable docker.service containerd.service 2>/dev/null || true"
 
 # Download kernel
@@ -337,10 +338,11 @@ if [ "${USE_MOUNT:-0}" = "1" ]; then
                 systemctl disable docker.service containerd.service 2>/dev/null || true
             ' 2>/dev/null || warn "Failed to install Docker CE - you may need to install it manually"
 
-            # Write Docker daemon config
+            # Write Docker daemon config (fallback for when no dedicated Docker volume is attached)
+            # When a Docker volume IS attached, overlay-init overrides this with overlay2
             mkdir -p "$MOUNT_POINT/etc/docker"
             cat > "$MOUNT_POINT/etc/docker/daemon.json" << 'DOCKEREOF'
-{"iptables":false,"storage-driver":"vfs"}
+{"storage-driver":"vfs"}
 DOCKEREOF
         fi
 
