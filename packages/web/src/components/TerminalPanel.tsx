@@ -8,10 +8,9 @@ import {
   Loader2,
   PanelRight,
   PanelBottom,
-  Plus,
-  Minus,
   GripVertical,
-  GripHorizontal
+  GripHorizontal,
+  Rows2,
 } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../lib/terminal-themes';
@@ -264,6 +263,12 @@ interface TerminalPanelUIProps {
   onTabStateChange: (tabId: string, state: Partial<TerminalTab>) => void;
 }
 
+interface SplitPane {
+  id: string;
+  tabIds: string[];
+  activeTabId: string;
+}
+
 function TerminalPanelUI({
   tabs,
   activeTabId,
@@ -279,6 +284,99 @@ function TerminalPanelUI({
   onTabStateChange,
 }: TerminalPanelUIProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [splitMode, setSplitMode] = useState(false);
+  const [splits, setSplits] = useState<SplitPane[]>([]);
+  const [dragTabId, setDragTabId] = useState<string | null>(null);
+
+  // Initialize splits when tabs change
+  useEffect(() => {
+    if (!splitMode) return;
+    setSplits(prev => {
+      if (prev.length === 0 && tabs.length > 0) {
+        return [{ id: 'split-1', tabIds: tabs.map(t => t.id), activeTabId: activeTabId || tabs[0].id }];
+      }
+      // Ensure new tabs are assigned to a split
+      const assignedTabs = new Set(prev.flatMap(s => s.tabIds));
+      const unassigned = tabs.filter(t => !assignedTabs.has(t.id));
+      if (unassigned.length > 0 && prev.length > 0) {
+        const lastSplit = prev[prev.length - 1];
+        return prev.map(s => s.id === lastSplit.id
+          ? { ...s, tabIds: [...s.tabIds, ...unassigned.map(t => t.id)] }
+          : s
+        );
+      }
+      // Remove closed tabs from splits
+      const currentTabIds = new Set(tabs.map(t => t.id));
+      const updated = prev.map(s => {
+        const filtered = s.tabIds.filter(id => currentTabIds.has(id));
+        const active = filtered.includes(s.activeTabId) ? s.activeTabId : filtered[0] || '';
+        return { ...s, tabIds: filtered, activeTabId: active };
+      }).filter(s => s.tabIds.length > 0);
+      return updated.length > 0 ? updated : [];
+    });
+  }, [tabs, splitMode, activeTabId]);
+
+  const handleToggleSplit = () => {
+    if (!splitMode) {
+      // Entering split mode: create one split with all tabs, then add a second if possible
+      setSplitMode(true);
+      if (tabs.length >= 2) {
+        const firstTab = activeTabId || tabs[0].id;
+        const otherTabs = tabs.filter(t => t.id !== firstTab);
+        setSplits([
+          { id: 'split-1', tabIds: [firstTab], activeTabId: firstTab },
+          { id: 'split-2', tabIds: otherTabs.map(t => t.id), activeTabId: otherTabs[0].id },
+        ]);
+      } else {
+        setSplits([{ id: 'split-1', tabIds: tabs.map(t => t.id), activeTabId: activeTabId || tabs[0].id }]);
+      }
+    } else {
+      // Exiting split mode
+      setSplitMode(false);
+      setSplits([]);
+    }
+  };
+
+  const handleSplitTabSelect = (splitId: string, tabId: string) => {
+    setSplits(prev => prev.map(s => s.id === splitId ? { ...s, activeTabId: tabId } : s));
+    onTabSelect(tabId);
+  };
+
+  const handleDragStart = (e: React.DragEvent, tabId: string) => {
+    setDragTabId(tabId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', tabId);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, targetSplitId: string) => {
+    e.preventDefault();
+    const tabId = dragTabId;
+    if (!tabId) return;
+
+    setSplits(prev => {
+      // Find current split for the tab
+      const sourceSplit = prev.find(s => s.tabIds.includes(tabId));
+      if (!sourceSplit || sourceSplit.id === targetSplitId) return prev;
+
+      return prev.map(s => {
+        if (s.id === sourceSplit.id) {
+          const newTabIds = s.tabIds.filter(id => id !== tabId);
+          const newActive = newTabIds.includes(s.activeTabId) ? s.activeTabId : newTabIds[0] || '';
+          return { ...s, tabIds: newTabIds, activeTabId: newActive };
+        }
+        if (s.id === targetSplitId) {
+          return { ...s, tabIds: [...s.tabIds, tabId], activeTabId: tabId };
+        }
+        return s;
+      }).filter(s => s.tabIds.length > 0);
+    });
+    setDragTabId(null);
+  };
 
   // Handle resize
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -392,20 +490,17 @@ function TerminalPanelUI({
                 <PanelBottom className="h-3.5 w-3.5" />
               )}
             </button>
-            <button
-              onClick={() => onSizeChange(Math.min(size + 100, position === 'bottom' ? 600 : 800))}
-              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
-              title="Expand"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => onSizeChange(Math.max(size - 100, position === 'bottom' ? 200 : 300))}
-              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]"
-              title="Shrink"
-            >
-              <Minus className="h-3.5 w-3.5" />
-            </button>
+            {tabs.length >= 2 && (
+              <button
+                onClick={handleToggleSplit}
+                className={`p-1.5 hover:bg-[hsl(var(--bg-elevated))] ${
+                  splitMode ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]'
+                }`}
+                title={splitMode ? 'Exit split view' : 'Split view'}
+              >
+                <Rows2 className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
@@ -417,21 +512,80 @@ function TerminalPanelUI({
         </div>
 
         {/* Terminal content */}
-        <div className="flex-1 overflow-hidden relative" style={{ contain: 'strict' }}>
-          {tabs.map(tab => (
-            <div
-              key={tab.id}
-              className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
-              style={{ contain: 'layout paint' }}
-            >
-              <TerminalInstance
-                tab={tab}
-                onStateChange={(state) => onTabStateChange(tab.id, state)}
-                onClose={() => onTabClose(tab.id)}
-              />
-            </div>
-          ))}
-        </div>
+        {splitMode && splits.length > 1 ? (
+          /* Split view: vertical stack of split panes */
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {splits.map((split, idx) => (
+              <div
+                key={split.id}
+                className={`flex-1 flex flex-col min-h-0 ${idx > 0 ? 'border-t border-[hsl(var(--border))]' : ''}`}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, split.id)}
+              >
+                {/* Mini tab bar for this split */}
+                <div className="flex items-center bg-[hsl(var(--bg-elevated))] border-b border-[hsl(var(--border))] overflow-x-auto flex-shrink-0">
+                  {split.tabIds.map(tabId => {
+                    const tab = tabs.find(t => t.id === tabId);
+                    if (!tab) return null;
+                    return (
+                      <div
+                        key={tabId}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, tabId)}
+                        className={`flex items-center gap-1.5 px-2 py-1 text-[10px] cursor-pointer border-r border-[hsl(var(--border))] whitespace-nowrap ${
+                          tabId === split.activeTabId
+                            ? 'bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))]'
+                            : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-base))]'
+                        }`}
+                        onClick={() => handleSplitTabSelect(split.id, tabId)}
+                      >
+                        <TerminalSquare className={`h-3 w-3 ${
+                          tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
+                          tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting' ? 'text-[hsl(var(--amber))]' :
+                          'text-[hsl(var(--red))]'
+                        }`} />
+                        <span className="max-w-[80px] truncate">{tab.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Terminal for this split's active tab */}
+                <div className="flex-1 overflow-hidden relative" style={{ contain: 'strict' }}>
+                  {tabs.map(tab => (
+                    <div
+                      key={tab.id}
+                      className={`absolute inset-0 ${tab.id === split.activeTabId ? 'block' : 'hidden'}`}
+                      style={{ contain: 'layout paint' }}
+                    >
+                      <TerminalInstance
+                        tab={tab}
+                        onStateChange={(state) => onTabStateChange(tab.id, state)}
+                        onClose={() => onTabClose(tab.id)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* Normal single-pane view */
+          <div className="flex-1 overflow-hidden relative" style={{ contain: 'strict' }}>
+            {tabs.map(tab => (
+              <div
+                key={tab.id}
+                className={`absolute inset-0 ${tab.id === activeTabId ? 'block' : 'hidden'}`}
+                style={{ contain: 'layout paint' }}
+              >
+                <TerminalInstance
+                  tab={tab}
+                  onStateChange={(state) => onTabStateChange(tab.id, state)}
+                  onClose={() => onTabClose(tab.id)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

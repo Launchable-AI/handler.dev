@@ -19,6 +19,8 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
 import { TerminalPanelProvider, useTerminalPanel } from './components/TerminalPanel';
 import { useHealth, useConfig, useHostStats, useBackendStatus, useQuickLaunchConfig, useCreateContainer, useCreateVm, useContainers, useVms } from './hooks/useContainers';
+import { useQueryClient } from '@tanstack/react-query';
+import type { SandboxListResponse, Sandbox } from './api/client';
 
 // All possible tabs
 type Tab = 'agents' | 'repos' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'quick-files' | 'settings';
@@ -50,7 +52,7 @@ function isItem(entry: NavEntry): entry is NavItemDef {
 }
 
 const navStructure: NavEntry[] = [
-  { id: 'agents', label: 'Agents', icon: LayoutGrid },
+  { id: 'agents', label: 'Command Centre', icon: LayoutGrid },
   'separator',
   {
     id: 'resources',
@@ -156,6 +158,7 @@ function App() {
   const { data: vms } = useVms();
   const createContainerMutation = useCreateContainer();
   const createVmMutation = useCreateVm();
+  const queryClient = useQueryClient();
 
   // Generate unique name based on prefix and existing sandboxes (containers + VMs)
   const generateUniqueName = (prefix: string): string => {
@@ -182,6 +185,33 @@ function App() {
     const ports = quickLaunchConfig.ports?.map(p => ({ container: p, host: p })) || [];
 
     try {
+      // Inject optimistic sandbox into cache immediately
+      const optimistic: Sandbox = {
+        id: name,
+        name,
+        backend: quickLaunchConfig.backend,
+        status: 'creating',
+        vcpus: quickLaunchConfig.vcpus || (quickLaunchConfig.backend === 'docker' ? 1 : 2),
+        memoryMb: quickLaunchConfig.memoryMb || (quickLaunchConfig.backend === 'docker' ? 1024 : 2048),
+        diskGb: quickLaunchConfig.diskGb || 10,
+        ports,
+        terminalType: quickLaunchConfig.backend === 'docker' ? 'docker-exec' : 'ssh',
+        image: quickLaunchConfig.image || '',
+        createdAt: new Date().toISOString(),
+      };
+      queryClient.setQueriesData<SandboxListResponse>(
+        { queryKey: ['sandboxes'] },
+        (old) => {
+          if (!old) return old;
+          return { ...old, sandboxes: [optimistic, ...old.sandboxes] };
+        }
+      );
+
+      // Navigate to sandboxes and highlight immediately
+      setActiveTab('sandboxes');
+      setHighlightedSandboxId(name);
+      setTimeout(() => setHighlightedSandboxId(null), 3000);
+
       if (quickLaunchConfig.backend === 'docker') {
         await createContainerMutation.mutateAsync({
           name,
@@ -203,11 +233,6 @@ function App() {
         setShowCreateForm(true);
         return;
       }
-
-      // Navigate to sandboxes and highlight the new one
-      setActiveTab('sandboxes');
-      setHighlightedSandboxId(name);
-      setTimeout(() => setHighlightedSandboxId(null), 3000);
     } catch (error) {
       console.error('Quick launch failed:', error);
       // Fall back to form on error
@@ -418,9 +443,6 @@ function App() {
             <h1 className="text-sm font-semibold text-[hsl(var(--text-primary))] tracking-tight">
               Handler
             </h1>
-            <p className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider">
-              Control Panel
-            </p>
           </div>
         </div>
 

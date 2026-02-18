@@ -1397,6 +1397,146 @@ sandboxes.post('/:id/upload-directory', async (c) => {
 });
 
 /**
+ * GET /api/sandboxes/:id/files?path=...
+ * List files in a sandbox directory
+ */
+sandboxes.get('/:id/files', async (c) => {
+  const id = c.req.param('id');
+  const requestedPath = c.req.query('path') || '/';
+  const service = await ensureSandboxServiceInitialized();
+
+  try {
+    const sandbox = await service.get(id);
+    if (!sandbox) {
+      return c.json({ error: 'Sandbox not found' }, 404);
+    }
+
+    if (sandbox.status !== 'running') {
+      return c.json({ error: 'Sandbox must be running to list files' }, 400);
+    }
+
+    const { execSync } = await import('child_process');
+    const fs = await import('fs');
+    const path = await import('path');
+    const os = await import('os');
+
+    // Parse ls -la output into file info objects
+    const parseLsOutput = (output: string, dirPath: string) => {
+      const lines = output.trim().split('\n');
+      const files: Array<{ name: string; type: 'file' | 'directory'; size: number; modified: string }> = [];
+
+      for (const line of lines) {
+        // Skip total line and empty lines
+        if (line.startsWith('total ') || !line.trim()) continue;
+
+        // Parse ls -la --time-style=long-iso format:
+        // drwxr-xr-x 2 user group 4096 2024-01-15 10:30 dirname
+        const match = line.match(/^([d\-lbcps])([rwxsStT\-]{9})\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s+(.+)$/);
+        if (!match) continue;
+
+        const [, typeChar, , sizeStr, dateStr, name] = match;
+
+        // Skip . and ..
+        if (name === '.' || name === '..') continue;
+
+        // Handle symlinks (name -> target)
+        const displayName = typeChar === 'l' ? name.split(' -> ')[0] : name;
+
+        files.push({
+          name: displayName,
+          type: typeChar === 'd' ? 'directory' : 'file',
+          size: parseInt(sizeStr, 10),
+          modified: dateStr,
+        });
+      }
+
+      return files;
+    };
+
+    let lsOutput = '';
+
+    if (sandbox.backend === 'docker') {
+      const containerId = id.startsWith('docker-') ? id.slice(7) : id;
+      lsOutput = execSync(
+        `docker exec ${containerId} ls -la --time-style=long-iso "${requestedPath}"`,
+        { encoding: 'utf-8', timeout: 30000 }
+      );
+    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+      // Delegate to existing VM service
+      const vmService = sandbox.backend === 'cloud-hypervisor'
+        ? service.getHypervisorService()
+        : service.getFirecrackerService();
+
+      if (!vmService) {
+        return c.json({ error: 'VM service not available' }, 500);
+      }
+
+      const files = await vmService.listVmFiles(id, requestedPath);
+      return c.json({ files, path: requestedPath });
+    } else {
+      // SSH-based backends (daytona, aws, azure, gcp, digitalocean, linode)
+      if (!sandbox.guestIp) {
+        return c.json({ error: 'Instance does not have an IP address' }, 400);
+      }
+
+      let sshPrivateKey: string | null = null;
+      let sshUser = 'root';
+      let sshPort = 22;
+
+      if (sandbox.backend === 'daytona') {
+        const daytonaMeta = sandbox.backendMeta as { type: 'daytona'; sshKey?: string; sshPort?: number } | undefined;
+        if (!daytonaMeta?.sshKey) {
+          return c.json({ error: 'SSH key not available for this Daytona workspace' }, 400);
+        }
+        sshPrivateKey = daytonaMeta.sshKey;
+        sshUser = 'dev';
+        sshPort = daytonaMeta.sshPort || 22;
+      } else if (sandbox.backend === 'aws') {
+        const awsService = service.getAwsService();
+        if (!awsService) return c.json({ error: 'AWS service not available' }, 500);
+        sshPrivateKey = await awsService.getSshPrivateKey();
+        sshUser = 'ubuntu';
+      } else {
+        const backendService = sandbox.backend === 'azure' ? service.getAzureService()
+          : sandbox.backend === 'gcp' ? service.getGcpService()
+          : sandbox.backend === 'digitalocean' ? service.getDigitalOceanService()
+          : service.getLinodeService();
+
+        if (!backendService) return c.json({ error: `${sandbox.backend} service not available` }, 500);
+        sshPrivateKey = await backendService.getSshPrivateKey();
+        sshUser = sandbox.sshUser || 'root';
+      }
+
+      if (!sshPrivateKey) {
+        return c.json({ error: 'SSH key not available' }, 400);
+      }
+
+      // Write key to temp file
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-ls-'));
+      const tempKeyPath = path.join(tempDir, 'key');
+      fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
+
+      try {
+        const portFlag = sshPort !== 22 ? `-p ${sshPort}` : '';
+        lsOutput = execSync(
+          `ssh -i "${tempKeyPath}" ${portFlag} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp} "ls -la --time-style=long-iso '${requestedPath}'"`,
+          { encoding: 'utf-8', timeout: 30000 }
+        );
+      } finally {
+        fs.rmSync(tempDir, { recursive: true });
+      }
+    }
+
+    const files = parseLsOutput(lsOutput, requestedPath);
+    return c.json({ files, path: requestedPath });
+  } catch (error) {
+    console.error('[SandboxRoutes] File listing error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to list files';
+    return c.json({ error: message }, 500);
+  }
+});
+
+/**
  * GET /api/sandboxes/:id/files/download?path=...
  * Download a file from the sandbox
  */

@@ -121,6 +121,15 @@ export async function injectShellInit(process: ChildProcess, delayMs = 200): Pro
     if (process.killed || !process.stdin?.writable) return;
     // Write the init script + theme + clear to hide setup noise
     process.stdin.write(`${SHELL_INIT_SCRIPT}; ${themeScript}; clear\n`);
+
+    // Persist prompt init to a file so new tmux panes/splits inherit it
+    const escapedInit = `${SHELL_INIT_SCRIPT}; ${themeScript}`.replace(/'/g, "'\\''");
+    const persistScript = [
+      `mkdir -p ~/.config/handler`,
+      `printf '%s\\n' '${escapedInit}' > ~/.config/handler/prompt.sh`,
+      `grep -q 'handler/prompt.sh' ~/.bashrc 2>/dev/null || echo '[ -f ~/.config/handler/prompt.sh ] && source ~/.config/handler/prompt.sh' >> ~/.bashrc`,
+    ].join(' && ');
+    process.stdin.write(`${persistScript}\n`);
   }, delayMs);
 }
 

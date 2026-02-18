@@ -254,7 +254,8 @@ export function ToolBar({ className = '' }: ToolBarProps) {
       </div>}
       </div>
 
-      {/* Collapsible Resource Overview */}
+      {/* Collapsible Resource Overview (hidden in fullscreen) */}
+      {!isFullscreen && (
       <div className="border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))]">
         <button
           onClick={() => setShowResources(!showResources)}
@@ -330,6 +331,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

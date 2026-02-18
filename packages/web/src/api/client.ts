@@ -2617,6 +2617,13 @@ export async function downloadFileFromSandbox(id: string, filePath: string): Pro
   return response.blob();
 }
 
+/**
+ * List files in a sandbox directory
+ */
+export async function listSandboxFiles(id: string, path: string = '/'): Promise<{ files: VmFileInfo[]; path: string }> {
+  return fetchAPI(`/sandboxes/${encodeURIComponent(id)}/files?path=${encodeURIComponent(path)}`);
+}
+
 // ==================== Unified Volume API ====================
 
 /**

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { Sandbox, VmMeta, VmSnapshotInfo } from '../../api/client';
 import * as api from '../../api/client';
+import { SandboxFileBrowser } from './SandboxFileBrowser';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
@@ -111,12 +112,9 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  // Download file state
-  const [showDownloadInput, setShowDownloadInput] = useState(false);
-  const [downloadPath, setDownloadPath] = useState('');
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-  const downloadPopoverRef = useRef<HTMLDivElement>(null);
+  // File browser state
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const fileBrowserRef = useRef<HTMLDivElement>(null);
 
   const isRunning = sandbox.status === 'running';
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
@@ -352,45 +350,17 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
     }
   };
 
-  const handleDownloadFile = async () => {
-    const filePath = downloadPath.trim();
-    if (!filePath) return;
-
-    setIsDownloading(true);
-    setDownloadError(null);
-
-    try {
-      const blob = await api.downloadFileFromSandbox(sandbox.id, filePath);
-      const fileName = filePath.split('/').pop() || 'file';
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setShowDownloadInput(false);
-      setDownloadPath('');
-    } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : 'Download failed');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
-  // Close download popover on click outside
+  // Close file browser on click outside
   useEffect(() => {
-    if (!showDownloadInput) return;
+    if (!showFileBrowser) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (downloadPopoverRef.current && !downloadPopoverRef.current.contains(e.target as Node)) {
-        setShowDownloadInput(false);
-        setDownloadError(null);
+      if (fileBrowserRef.current && !fileBrowserRef.current.contains(e.target as Node)) {
+        setShowFileBrowser(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showDownloadInput]);
+  }, [showFileBrowser]);
 
   return (
     <>
@@ -627,43 +597,20 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
               </div>
             )}
             {isRunning && (
-              <div className="relative" ref={downloadPopoverRef}>
+              <div className="relative" ref={fileBrowserRef}>
                 <button
-                  onClick={() => { setShowDownloadInput(!showDownloadInput); setDownloadError(null); }}
-                  className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] transition-colors disabled:opacity-50"
-                  title="Download file from sandbox"
-                  disabled={isDownloading}
+                  onClick={() => setShowFileBrowser(!showFileBrowser)}
+                  className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] transition-colors"
+                  title="Browse & download files"
                 >
-                  {isDownloading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Download className="h-3.5 w-3.5" />
-                  )}
+                  <Download className="h-3.5 w-3.5" />
                 </button>
-                {showDownloadInput && (
-                  <div className="absolute right-0 top-full mt-1 p-2 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg z-10 w-72">
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        value={downloadPath}
-                        onChange={(e) => setDownloadPath(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleDownloadFile(); if (e.key === 'Escape') { setShowDownloadInput(false); setDownloadError(null); } }}
-                        placeholder="/path/to/file"
-                        autoFocus
-                        className="flex-1 px-2 py-1 text-xs bg-[hsl(var(--bg-input))] border border-[hsl(var(--border))] rounded text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:outline-none focus:border-[hsl(var(--cyan))]"
-                      />
-                      <button
-                        onClick={handleDownloadFile}
-                        disabled={isDownloading || !downloadPath.trim()}
-                        className="px-2 py-1 text-xs bg-[hsl(var(--cyan))] text-white rounded hover:bg-[hsl(var(--cyan)/0.8)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                      >
-                        {isDownloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                      </button>
-                    </div>
-                    {downloadError && (
-                      <p className="mt-1 text-[10px] text-[hsl(var(--red))]">{downloadError}</p>
-                    )}
-                  </div>
+                {showFileBrowser && (
+                  <SandboxFileBrowser
+                    sandboxId={sandbox.id}
+                    defaultPath={getDefaultWorkspacePath(sandbox.backend)}
+                    onClose={() => setShowFileBrowser(false)}
+                  />
                 )}
               </div>
             )}

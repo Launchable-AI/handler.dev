@@ -60,8 +60,9 @@ Adapters live in `packages/server/src/services/sandbox/` (docker, vm, daytona, a
 - **API client** (`packages/web/src/api/client.ts`): All endpoint definitions in one file.
 - **Hooks** (`packages/web/src/hooks/`): React Query hooks (`useSandboxes`, `useContainers`, `useVolumes`, `useTemplates`).
 - **Components** (`packages/web/src/components/`):
-  - `sandbox/` — SandboxList, SandboxCard, CreateSandboxForm
+  - `sandbox/` — SandboxList, SandboxCard, CreateSandboxForm, SandboxFileBrowser
   - `Terminal/` — xterm.js integration with WebSocket, OSC 7337 escape sequences for shell state tracking
+  - `TerminalPanel.tsx` — Terminal panel with tabs, horizontal split view, drag-and-drop tab assignment
   - `CommandCentre/` — Command palette
   - Canvas workspace uses ReactFlow for draggable terminal nodes
 - **Path alias**: `@/*` maps to `packages/web/src/*`
@@ -96,28 +97,32 @@ Six PS1 prompt themes: `minimal`, `clean`, `bracket`, `lambda`, `cyberpunk`, `mu
 - `packages/server/src/services/shell-init.ts` — Theme definitions (ANSI escape sequences) and shell initialization
 - `packages/web/src/lib/prompt-themes.ts` — Preview definitions with dark/light color variants
 - Themes are injected via stdin after shell start, with live-switching support
+- Shell init is also persisted to `~/.config/handler/prompt.sh` and sourced from `.bashrc`, so new tmux panes/splits inherit the Handler prompt theme
 
 ### File Transfer
 
-File upload and download for all sandbox backends through a unified API:
+File upload, download, and browsing for all sandbox backends through a unified API:
 
 - **Upload**: `POST /api/sandboxes/:id/upload` — multipart form upload to any backend
 - **Directory upload**: `POST /api/sandboxes/:id/upload-directory` — tar-based batch upload
+- **File listing**: `GET /api/sandboxes/:id/files?path=...` — list files in a directory (all backends)
 - **Download**: `GET /api/sandboxes/:id/files/download?path=...` — download a single file from any backend
 
 Backend-specific transport:
-- Docker: `docker cp` for file transfer
-- VMs (Firecracker/Cloud-Hypervisor): delegates to `downloadFileFromVm()` on the respective service (SCP-based)
-- Daytona/AWS/Azure/GCP/DigitalOcean/Linode: SCP with backend-specific SSH keys
+- Docker: `docker exec ls -la` for listing, `docker cp` for file transfer
+- VMs (Firecracker/Cloud-Hypervisor): delegates to `listVmFiles()`/`downloadFileFromVm()` on the respective service (SSH/SCP-based)
+- Daytona/AWS/Azure/GCP/DigitalOcean/Linode: SSH `ls -la` for listing, SCP for transfer with backend-specific SSH keys
 
-The sandbox card/row actions include a download button (visible when running) that opens a popover for entering an absolute file path. The browser download is triggered via `URL.createObjectURL` + anchor click.
+The sandbox card/row actions include a download button (visible when running) that opens a file browser popover with directory navigation. Click a directory to navigate into it; click a file to download it.
 
 Key files:
-- `packages/server/src/routes/sandboxes.ts` — Unified upload/download routes
-- `packages/web/src/api/client.ts` — `uploadFileToSandbox`, `downloadFileFromSandbox` client functions
-- `packages/web/src/components/sandbox/SandboxCard.tsx` — Download button in card actions
-- `packages/web/src/components/sandbox/SandboxRow.tsx` — Download button in table row actions
-- `packages/web/src/components/sandbox/SandboxCardCompact.tsx` — Download button in compact card actions
+- `packages/server/src/routes/sandboxes.ts` — Unified upload/download/listing routes
+- `packages/web/src/api/client.ts` — `listSandboxFiles`, `uploadFileToSandbox`, `downloadFileFromSandbox` client functions
+- `packages/web/src/hooks/useSandboxes.ts` — `useSandboxFiles()` React Query hook
+- `packages/web/src/components/sandbox/SandboxFileBrowser.tsx` — File browser popover component
+- `packages/web/src/components/sandbox/SandboxCard.tsx` — File browser in card actions
+- `packages/web/src/components/sandbox/SandboxRow.tsx` — File browser in table row actions
+- `packages/web/src/components/sandbox/SandboxCardCompact.tsx` — File browser in compact card actions
 
 ### Docker in Firecracker
 

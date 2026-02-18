@@ -415,6 +415,18 @@ export function useSandboxesByBackend(filter?: SandboxListFilter) {
 }
 
 /**
+ * List files in a sandbox directory
+ */
+export function useSandboxFiles(id: string, path: string = '/', enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['sandbox-files', id, path],
+    queryFn: () => api.listSandboxFiles(id, path),
+    enabled: enabled && !!id,
+    staleTime: 10000,
+  });
+}
+
+/**
  * Fetch sandbox logs
  */
 export function useSandboxLogs(id: string, enabled: boolean = true) {
