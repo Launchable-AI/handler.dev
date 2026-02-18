@@ -16,11 +16,16 @@ import {
   Camera,
   Loader2,
   Download,
+  Upload,
+  FolderUp,
+  ScrollText,
 } from 'lucide-react';
 import type { Sandbox, VmMeta } from '../../api/client';
 import * as api from '../../api/client';
+import { uploadFileToSandbox, uploadDirectoryToSandbox } from '../../api/client';
 import { BackendBadge } from './BackendBadge';
 import { SandboxFileBrowser } from './SandboxFileBrowser';
+import { SandboxLogViewer } from './SandboxLogViewer';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
 import { useConfirm } from '../ConfirmModal';
@@ -50,7 +55,13 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(sandbox.name);
+  const [showLogs, setShowLogs] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<(() => void) | null>(null);
 
   // Focus input when editing starts
   useEffect(() => {
@@ -146,6 +157,51 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
     }
   };
 
+  const handleUploadToSandbox = async (event: React.ChangeEvent<HTMLInputElement>, isFolder = false) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+    const fileList = Array.from(files);
+
+    try {
+      if (isFolder && fileList.length > 1) {
+        const filesWithPaths = fileList.map(file => ({
+          file,
+          relativePath: file.webkitRelativePath || file.name,
+        }));
+        const upload = uploadDirectoryToSandbox(
+          sandbox.id,
+          filesWithPaths,
+          getDefaultWorkspacePath(sandbox.backend),
+          (progress) => setUploadProgress(progress.percent),
+        );
+        uploadAbortRef.current = upload.abort;
+        await upload.promise;
+      } else {
+        for (const file of fileList) {
+          const upload = uploadFileToSandbox(
+            sandbox.id,
+            file,
+            getDefaultWorkspacePath(sandbox.backend),
+            (progress) => setUploadProgress(progress.percent),
+          );
+          uploadAbortRef.current = upload.abort;
+          await upload.promise;
+        }
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(null);
+      uploadAbortRef.current = null;
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (folderInputRef.current) folderInputRef.current.value = '';
+    }
+  };
+
   // For Docker, prefer dockerExecCommand; for VMs, use sshCommand
   const isDocker = sandbox.backend === 'docker';
   const connectCommand = isDocker
@@ -217,6 +273,7 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
   }, [showFileBrowser]);
 
   return (
+    <>
     <div
       ref={cardRef}
       className={`p-3 bg-[hsl(var(--bg-surface))] border transition-all duration-500 ${
@@ -288,25 +345,65 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
         </div>
       )}
 
-      {/* Actions */}
+      {/* Actions - uniform icon-only buttons */}
       <div className="flex items-center gap-1">
         {canOpenTerminal && (
           <button
             onClick={handleOpenTerminal}
-            className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors"
-            title="Terminal"
+            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
+            title="Open Terminal"
           >
-            <Terminal className="h-3 w-3" />
+            <Terminal className="h-3.5 w-3.5" />
           </button>
+        )}
+        {isRunning && (
+          <div className="relative group/upload">
+            <button
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50 transition-colors"
+              title={isUploading && uploadProgress !== null ? `Uploading: ${uploadProgress}%` : 'Upload files'}
+              disabled={isUploading}
+            >
+              {isUploading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <div className="absolute left-0 top-full mt-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg z-10 opacity-0 invisible group-hover/upload:opacity-100 group-hover/upload:visible transition-all">
+              <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] cursor-pointer whitespace-nowrap">
+                <Upload className="h-3 w-3" />
+                Files
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={(e) => handleUploadToSandbox(e, false)}
+                  className="hidden"
+                />
+              </label>
+              <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] cursor-pointer whitespace-nowrap">
+                <FolderUp className="h-3 w-3" />
+                Folder
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  // @ts-expect-error webkitdirectory is not in the standard types
+                  webkitdirectory="true"
+                  onChange={(e) => handleUploadToSandbox(e, true)}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
         )}
         {isRunning && (
           <div className="relative" ref={fileBrowserRef}>
             <button
               onClick={() => setShowFileBrowser(!showFileBrowser)}
-              className="flex items-center justify-center py-1 px-2 text-[10px] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors"
+              className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
               title="Browse & download files"
             >
-              <Download className="h-3 w-3" />
+              <Download className="h-3.5 w-3.5" />
             </button>
             {showFileBrowser && (
               <SandboxFileBrowser
@@ -317,47 +414,65 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
             )}
           </div>
         )}
+        {canSnapshot && (
+          <button
+            onClick={handleCreateSnapshot}
+            disabled={isCreatingSnapshot}
+            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50 transition-colors"
+            title="Create Snapshot"
+          >
+            {isCreatingSnapshot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+          </button>
+        )}
+        <button
+          onClick={() => setShowLogs(true)}
+          className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-elevated))] transition-colors"
+          title="View Logs"
+        >
+          <ScrollText className="h-3.5 w-3.5" />
+        </button>
         {canStart && (
           <button
             onClick={handleStart}
             disabled={startSandbox.isPending}
-            className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] transition-colors disabled:opacity-50"
+            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--green))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50 transition-colors"
             title="Start"
           >
-            <Play className="h-3 w-3" />
+            {startSandbox.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
           </button>
         )}
         {canStop && (
           <button
             onClick={handleStop}
             disabled={stopSandbox.isPending}
-            className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] transition-colors disabled:opacity-50"
+            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50 transition-colors"
             title="Stop"
           >
-            <Square className="h-3 w-3" />
-          </button>
-        )}
-        {canSnapshot && (
-          <button
-            onClick={handleCreateSnapshot}
-            disabled={isCreatingSnapshot}
-            className="flex items-center justify-center py-1 px-2 text-[10px] text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)] border border-[hsl(var(--purple)/0.3)] transition-colors disabled:opacity-50"
-            title="Create Snapshot"
-          >
-            {isCreatingSnapshot ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
+            {stopSandbox.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
           </button>
         )}
         {canDelete && (
           <button
             onClick={handleDelete}
             disabled={deleteSandbox.isPending}
-            className="flex items-center justify-center py-1 px-2 text-[10px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--border))] transition-colors disabled:opacity-50"
+            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50 transition-colors"
             title="Delete"
           >
-            <Trash2 className="h-3 w-3" />
+            {deleteSandbox.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
           </button>
         )}
       </div>
     </div>
+
+    {/* Log Viewer Modal */}
+    {showLogs && (
+      <SandboxLogViewer
+        sandboxId={sandbox.id}
+        sandboxName={sandbox.name}
+        backend={sandbox.backend}
+        onClose={() => setShowLogs(false)}
+      />
+    )}
+    </>
   );
 }

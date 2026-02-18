@@ -316,6 +316,14 @@ function TerminalPanelUI({
     });
   }, [tabs, splitMode, activeTabId]);
 
+  // Auto-revert to non-split mode when all tabs end up in a single split
+  useEffect(() => {
+    if (splitMode && splits.length <= 1) {
+      setSplitMode(false);
+      setSplits([]);
+    }
+  }, [splitMode, splits.length]);
+
   const handleToggleSplit = () => {
     if (!splitMode) {
       // Entering split mode: create one split with all tabs, then add a second if possible
@@ -446,36 +454,45 @@ function TerminalPanelUI({
 
         {/* Header with tabs */}
         <div className="flex items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
-          {/* Tabs */}
-          <div className="flex items-center overflow-x-auto flex-1 min-w-0">
-            {tabs.map(tab => (
-              <div
-                key={tab.id}
-                className={`group flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border-r border-[hsl(var(--border))] whitespace-nowrap ${
-                  tab.id === activeTabId
-                    ? 'bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))]'
-                    : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
-                }`}
-                onClick={() => onTabSelect(tab.id)}
-              >
-                <TerminalSquare className={`h-3.5 w-3.5 ${
-                  tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
-                  tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting' ? 'text-[hsl(var(--amber))]' :
-                  'text-[hsl(var(--red))]'
-                }`} />
-                <span className="max-w-[120px] truncate">{tab.name}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTabClose(tab.id);
-                  }}
-                  className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-[hsl(var(--bg-overlay))] rounded"
+          {/* Tabs - hidden in split mode since each split has its own tab bar */}
+          {!(splitMode && splits.length > 1) ? (
+            <div className="flex items-center overflow-x-auto flex-1 min-w-0">
+              {tabs.map(tab => (
+                <div
+                  key={tab.id}
+                  className={`group flex items-center gap-2 px-3 py-2 text-xs cursor-pointer border-r border-[hsl(var(--border))] whitespace-nowrap ${
+                    tab.id === activeTabId
+                      ? 'bg-[hsl(var(--bg-base))] text-[hsl(var(--text-primary))]'
+                      : 'text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
+                  }`}
+                  onClick={() => onTabSelect(tab.id)}
                 >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
+                  <TerminalSquare className={`h-3.5 w-3.5 ${
+                    tab.connectionState === 'connected' ? 'text-[hsl(var(--green))]' :
+                    tab.connectionState === 'connecting' || tab.connectionState === 'reconnecting' ? 'text-[hsl(var(--amber))]' :
+                    'text-[hsl(var(--red))]'
+                  }`} />
+                  <span className="max-w-[120px] truncate">{tab.name}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTabClose(tab.id);
+                    }}
+                    className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-[hsl(var(--bg-overlay))] rounded"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0">
+              <TerminalSquare className="h-3.5 w-3.5 text-[hsl(var(--text-muted))]" />
+              <span className="text-xs text-[hsl(var(--text-muted))]">
+                {tabs.length} terminal{tabs.length !== 1 ? 's' : ''} · {splits.length} splits
+              </span>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center gap-1 px-2">
