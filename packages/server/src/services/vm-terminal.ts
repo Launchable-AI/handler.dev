@@ -170,7 +170,7 @@ async function startVmTmuxWithFallback(
     // Set terminal dimensions
     `stty cols ${cols} rows ${rows} 2>/dev/null`,
     // Try tmux (with stderr marker for detection), fall back to bare shell
-    `if command -v tmux >/dev/null 2>&1; then echo ${TMUX_MARKER} >&2; exec tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} ';' set-option status off; else exec ${shell}; fi`,
+    `if command -v tmux >/dev/null 2>&1; then echo ${TMUX_MARKER}; exec tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} ';' set-option status off; else exec ${shell}; fi`,
   ].join('\n');
 
   const sshArgs = [
@@ -260,19 +260,16 @@ function setupVmSessionHandlers(
   sshProcess: ChildProcess,
   pendingTmuxSession?: string // tmux session name to detect via stderr marker
 ): void {
-  sshProcess.stdout?.on('data', (data: Buffer) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
-    }
-  });
-
-  // Track whether we've detected the tmux marker in stderr
+  // Track whether we've detected the tmux marker
+  // SSH -tt merges stdout/stderr through the PTY, so the marker arrives on stdout
   let tmuxDetected = false;
 
-  sshProcess.stderr?.on('data', (data: Buffer) => {
-    const str = data.toString();
+  sshProcess.stdout?.on('data', (data: Buffer) => {
+    if (ws.readyState !== WebSocket.OPEN) return;
 
-    // Check for tmux detection marker
+    let str = data.toString();
+
+    // Check for tmux detection marker in stdout (PTY merges all output)
     if (!tmuxDetected && pendingTmuxSession && str.includes(TMUX_MARKER)) {
       tmuxDetected = true;
       // Update session with tmux info
@@ -281,23 +278,19 @@ function setupVmSessionHandlers(
         session.tmuxSession = pendingTmuxSession;
       }
       // Notify client that tmux is active
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'session-update', tmuxSession: pendingTmuxSession }));
-      }
-      // Filter out the marker from stderr output
-      const filtered = str.replace(TMUX_MARKER, '').trim();
-      if (filtered) {
-        console.log(`[VM Terminal] SSH stderr: ${filtered}`);
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'output', data: filtered }));
-        }
-      }
-      return;
+      ws.send(JSON.stringify({ type: 'session-update', tmuxSession: pendingTmuxSession }));
+      // Strip the marker (and surrounding newlines) from the output
+      str = str.replace(new RegExp(`\\r?\\n?${TMUX_MARKER}\\r?\\n?`), '');
+      if (!str) return;
     }
 
-    console.log(`[VM Terminal] SSH stderr: ${str}`);
+    ws.send(JSON.stringify({ type: 'output', data: str }));
+  });
+
+  sshProcess.stderr?.on('data', (data: Buffer) => {
+    console.log(`[VM Terminal] SSH stderr: ${data.toString()}`);
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'output', data: str }));
+      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
     }
   });
 
