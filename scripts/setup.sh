@@ -342,7 +342,39 @@ if [ "$INSTALL_FIRECRACKER" = true ]; then
 fi
 
 #
-# Step 5: Verify installation
+# Step 5: Firewall rules (defense in depth)
+#
+step "Adding firewall rules to block sandbox-to-host API traffic..."
+
+HANDLER_PORT="${HANDLER_PORT:-4001}"
+
+# Docker bridge interfaces
+iptables -C INPUT -i docker0 -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null || \
+  iptables -I INPUT -i docker0 -p tcp --dport "$HANDLER_PORT" -j DROP
+log "Blocked docker0 → host:$HANDLER_PORT"
+
+# Custom Docker bridge networks (br-* interfaces)
+iptables -C INPUT -i br-+ -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null || \
+  iptables -I INPUT -i br-+ -p tcp --dport "$HANDLER_PORT" -j DROP
+log "Blocked br-+ → host:$HANDLER_PORT"
+
+# Firecracker TAP interfaces
+iptables -C INPUT -i fc-tap+ -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null || \
+  iptables -I INPUT -i fc-tap+ -p tcp --dport "$HANDLER_PORT" -j DROP
+log "Blocked fc-tap+ → host:$HANDLER_PORT"
+
+# Cloud-Hypervisor TAP interfaces
+iptables -C INPUT -i ch-tap+ -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null || \
+  iptables -I INPUT -i ch-tap+ -p tcp --dport "$HANDLER_PORT" -j DROP
+log "Blocked ch-tap+ → host:$HANDLER_PORT"
+
+# Handler bridge TAP interfaces
+iptables -C INPUT -i tap-+ -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null || \
+  iptables -I INPUT -i tap-+ -p tcp --dport "$HANDLER_PORT" -j DROP
+log "Blocked tap-+ → host:$HANDLER_PORT"
+
+#
+# Step 6: Verify installation
 #
 step "Verifying installation..."
 
