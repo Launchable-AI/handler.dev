@@ -5,6 +5,7 @@ import { readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { getConfig, setConfig } from '../services/config.js';
+import { applyTmuxStatusBar } from '../services/vm-terminal.js';
 
 const configRoutes = new Hono();
 
@@ -16,6 +17,7 @@ const UpdateConfigSchema = z.object({
   dataDirectory: z.string().optional(),
   shellPromptTheme: z.enum(['minimal', 'clean', 'bracket', 'lambda', 'cyberpunk', 'multiline']).optional(),
   tmuxEnabled: z.boolean().optional(),
+  tmuxStatusBar: z.boolean().optional(),
 });
 
 const BrowseDirectorySchema = z.object({
@@ -32,6 +34,12 @@ configRoutes.get('/', async (c) => {
 configRoutes.patch('/', zValidator('json', UpdateConfigSchema), async (c) => {
   const updates = c.req.valid('json');
   const newConfig = await setConfig(updates);
+
+  // Apply tmux status bar change to running sessions immediately
+  if (updates.tmuxStatusBar !== undefined) {
+    applyTmuxStatusBar(updates.tmuxStatusBar).catch(() => {});
+  }
+
   return c.json(newConfig);
 });
 

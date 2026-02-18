@@ -541,6 +541,21 @@ export function getActiveVmSessionCount(): number {
 }
 
 /**
+ * Apply tmux status bar visibility to all active tmux sessions.
+ * Runs `tmux set-option status on/off` via SSH on each VM with an active tmux session.
+ */
+export async function applyTmuxStatusBar(show: boolean): Promise<void> {
+  const value = show ? 'on' : 'off';
+  for (const [id, session] of sessions.entries()) {
+    if (session.tmuxSession && session.vmIp && session.dataDir) {
+      sshExec(session.vmIp, session.dataDir, `tmux set-option -t ${session.tmuxSession} status ${value}`)
+        .then(() => console.log(`[VM Terminal] Set tmux status bar ${value} for session ${id}`))
+        .catch(() => { /* session may have ended */ });
+    }
+  }
+}
+
+/**
  * Create a Daytona terminal session using their SSH access API
  * Daytona provides a full SSH command with embedded credentials
  */
