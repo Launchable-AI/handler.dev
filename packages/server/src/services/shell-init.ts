@@ -87,9 +87,9 @@ export function getPromptThemeScript(theme: ShellPromptTheme): string {
 // Uses 256-colour palette for broad compatibility.
 const TMUX_STATUS_THEMES: Record<ShellPromptTheme, string> = {
   minimal: [
-    `set -g status-style 'bg=colour236,fg=colour243'`,
-    `set -g status-left '#[fg=cyan,bold] #S #[fg=colour240]│ '`,
-    `set -g status-right '#[fg=colour240]│ #[fg=colour243]%H:%M '`,
+    `set -g status-style 'bg=default,fg=colour243'`,
+    `set -g status-left '#[fg=cyan,bold] #S #[fg=colour243]│ '`,
+    `set -g status-right '#[fg=colour243]│ %H:%M '`,
     `set -g window-status-current-format '#[fg=cyan,bold] #W'`,
     `set -g window-status-format '#[fg=colour243] #W'`,
     `set -g window-status-separator ''`,
@@ -100,10 +100,10 @@ const TMUX_STATUS_THEMES: Record<ShellPromptTheme, string> = {
   ].join('\n'),
 
   clean: [
-    `set -g status-style 'bg=colour236,fg=colour250'`,
+    `set -g status-style 'bg=default,fg=colour243'`,
     `set -g status-left '#[fg=cyan,bold]❯ #S  '`,
     `set -g status-right '#[fg=colour243]%H:%M '`,
-    `set -g window-status-current-format '#[fg=white,bold] #W'`,
+    `set -g window-status-current-format '#[fg=cyan,bold] #W'`,
     `set -g window-status-format '#[fg=colour243] #W'`,
     `set -g window-status-separator ''`,
     `set -g status-left-length 30`,
@@ -113,7 +113,7 @@ const TMUX_STATUS_THEMES: Record<ShellPromptTheme, string> = {
   ].join('\n'),
 
   bracket: [
-    `set -g status-style 'bg=colour236,fg=colour243'`,
+    `set -g status-style 'bg=default,fg=colour243'`,
     `set -g status-left '#[fg=blue][#[fg=cyan,bold]#S#[fg=blue]] '`,
     `set -g status-right '#[fg=blue][#[fg=yellow]%H:%M#[fg=blue]] '`,
     `set -g window-status-current-format '#[fg=blue][#[fg=cyan,bold]#W#[fg=blue]]'`,
@@ -126,10 +126,10 @@ const TMUX_STATUS_THEMES: Record<ShellPromptTheme, string> = {
   ].join('\n'),
 
   lambda: [
-    `set -g status-style 'bg=colour236,fg=colour243'`,
+    `set -g status-style 'bg=default,fg=colour243'`,
     `set -g status-left '#[fg=green,bold]λ #[fg=colour243]#S  '`,
     `set -g status-right '#[fg=colour243]%H:%M '`,
-    `set -g window-status-current-format '#[fg=white,bold] #W'`,
+    `set -g window-status-current-format '#[fg=cyan,bold] #W'`,
     `set -g window-status-format '#[fg=colour243] #W'`,
     `set -g window-status-separator ''`,
     `set -g status-left-length 30`,
@@ -139,7 +139,7 @@ const TMUX_STATUS_THEMES: Record<ShellPromptTheme, string> = {
   ].join('\n'),
 
   cyberpunk: [
-    `set -g status-style 'bg=colour236,fg=colour243'`,
+    `set -g status-style 'bg=default,fg=colour243'`,
     `set -g status-left '#[fg=magenta]▸ #[fg=cyan,bold]#S #[fg=magenta]▸ '`,
     `set -g status-right '#[fg=magenta]▸ #[fg=yellow]%H:%M '`,
     `set -g window-status-current-format '#[fg=magenta]▸ #[fg=yellow,bold]#W'`,
@@ -152,7 +152,7 @@ const TMUX_STATUS_THEMES: Record<ShellPromptTheme, string> = {
   ].join('\n'),
 
   multiline: [
-    `set -g status-style 'bg=colour236,fg=colour243'`,
+    `set -g status-style 'bg=default,fg=colour243'`,
     `set -g status-left '#[fg=blue]┤#[fg=cyan,bold]#S#[fg=blue]├─'`,
     `set -g status-right '#[fg=blue]─┤#[fg=yellow]%H:%M#[fg=blue]├'`,
     `set -g window-status-current-format '#[fg=blue]┤#[fg=cyan,bold]#W#[fg=blue]├'`,

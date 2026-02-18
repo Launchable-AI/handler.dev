@@ -7,7 +7,7 @@
 import { spawn, ChildProcess, exec } from 'child_process';
 import { promisify } from 'util';
 import { WebSocket } from 'ws';
-import { injectShellInit } from './shell-init.js';
+import { injectShellInit, getTmuxThemeContent } from './shell-init.js';
 import { getConfig } from './config.js';
 import {
   getSession as getPersistedSession,
@@ -120,7 +120,7 @@ export function createTerminalSession(
  * Start a new tmux-based terminal session
  * Uses 'script' to provide PTY emulation (tmux requires a TTY)
  */
-function startTmuxSession(
+async function startTmuxSession(
   ws: WebSocket,
   sessionId: string,
   containerId: string,
@@ -129,12 +129,20 @@ function startTmuxSession(
   shell: string,
   cols: number,
   rows: number
-): void {
+): Promise<void> {
   // Use docker exec with 'script' wrapping tmux to provide PTY emulation
   // tmux requires a TTY, but docker exec -i without -t doesn't provide one
   // The 'script' command creates a pseudo-TTY internally
-  // -x/-y set dimensions, set-option status off hides the status bar (we have our own UI)
-  const tmuxCmd = `tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} \\; set-option status off`;
+  // -x/-y set dimensions; status bar visibility is controlled by config
+  const config = await getConfig();
+  const showStatusBar = config.tmuxStatusBar === true;
+  const theme = config.shellPromptTheme || 'minimal';
+  const tmuxThemeContent = getTmuxThemeContent(theme, showStatusBar);
+
+  // Write the tmux theme conf and source it after creating the session
+  // Use a wrapper script to write config then launch tmux
+  const setupAndTmux = `mkdir -p ~/.config/handler && cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF\ntmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} \\; source-file ~/.config/handler/tmux-theme.conf`;
+  const tmuxCmd = setupAndTmux;
 
   const args = [
     'exec',
@@ -298,8 +306,13 @@ export async function resumeTerminalSession(
   console.log(`🔄 Resuming terminal session: ${sessionId} (tmux: ${tmuxSession})`);
 
   // Attach to the existing tmux session using 'script' for PTY emulation
-  // Also ensure status bar is hidden and resize to current dimensions
-  const tmuxCmd = `tmux attach-session -t ${tmuxSession} \\; set-option status off \\; resize-window -x ${cols} -y ${rows}`;
+  // Apply themed status bar config and resize to current dimensions
+  const theme = config.shellPromptTheme || 'minimal';
+  const showStatusBar = config.tmuxStatusBar === true;
+  const tmuxThemeContent = getTmuxThemeContent(theme, showStatusBar);
+
+  const setupAndAttach = `mkdir -p ~/.config/handler && cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF\ntmux attach-session -t ${tmuxSession} \\; source-file ~/.config/handler/tmux-theme.conf \\; resize-window -x ${cols} -y ${rows}`;
+  const tmuxCmd = setupAndAttach;
 
   const process = spawn('docker', [
     'exec',
@@ -477,4 +490,30 @@ export function closeAllSessions(): void {
  */
 export function getSession(sessionId: string): TerminalSession | undefined {
   return sessions.get(sessionId);
+}
+
+/**
+ * Apply tmux status bar theme to all active Docker tmux sessions.
+ * For "off": sends `tmux set -g status off` directly.
+ * For "on": writes themed conf and sources it via tmux source-file.
+ */
+export async function applyDockerTmuxStatusBar(show: boolean): Promise<void> {
+  const config = await getConfig();
+  const theme = config.shellPromptTheme || 'minimal';
+
+  for (const [id, session] of sessions.entries()) {
+    if (session.tmuxSession && session.containerId) {
+      let cmd: string;
+      if (!show) {
+        cmd = `tmux set -g status off; mkdir -p ~/.config/handler && echo 'set -g status off' > ~/.config/handler/tmux-theme.conf`;
+      } else {
+        const tmuxThemeContent = getTmuxThemeContent(theme, true);
+        const encoded = Buffer.from(tmuxThemeContent).toString('base64');
+        cmd = `mkdir -p ~/.config/handler && echo ${encoded} | base64 -d > ~/.config/handler/tmux-theme.conf && tmux source-file ~/.config/handler/tmux-theme.conf`;
+      }
+      execAsync(`docker exec ${session.containerId} bash -c '${cmd.replace(/'/g, "'\\''")}'`)
+        .then(() => console.log(`[Terminal] Applied tmux theme (status ${show ? 'on' : 'off'}) for session ${id}`))
+        .catch((err) => console.warn(`[Terminal] Failed to apply tmux theme for session ${id}:`, err.message || err));
+    }
+  }
 }

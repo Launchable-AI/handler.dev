@@ -553,21 +553,28 @@ export function getActiveVmSessionCount(): number {
 
 /**
  * Apply tmux status bar theme to all active tmux sessions.
- * Writes the themed conf file and sources it via SSH on each VM.
- * Uses base64 encoding to avoid shell quoting issues with sshExec.
+ * For "off": sends a direct `tmux set -g status off` (simple, reliable).
+ * For "on": writes the themed conf file and sources it via tmux source-file.
  */
 export async function applyTmuxStatusBar(show: boolean): Promise<void> {
   const config = await getConfig();
   const theme = config.shellPromptTheme || 'minimal';
-  const tmuxThemeContent = getTmuxThemeContent(theme, show);
-  const encoded = Buffer.from(tmuxThemeContent).toString('base64');
 
   for (const [id, session] of sessions.entries()) {
     if (session.tmuxSession && session.vmIp && session.dataDir) {
-      const cmd = `mkdir -p ~/.config/handler && echo ${encoded} | base64 -d > ~/.config/handler/tmux-theme.conf && tmux source-file ~/.config/handler/tmux-theme.conf`;
+      let cmd: string;
+      if (!show) {
+        // Direct tmux command — simple and reliable for hiding the bar
+        cmd = `tmux set -g status off; mkdir -p ~/.config/handler && echo 'set -g status off' > ~/.config/handler/tmux-theme.conf`;
+      } else {
+        // Write themed config and source it
+        const tmuxThemeContent = getTmuxThemeContent(theme, true);
+        const encoded = Buffer.from(tmuxThemeContent).toString('base64');
+        cmd = `mkdir -p ~/.config/handler && echo ${encoded} | base64 -d > ~/.config/handler/tmux-theme.conf && tmux source-file ~/.config/handler/tmux-theme.conf`;
+      }
       sshExec(session.vmIp, session.dataDir, cmd)
         .then(() => console.log(`[VM Terminal] Applied tmux theme (status ${show ? 'on' : 'off'}) for session ${id}`))
-        .catch(() => { /* session may have ended */ });
+        .catch((err) => console.warn(`[VM Terminal] Failed to apply tmux theme for session ${id}:`, err.message || err));
     }
   }
 }

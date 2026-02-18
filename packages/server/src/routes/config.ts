@@ -6,6 +6,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { getConfig, setConfig } from '../services/config.js';
 import { applyTmuxStatusBar } from '../services/vm-terminal.js';
+import { applyDockerTmuxStatusBar } from '../services/terminal.js';
 
 const configRoutes = new Hono();
 
@@ -35,9 +36,10 @@ configRoutes.patch('/', zValidator('json', UpdateConfigSchema), async (c) => {
   const updates = c.req.valid('json');
   const newConfig = await setConfig(updates);
 
-  // Apply tmux status bar change to running sessions immediately
+  // Apply tmux status bar change to running sessions immediately (both Docker and VM)
   if (updates.tmuxStatusBar !== undefined) {
     applyTmuxStatusBar(updates.tmuxStatusBar).catch(() => {});
+    applyDockerTmuxStatusBar(updates.tmuxStatusBar).catch(() => {});
   }
 
   return c.json(newConfig);
