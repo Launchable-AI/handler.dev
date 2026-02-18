@@ -74,7 +74,11 @@ Terminal sessions for Docker containers and VMs use **tmux** for persistence (co
 - Clients automatically reconnect to existing tmux sessions
 - Scrollback history is restored on reconnection
 - Session metadata stored in `data/terminal-sessions.json`
-- A "tmux" badge appears in the terminal status bar when a session uses tmux
+- A "tmux" badge appears in the terminal status bar with 3 states:
+  - **Green**: connected to tmux session (persistence active)
+  - **Orange**: tmux installed but detached (user detached or exited all panes, fell back to bare shell)
+  - **Red**: tmux not installed (no persistence available)
+  - Hidden when tmux persistence is disabled in config
 
 Key files:
 - `packages/server/src/services/terminal.ts` — tmux-based terminal sessions (Docker)
@@ -82,7 +86,7 @@ Key files:
 - `packages/server/src/services/session-store.ts` — session persistence
 - `packages/web/src/components/Terminal/TerminalInstance.tsx` — auto-reconnection logic
 
-For tmux persistence to work, containers/VMs must have `tmux` installed (the default.dockerfile and Firecracker images include it). When `tmuxEnabled` is set to `false` in config, plain shell sessions are used instead.
+For tmux persistence to work, containers/VMs must have `tmux` installed (the default.dockerfile and Firecracker images include it). When `tmuxEnabled` is set to `false` in config, plain shell sessions are used instead. The tmux status bar can be toggled via `tmuxStatusBar` in config (default: `false` / hidden).
 
 ### Terminal Theming
 

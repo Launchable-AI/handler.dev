@@ -22,6 +22,7 @@ export function Settings() {
   const [sshJumpHostKeyPath, setSshJumpHostKeyPath] = useState('');
   const [sshKeysDisplayPath, setSshKeysDisplayPath] = useState('');
   const [tmuxEnabled, setTmuxEnabled] = useState(true);
+  const [tmuxStatusBar, setTmuxStatusBar] = useState(false);
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
 
   // AI Prompts state
@@ -74,6 +75,7 @@ export function Settings() {
       setSshJumpHostKeyPath(config.sshJumpHostKeyPath || '');
       setSshKeysDisplayPath(config.sshKeysDisplayPath || '');
       setTmuxEnabled(config.tmuxEnabled !== false);
+      setTmuxStatusBar(config.tmuxStatusBar === true);
     }
   }, [config]);
 
@@ -330,26 +332,51 @@ export function Settings() {
                 <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
                   Use tmux for persistent terminal sessions that survive disconnects and server restarts.
                 </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const newVal = !tmuxEnabled;
-                      setTmuxEnabled(newVal);
-                      updateMutation.mutate({ tmuxEnabled: newVal });
-                    }}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                      tmuxEnabled ? 'bg-[hsl(var(--cyan))]' : 'bg-[hsl(var(--text-muted)/0.3)]'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                        tmuxEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const newVal = !tmuxEnabled;
+                        setTmuxEnabled(newVal);
+                        updateMutation.mutate({ tmuxEnabled: newVal });
+                      }}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        tmuxEnabled ? 'bg-[hsl(var(--cyan))]' : 'bg-[hsl(var(--text-muted)/0.3)]'
                       }`}
-                    />
-                  </button>
-                  <span className="text-xs text-[hsl(var(--text-secondary))]">
-                    {tmuxEnabled ? 'Enabled' : 'Disabled'} — tmux sessions {tmuxEnabled ? 'persist across disconnects' : 'are not used'}
-                  </span>
+                    >
+                      <span
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                          tmuxEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                        }`}
+                      />
+                    </button>
+                    <span className="text-xs text-[hsl(var(--text-secondary))]">
+                      {tmuxEnabled ? 'Enabled' : 'Disabled'} — tmux sessions {tmuxEnabled ? 'persist across disconnects' : 'are not used'}
+                    </span>
+                  </div>
+                  {tmuxEnabled && (
+                    <div className="flex items-center gap-2 pl-11">
+                      <button
+                        onClick={() => {
+                          const newVal = !tmuxStatusBar;
+                          setTmuxStatusBar(newVal);
+                          updateMutation.mutate({ tmuxStatusBar: newVal });
+                        }}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                          tmuxStatusBar ? 'bg-[hsl(var(--cyan))]' : 'bg-[hsl(var(--text-muted)/0.3)]'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                            tmuxStatusBar ? 'translate-x-4.5' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-xs text-[hsl(var(--text-secondary))]">
+                        Show tmux status bar
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

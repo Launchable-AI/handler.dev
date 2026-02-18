@@ -104,6 +104,9 @@ const SHELL_INIT_SCRIPT = [
   `PROMPT_COMMAND="__handler_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`,
   // Background watcher: emit OSC on Claude status changes (every 2s), independent of prompt
   `(__cs_prev=""; while true; do cs=$(__handler_claude_status); if [ "$cs" != "$__cs_prev" ]; then __cs_prev="$cs"; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; fi; sleep 2; done &) 2>/dev/null`,
+  // tmux wrapper: emits state markers so the Handler badge tracks manual attach/detach
+  `__handler_tmux_wrap() { case "\${1:-}" in a*|new*|"") echo __HANDLER_TMUX_ACTIVE__; command tmux "$@"; echo __HANDLER_TMUX_DETACHED__; return ;; esac; command tmux "$@"; }`,
+  `alias tmux='__handler_tmux_wrap'`,
 ].join('; ');
 
 /**

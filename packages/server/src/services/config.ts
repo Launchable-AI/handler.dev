@@ -128,6 +128,7 @@ export interface AppConfig {
   quickLaunch?: QuickLaunchConfig; // Quick launch defaults for "New Sandbox" button
   shellPromptTheme?: ShellPromptTheme; // Shell prompt PS1 theme
   tmuxEnabled?: boolean; // Enable/disable tmux for terminal sessions (default: true)
+  tmuxStatusBar?: boolean; // Show/hide tmux status bar at bottom of terminal (default: false)
 }
 
 const DEFAULT_CONFIG: AppConfig = {

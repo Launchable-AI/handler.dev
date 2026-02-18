@@ -37,7 +37,7 @@ interface TerminalTab {
   connectionState: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
   errorMessage?: string;
   retryCount?: number;
-  isTmuxSession?: boolean;
+  tmuxState?: 'connected' | 'detached' | 'unavailable';
 }
 
 interface TerminalPanelContextType {
@@ -766,7 +766,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
           switch (msg.type) {
             case 'connected':
               wasConnectedRef.current = true;
-              onStateChangeRef.current({ connectionState: 'connected', retryCount: 0, isTmuxSession: !!msg.tmuxSession });
+              onStateChangeRef.current({ connectionState: 'connected', retryCount: 0, tmuxState: msg.tmuxSession ? 'connected' : undefined });
               term.focus();
               // Fit again after connection and send resize to ensure shell has correct size
               setTimeout(fitAndResize, 50);
@@ -783,9 +783,9 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
               }
               break;
             case 'session-update':
-              // Server detected tmux is active (via stderr marker)
-              if (msg.tmuxSession) {
-                onStateChangeRef.current({ isTmuxSession: true });
+              // Server detected tmux state change via stdout marker
+              if (msg.tmuxState) {
+                onStateChangeRef.current({ tmuxState: msg.tmuxState });
               }
               break;
             case 'error':
@@ -940,10 +940,33 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
         <span className="text-[hsl(var(--text-secondary))]">
           {tab.type === 'container' ? `dev@${tab.name}` : tab.type === 'daytona' ? `daytona@${tab.name}` : tab.type === 'aws' ? `ubuntu@${tab.publicIp}` : `agent@${tab.vmIp}`}
         </span>
-        {tab.isTmuxSession && (
+        {tab.tmuxState && (
           <>
             <span className="text-[hsl(var(--text-muted))]">|</span>
-            <span className="px-1 py-0.5 bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded text-[9px] uppercase tracking-wider">tmux</span>
+            <span className="relative group/tmux">
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider cursor-default transition-colors ${
+                tab.tmuxState === 'connected'
+                  ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
+                  : tab.tmuxState === 'detached'
+                  ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
+                  : 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
+              }`}>
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                  tab.tmuxState === 'connected'
+                    ? 'bg-[hsl(var(--green))]'
+                    : tab.tmuxState === 'detached'
+                    ? 'bg-[hsl(var(--amber))]'
+                    : 'bg-[hsl(var(--red))]'
+                }`} />
+                tmux
+              </span>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-[hsl(var(--bg-overlay))] border border-[hsl(var(--border))] rounded shadow-lg text-[10px] text-[hsl(var(--text-secondary))] whitespace-nowrap opacity-0 group-hover/tmux:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
+                {tab.tmuxState === 'connected' && 'Session persistence active'}
+                {tab.tmuxState === 'detached' && 'Detached from tmux session'}
+                {tab.tmuxState === 'unavailable' && 'tmux not installed — no persistence'}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-[hsl(var(--border))]" />
+              </div>
+            </span>
           </>
         )}
       </div>

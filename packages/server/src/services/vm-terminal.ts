@@ -119,7 +119,7 @@ export function createVmTerminalSession(
       console.log(`[VM Terminal] tmux disabled in config, using bare shell`);
       startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
     } else {
-      startVmTmuxWithFallback(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
+      startVmTmuxWithFallback(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows, config.tmuxStatusBar);
     }
   }).catch(() => {
     startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
@@ -128,8 +128,10 @@ export function createVmTerminalSession(
   return sessionId;
 }
 
-/** Marker written to stderr by the remote command when tmux is used */
+/** Markers emitted by the remote command for tmux state detection */
 const TMUX_MARKER = '__HANDLER_TMUX_ACTIVE__';
+const TMUX_DETACHED_MARKER = '__HANDLER_TMUX_DETACHED__';
+const TMUX_UNAVAILABLE_MARKER = '__HANDLER_TMUX_UNAVAILABLE__';
 
 /**
  * Start a VM terminal session that tries tmux and falls back to a bare
@@ -137,8 +139,9 @@ const TMUX_MARKER = '__HANDLER_TMUX_ACTIVE__';
  *
  * The shell init (prompt theme, aliases, OSC tracking) is written to a
  * file on the remote VM and sourced from .bashrc, so it's invisible —
- * no stdin echo jank. Tmux detection uses a stderr marker so the badge
- * only appears when tmux is actually running.
+ * no stdin echo jank. Tmux state is detected via stdout markers:
+ * ACTIVE (connected to tmux), DETACHED (tmux exited/detached, back to
+ * bare shell), UNAVAILABLE (tmux not installed).
  */
 async function startVmTmuxWithFallback(
   ws: WebSocket,
@@ -149,7 +152,8 @@ async function startVmTmuxWithFallback(
   sshKeyPath: string,
   shell: string,
   cols: number,
-  rows: number
+  rows: number,
+  tmuxStatusBar?: boolean
 ): Promise<void> {
   const tmuxSession = getVmTmuxSessionName(vmId);
 
@@ -169,8 +173,10 @@ async function startVmTmuxWithFallback(
     `grep -q 'handler/prompt.sh' ~/.bashrc 2>/dev/null || echo '[ -f ~/.config/handler/prompt.sh ] && source ~/.config/handler/prompt.sh' >> ~/.bashrc`,
     // Set terminal dimensions
     `stty cols ${cols} rows ${rows} 2>/dev/null`,
-    // Try tmux (with stderr marker for detection), fall back to bare shell
-    `if command -v tmux >/dev/null 2>&1; then echo ${TMUX_MARKER}; exec tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} ';' set-option status off; else exec ${shell}; fi`,
+    // Try tmux without exec so parent shell continues after detach/exit.
+    // When tmux exits (detach or last pane closed), emit DETACHED marker and fall back to bare shell.
+    // If tmux isn't installed, emit UNAVAILABLE marker and use bare shell directly.
+    `if command -v tmux >/dev/null 2>&1; then echo ${TMUX_MARKER}; tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell}${tmuxStatusBar ? '' : " ';' set-option status off"}; echo ${TMUX_DETACHED_MARKER}; exec ${shell}; else echo ${TMUX_UNAVAILABLE_MARKER}; exec ${shell}; fi`,
   ].join('\n');
 
   const sshArgs = [
@@ -260,28 +266,38 @@ function setupVmSessionHandlers(
   sshProcess: ChildProcess,
   pendingTmuxSession?: string // tmux session name to detect via stderr marker
 ): void {
-  // Track whether we've detected the tmux marker
-  // SSH -tt merges stdout/stderr through the PTY, so the marker arrives on stdout
-  let tmuxDetected = false;
-
+  // SSH -tt merges stdout/stderr through the PTY, so all markers arrive on stdout
   sshProcess.stdout?.on('data', (data: Buffer) => {
     if (ws.readyState !== WebSocket.OPEN) return;
 
     let str = data.toString();
 
-    // Check for tmux detection marker in stdout (PTY merges all output)
-    if (!tmuxDetected && pendingTmuxSession && str.includes(TMUX_MARKER)) {
-      tmuxDetected = true;
-      // Update session with tmux info
-      const session = sessions.get(sessionId);
-      if (session) {
-        session.tmuxSession = pendingTmuxSession;
+    // Check for tmux state markers and strip them from output
+    if (pendingTmuxSession) {
+      if (str.includes(TMUX_MARKER)) {
+        // tmux is available and we're connecting to it
+        const session = sessions.get(sessionId);
+        if (session) {
+          session.tmuxSession = pendingTmuxSession;
+        }
+        ws.send(JSON.stringify({ type: 'session-update', tmuxState: 'connected' }));
+        str = str.replace(new RegExp(`\\r?\\n?${TMUX_MARKER}\\r?\\n?`), '');
+        if (!str) return;
       }
-      // Notify client that tmux is active
-      ws.send(JSON.stringify({ type: 'session-update', tmuxSession: pendingTmuxSession }));
-      // Strip the marker (and surrounding newlines) from the output
-      str = str.replace(new RegExp(`\\r?\\n?${TMUX_MARKER}\\r?\\n?`), '');
-      if (!str) return;
+
+      if (str.includes(TMUX_DETACHED_MARKER)) {
+        // tmux exited (user detached or closed all panes) — back to bare shell
+        ws.send(JSON.stringify({ type: 'session-update', tmuxState: 'detached' }));
+        str = str.replace(new RegExp(`\\r?\\n?${TMUX_DETACHED_MARKER}\\r?\\n?`), '');
+        if (!str) return;
+      }
+
+      if (str.includes(TMUX_UNAVAILABLE_MARKER)) {
+        // tmux is not installed
+        ws.send(JSON.stringify({ type: 'session-update', tmuxState: 'unavailable' }));
+        str = str.replace(new RegExp(`\\r?\\n?${TMUX_UNAVAILABLE_MARKER}\\r?\\n?`), '');
+        if (!str) return;
+      }
     }
 
     ws.send(JSON.stringify({ type: 'output', data: str }));
@@ -375,7 +391,8 @@ export async function resumeVmTerminalSession(
 
   // Set SSH PTY size then exec into tmux attach.
   // stty ensures tmux sees the correct client dimensions on reattach.
-  const remoteCmd = `stty cols ${cols} rows ${rows} 2>/dev/null; exec tmux attach-session -t ${tmuxSession} ';' set-option status off`;
+  const statusOpt = config.tmuxStatusBar ? '' : " ';' set-option status off";
+  const remoteCmd = `stty cols ${cols} rows ${rows} 2>/dev/null; exec tmux attach-session -t ${tmuxSession}${statusOpt}`;
 
   const sshArgs = [
     '-tt',
