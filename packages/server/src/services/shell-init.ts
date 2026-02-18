@@ -107,6 +107,17 @@ const SHELL_INIT_SCRIPT = [
 ].join('; ');
 
 /**
+ * Get the full shell init script content (init + theme) for a given theme.
+ * Used by vm-terminal to embed in SSH remote commands so the init is invisible.
+ */
+export async function getShellInitContent(): Promise<string> {
+  const config = await getConfig();
+  const theme = config.shellPromptTheme || 'minimal';
+  const themeScript = getPromptThemeScript(theme);
+  return `${SHELL_INIT_SCRIPT}; ${themeScript}`;
+}
+
+/**
  * Inject the shell init script into a running terminal session.
  * Writes the PROMPT_COMMAND setup to stdin, suppressing visible output.
  * Also injects the configured PS1 prompt theme.

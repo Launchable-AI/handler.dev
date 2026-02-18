@@ -782,6 +782,12 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
                 setTimeout(() => onCloseRef.current?.(), 800);
               }
               break;
+            case 'session-update':
+              // Server detected tmux is active (via stderr marker)
+              if (msg.tmuxSession) {
+                onStateChangeRef.current({ isTmuxSession: true });
+              }
+              break;
             case 'error':
               onStateChangeRef.current({ connectionState: 'error', errorMessage: msg.message });
               term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);

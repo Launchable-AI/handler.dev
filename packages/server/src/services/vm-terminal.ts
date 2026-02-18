@@ -10,7 +10,7 @@ import { promisify } from 'util';
 import { WebSocket } from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
-import { injectShellInit } from './shell-init.js';
+import { injectShellInit, getShellInitContent } from './shell-init.js';
 import { getConfig } from './config.js';
 import {
   getSession as getPersistedSession,
@@ -64,18 +64,6 @@ function getVmTmuxSessionName(vmId: string): string {
 }
 
 /**
- * Check if tmux is available in a VM
- */
-async function hasTmuxInVm(vmIp: string, dataDir: string): Promise<boolean> {
-  try {
-    await sshExec(vmIp, dataDir, 'which tmux');
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Check if a tmux session exists in a VM
  */
 async function vmTmuxSessionExists(vmIp: string, dataDir: string, tmuxSession: string): Promise<boolean> {
@@ -123,22 +111,16 @@ export function createVmTerminalSession(
 
   console.log(`[VM Terminal] SSH key exists, connecting to ${vmIp}...`);
 
-  // Check if tmux is enabled in config and available in VM
+  // Start terminal — use a single SSH connection that tries tmux inline
+  // and falls back to a bare shell if tmux isn't installed. This avoids
+  // a separate SSH round-trip just to check `which tmux`.
   getConfig().then(config => {
     if (config.tmuxEnabled === false) {
       console.log(`[VM Terminal] tmux disabled in config, using bare shell`);
       startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
-      return;
+    } else {
+      startVmTmuxWithFallback(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
     }
-
-    return hasTmuxInVm(vmIp, dataDir).then(useTmux => {
-      if (useTmux) {
-        startVmTmuxSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
-      } else {
-        console.log(`[VM Terminal] tmux not available in VM ${vmId}, falling back to bare shell`);
-        startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
-      }
-    });
   }).catch(() => {
     startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
   });
@@ -146,17 +128,19 @@ export function createVmTerminalSession(
   return sessionId;
 }
 
+/** Marker written to stderr by the remote command when tmux is used */
+const TMUX_MARKER = '__HANDLER_TMUX_ACTIVE__';
+
 /**
- * Start a tmux-based VM terminal session.
+ * Start a VM terminal session that tries tmux and falls back to a bare
+ * shell — all in a single SSH connection.
  *
- * Sets the SSH PTY size with stty BEFORE starting tmux so tmux sees
- * the correct client dimensions from the start. Uses `exec` to replace
- * the shell with tmux so SIGHUP goes directly to tmux on disconnect.
- *
- * The tmux command separator ';' is single-quoted so the remote shell
- * passes it literally to tmux instead of treating it as a command separator.
+ * The shell init (prompt theme, aliases, OSC tracking) is written to a
+ * file on the remote VM and sourced from .bashrc, so it's invisible —
+ * no stdin echo jank. Tmux detection uses a stderr marker so the badge
+ * only appears when tmux is actually running.
  */
-function startVmTmuxSession(
+async function startVmTmuxWithFallback(
   ws: WebSocket,
   sessionId: string,
   vmId: string,
@@ -166,12 +150,28 @@ function startVmTmuxSession(
   shell: string,
   cols: number,
   rows: number
-): void {
+): Promise<void> {
   const tmuxSession = getVmTmuxSessionName(vmId);
 
-  // stty sets the SSH PTY dimensions, then exec replaces the shell with tmux.
-  // -A reattaches if the session already exists (deterministic name per VM).
-  const remoteCmd = `stty cols ${cols} rows ${rows} 2>/dev/null; exec tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} ';' set-option status off`;
+  // Get the shell init content to embed in the remote command
+  const initContent = await getShellInitContent();
+
+  // Build a multi-line remote command that:
+  // 1. Writes the shell init to ~/.config/handler/prompt.sh (invisible — no stdin echo)
+  // 2. Ensures .bashrc sources it (so new shells/tmux panes inherit it)
+  // 3. Sets PTY dimensions
+  // 4. Tries tmux with a stderr marker for detection, falls back to bare shell
+  const remoteCmd = [
+    // Write init file using heredoc (quoted delimiter = no variable expansion)
+    `mkdir -p ~/.config/handler`,
+    `cat > ~/.config/handler/prompt.sh << 'HANDLER_INIT_EOF'\n${initContent}\nHANDLER_INIT_EOF`,
+    // Ensure .bashrc sources the init file
+    `grep -q 'handler/prompt.sh' ~/.bashrc 2>/dev/null || echo '[ -f ~/.config/handler/prompt.sh ] && source ~/.config/handler/prompt.sh' >> ~/.bashrc`,
+    // Set terminal dimensions
+    `stty cols ${cols} rows ${rows} 2>/dev/null`,
+    // Try tmux (with stderr marker for detection), fall back to bare shell
+    `if command -v tmux >/dev/null 2>&1; then echo ${TMUX_MARKER} >&2; exec tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} ';' set-option status off; else exec ${shell}; fi`,
+  ].join('\n');
 
   const sshArgs = [
     '-tt',
@@ -190,7 +190,8 @@ function startVmTmuxSession(
     env: { ...process.env, TERM: 'xterm-256color' }
   });
 
-  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, tmuxSession, sshProcess);
+  // Don't pass tmuxSession yet — we'll detect it via the stderr marker
+  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, undefined, sshProcess, tmuxSession);
 
   // Clean up old persisted sessions for this VM, then persist the new one
   for (const old of listByVm(vmId)) {
@@ -209,7 +210,7 @@ function startVmTmuxSession(
     dataDir,
   });
 
-  console.log(`[VM Terminal] Started tmux session: ${tmuxSession}`);
+  console.log(`[VM Terminal] Started session (tmux with fallback): ${tmuxSession}`);
 }
 
 /**
@@ -256,7 +257,8 @@ function setupVmSessionHandlers(
   vmIp: string,
   dataDir: string,
   tmuxSession: string | undefined,
-  sshProcess: ChildProcess
+  sshProcess: ChildProcess,
+  pendingTmuxSession?: string // tmux session name to detect via stderr marker
 ): void {
   sshProcess.stdout?.on('data', (data: Buffer) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -264,10 +266,38 @@ function setupVmSessionHandlers(
     }
   });
 
+  // Track whether we've detected the tmux marker in stderr
+  let tmuxDetected = false;
+
   sshProcess.stderr?.on('data', (data: Buffer) => {
-    console.log(`[VM Terminal] SSH stderr: ${data.toString()}`);
+    const str = data.toString();
+
+    // Check for tmux detection marker
+    if (!tmuxDetected && pendingTmuxSession && str.includes(TMUX_MARKER)) {
+      tmuxDetected = true;
+      // Update session with tmux info
+      const session = sessions.get(sessionId);
+      if (session) {
+        session.tmuxSession = pendingTmuxSession;
+      }
+      // Notify client that tmux is active
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'session-update', tmuxSession: pendingTmuxSession }));
+      }
+      // Filter out the marker from stderr output
+      const filtered = str.replace(TMUX_MARKER, '').trim();
+      if (filtered) {
+        console.log(`[VM Terminal] SSH stderr: ${filtered}`);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'output', data: filtered }));
+        }
+      }
+      return;
+    }
+
+    console.log(`[VM Terminal] SSH stderr: ${str}`);
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+      ws.send(JSON.stringify({ type: 'output', data: str }));
     }
   });
 
@@ -298,7 +328,10 @@ function setupVmSessionHandlers(
     tmuxSession: tmuxSession || undefined,
   }));
 
-  injectShellInit(sshProcess);
+  // Only inject shell init via stdin if init wasn't embedded in the remote command
+  if (!pendingTmuxSession) {
+    injectShellInit(sshProcess);
+  }
 }
 
 /**
