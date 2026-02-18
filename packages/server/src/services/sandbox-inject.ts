@@ -7,12 +7,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { getSandboxService, initializeSandboxService } from './sandbox/index.js';
 import { getCloudHypervisorService, initializeCloudHypervisorService } from './hypervisor.js';
 import { getFirecrackerService, initializeFirecrackerService } from './firecracker.js';
 import { getDaytonaService, initializeDaytonaService } from './daytona.js';
 import { getAwsService, initializeAwsService } from './aws.js';
+
+/** Common SSH options */
+const SSH_OPTS = [
+  '-o', 'StrictHostKeyChecking=no',
+  '-o', 'UserKnownHostsFile=/dev/null',
+  '-o', 'IdentitiesOnly=yes',
+];
 
 export interface FileToInject {
   content: string;
@@ -91,13 +98,13 @@ export async function injectFilesIntoSandbox(
         const containerId = dockerMeta?.containerId || sandbox.id.replace('docker-', '');
 
         try {
-          execSync(`docker exec ${containerId} mkdir -p "${file.destPath}"`, { stdio: 'pipe' });
+          execFileSync('docker', ['exec', containerId, 'mkdir', '-p', file.destPath], { stdio: 'pipe' });
         } catch { /* ignore */ }
 
-        execSync(`docker cp "${tempFilePath}" ${containerId}:${file.destPath}/${file.filename}`, { stdio: 'pipe' });
+        execFileSync('docker', ['cp', tempFilePath, `${containerId}:${file.destPath}/${file.filename}`], { stdio: 'pipe' });
 
         try {
-          execSync(`docker exec ${containerId} chown dev:dev "${file.destPath}/${file.filename}"`, { stdio: 'pipe' });
+          execFileSync('docker', ['exec', containerId, 'chown', 'dev:dev', `${file.destPath}/${file.filename}`], { stdio: 'pipe' });
         } catch { /* ignore */ }
 
         injectedCount++;
@@ -109,13 +116,10 @@ export async function injectFilesIntoSandbox(
 
         if (keyPath && sandbox.guestIp) {
           try {
-            execSync(`ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes agent@${sandbox.guestIp} "mkdir -p '${file.destPath}'"`, { stdio: 'pipe', timeout: 10000 });
+            execFileSync('ssh', ['-i', keyPath, ...SSH_OPTS, `agent@${sandbox.guestIp}`, 'mkdir', '-p', file.destPath], { stdio: 'pipe', timeout: 10000 });
           } catch { /* ignore */ }
 
-          execSync(
-            `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes "${tempFilePath}" agent@${sandbox.guestIp}:${file.destPath}/${file.filename}`,
-            { stdio: 'pipe', timeout: 30000 }
-          );
+          execFileSync('scp', ['-i', keyPath, ...SSH_OPTS, tempFilePath, `agent@${sandbox.guestIp}:${file.destPath}/${file.filename}`], { stdio: 'pipe', timeout: 30000 });
           injectedCount++;
         }
       } else if (sandbox.backend === 'daytona') {
@@ -124,15 +128,12 @@ export async function injectFilesIntoSandbox(
           const tempKeyPath = path.join(tempDir, 'daytona_key');
           fs.writeFileSync(tempKeyPath, daytonaMeta.sshKey, { mode: 0o600 });
 
-          const port = sandbox.sshPort || 22;
+          const port = String(sandbox.sshPort || 22);
           try {
-            execSync(`ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes dev@${sandbox.guestIp} "mkdir -p '${file.destPath}'"`, { stdio: 'pipe', timeout: 10000 });
+            execFileSync('ssh', ['-i', tempKeyPath, '-p', port, ...SSH_OPTS, `dev@${sandbox.guestIp}`, 'mkdir', '-p', file.destPath], { stdio: 'pipe', timeout: 10000 });
           } catch { /* ignore */ }
 
-          execSync(
-            `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes "${tempFilePath}" dev@${sandbox.guestIp}:${file.destPath}/${file.filename}`,
-            { stdio: 'pipe', timeout: 30000 }
-          );
+          execFileSync('scp', ['-i', tempKeyPath, '-P', port, ...SSH_OPTS, tempFilePath, `dev@${sandbox.guestIp}:${file.destPath}/${file.filename}`], { stdio: 'pipe', timeout: 30000 });
           injectedCount++;
         }
       } else if (sandbox.backend === 'aws') {
@@ -145,13 +146,10 @@ export async function injectFilesIntoSandbox(
               fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
 
               try {
-                execSync(`ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes ubuntu@${sandbox.guestIp} "mkdir -p '${file.destPath}'"`, { stdio: 'pipe', timeout: 10000 });
+                execFileSync('ssh', ['-i', tempKeyPath, ...SSH_OPTS, `ubuntu@${sandbox.guestIp}`, 'mkdir', '-p', file.destPath], { stdio: 'pipe', timeout: 10000 });
               } catch { /* ignore */ }
 
-              execSync(
-                `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes "${tempFilePath}" ubuntu@${sandbox.guestIp}:${file.destPath}/${file.filename}`,
-                { stdio: 'pipe', timeout: 30000 }
-              );
+              execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, tempFilePath, `ubuntu@${sandbox.guestIp}:${file.destPath}/${file.filename}`], { stdio: 'pipe', timeout: 30000 });
               injectedCount++;
             }
           } catch { /* ignore */ }
@@ -183,7 +181,7 @@ export async function execInSandbox(
     if (sandbox.backend === 'docker') {
       const dockerMeta = sandbox.backendMeta as { type: 'docker'; containerId: string } | undefined;
       const containerId = dockerMeta?.containerId || sandbox.id.replace('docker-', '');
-      const result = execSync(`docker exec ${containerId} sh -c ${JSON.stringify(command)}`, {
+      const result = execFileSync('docker', ['exec', containerId, 'sh', '-c', command], {
         stdio: 'pipe',
         timeout: timeoutMs,
       });
@@ -194,10 +192,10 @@ export async function execInSandbox(
         : service.getFirecrackerService();
       const keyPath = vmService?.getSshKeyPath?.() || '';
       if (keyPath && sandbox.guestIp) {
-        const result = execSync(
-          `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes agent@${sandbox.guestIp} ${JSON.stringify(command)}`,
-          { stdio: 'pipe', timeout: timeoutMs }
-        );
+        const result = execFileSync('ssh', ['-i', keyPath, ...SSH_OPTS, `agent@${sandbox.guestIp}`, command], {
+          stdio: 'pipe',
+          timeout: timeoutMs,
+        });
         return result.toString();
       }
     }
@@ -224,7 +222,7 @@ export async function readFileFromSandbox(
     if (sandbox.backend === 'docker') {
       const dockerMeta = sandbox.backendMeta as { type: 'docker'; containerId: string } | undefined;
       const containerId = dockerMeta?.containerId || sandbox.id.replace('docker-', '');
-      const result = execSync(`docker exec ${containerId} cat "${filePath}" 2>/dev/null || true`, { stdio: 'pipe', timeout: 5000 });
+      const result = execFileSync('docker', ['exec', containerId, 'cat', filePath], { stdio: 'pipe', timeout: 5000 });
       const content = result.toString();
       return content || null;
     } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
@@ -233,7 +231,7 @@ export async function readFileFromSandbox(
         : service.getFirecrackerService();
       const keyPath = vmService?.getSshKeyPath?.() || '';
       if (keyPath && sandbox.guestIp) {
-        const result = execSync(`ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes agent@${sandbox.guestIp} "cat '${filePath}' 2>/dev/null || true"`, { stdio: 'pipe', timeout: 10000 });
+        const result = execFileSync('ssh', ['-i', keyPath, ...SSH_OPTS, `agent@${sandbox.guestIp}`, 'cat', filePath], { stdio: 'pipe', timeout: 10000 });
         const content = result.toString();
         return content || null;
       }

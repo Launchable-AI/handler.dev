@@ -146,6 +146,23 @@ Key files:
 - `guest-init/overlay-init` — In-guest init that sets up overlayfs, Docker volume, and SSH
 - `packages/server/src/services/firecracker.ts` — VM creation with Docker volume allocation
 
+### Security Hardening
+
+The server is hardened against malicious agents inside sandboxes attempting to exploit the control-plane API. Three layers of defense:
+
+1. **Network isolation**: The HTTP server binds to `127.0.0.1` only (`index.ts`), making the API unreachable from Docker bridge networks and VM TAP interfaces. Firewall rules in `scripts/setup.sh` provide defense in depth via iptables.
+
+2. **Command injection elimination**: All shell commands that handle user-controlled data (uploaded filenames, file paths, sandbox IDs, VM IPs) use `execFileSync`/`execFile` with argument arrays instead of `execSync` with interpolated strings. This bypasses the shell entirely — no parsing, no expansion, no injection. See `packages/server/src/lib/safe-exec.ts` for the utility wrapper.
+
+3. **Input validation**: All API inputs are validated at the boundary before reaching execution code. See `packages/server/src/lib/validation.ts` for validators (`validateSandboxId`, `validatePath`, `validateFilename`, `validateIpAddress`). Applied in route handlers (`sandboxes.ts`) and WebSocket message handlers (`index.ts`).
+
+Key files:
+- `packages/server/src/lib/safe-exec.ts` — Shell-free command execution utilities
+- `packages/server/src/lib/validation.ts` — Input validation functions
+- `SECURITY_HARDENING_PLAN.md` — Full threat model, exploit examples, and implementation plan
+
+When adding new `execSync` calls that handle user input, always use `execFileSync` with an argument array instead. When adding new API endpoints that accept IDs or paths, apply the validators from `validation.ts`.
+
 ### Key tech choices
 
 - Tailwind CSS v4 (beta) for styling

@@ -5,21 +5,19 @@
  * and server restarts. Falls back to bare shell when tmux is not installed.
  */
 
-import { spawn, ChildProcess, exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn, ChildProcess } from 'child_process';
 import { WebSocket } from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
 import { injectShellInit, getShellInitContent, getTmuxThemeContent } from './shell-init.js';
 import { getConfig } from './config.js';
+import { safeExec } from '../lib/safe-exec.js';
 import {
   getSession as getPersistedSession,
   setSession as setPersistedSession,
   deleteSession as deletePersistedSession,
   listByVm,
 } from './session-store.js';
-
-const execAsync = promisify(exec);
 
 interface VmTerminalSession {
   process: ChildProcess;
@@ -39,19 +37,22 @@ function getSshKeyPath(dataDir: string): string {
   return path.join(dataDir, 'ssh-keys', 'id_ed25519');
 }
 
+/** Common SSH options */
+const SSH_OPTS = [
+  '-o', 'IdentitiesOnly=yes',
+  '-o', 'StrictHostKeyChecking=no',
+  '-o', 'UserKnownHostsFile=/dev/null',
+  '-o', 'ConnectTimeout=3',
+];
+
 /**
  * Execute a command on a VM via SSH and return stdout.
- * Uses single-quote escaping so the local shell passes the command
- * literally to SSH — $() and other expansions run on the remote VM, not locally.
+ * Uses execFileAsync (no shell) — the command is passed as a single SSH
+ * argument, so no local shell expansion can occur.
  */
 async function sshExec(vmIp: string, dataDir: string, command: string): Promise<string> {
   const sshKeyPath = getSshKeyPath(dataDir);
-  const escaped = command.replace(/'/g, "'\\''");
-  const { stdout } = await execAsync(
-    `ssh -i ${sshKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 agent@${vmIp} '${escaped}'`,
-    { timeout: 5000 }
-  );
-  return stdout;
+  return safeExec('ssh', ['-i', sshKeyPath, ...SSH_OPTS, `agent@${vmIp}`, command], { timeout: 5000 });
 }
 
 /**

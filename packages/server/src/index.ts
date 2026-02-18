@@ -178,6 +178,7 @@ import { getAzureService } from './services/azure.js';
 import { getGcpService } from './services/gcp.js';
 import { getDigitalOceanService } from './services/digitalocean.js';
 import { getLinodeService } from './services/linode.js';
+import { validateSandboxId, validateIpAddress } from './lib/validation.js';
 import containers from './routes/containers.js';
 import images from './routes/images.js';
 import volumes from './routes/volumes.js';
@@ -301,6 +302,7 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
           case 'start':
             // Start a new terminal session (container)
             if (msg.containerId) {
+              validateSandboxId(msg.containerId);
               sessionId = createTerminalSession(
                 ws,
                 msg.containerId,
@@ -384,6 +386,8 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
           case 'start-vm':
             // Start a new VM terminal session
             if (msg.vmId && msg.vmIp) {
+              validateSandboxId(msg.vmId);
+              validateIpAddress(msg.vmIp);
               const hypervisor = getCloudHypervisorService();
               const dataDir = hypervisor.getDataDir();
               sessionId = createVmTerminalSession(
@@ -404,6 +408,7 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
           case 'start-daytona':
             // Start a new Daytona terminal session
             if (msg.sandboxId) {
+              validateSandboxId(msg.sandboxId);
               try {
                 const daytona = getDaytonaService();
                 // Strip 'daytona-' prefix if present
@@ -438,6 +443,8 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
           case 'start-aws':
             // Start a new AWS terminal session
             if (msg.instanceId && msg.publicIp) {
+              validateSandboxId(msg.instanceId);
+              validateIpAddress(msg.publicIp);
               try {
                 const awsService = getAwsService();
                 const sshPrivateKey = await awsService.getSshPrivateKey();
@@ -479,6 +486,8 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
           case 'start-linode':
             // Start a cloud backend terminal session via SSH
             if (msg.instanceId && msg.publicIp) {
+              validateSandboxId(msg.instanceId);
+              validateIpAddress(msg.publicIp);
               try {
                 const backendType = msg.type.replace('start-', '');
                 const backendService = backendType === 'azure' ? getAzureService()
@@ -671,8 +680,9 @@ async function main() {
     process.exit(1);
   });
 
-  // Start listening
-  server.listen(port, async () => {
+  // Start listening — bind to localhost only so sandboxes (Docker containers,
+  // Firecracker VMs) cannot reach the API via bridge/TAP gateway IPs.
+  server.listen(port, '127.0.0.1', async () => {
     // Write PID file after successful startup
     writePidFile();
     console.log(`\n🚀 Handler API (PID: ${process.pid})`);

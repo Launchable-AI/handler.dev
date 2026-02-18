@@ -234,6 +234,16 @@ if [ -f "/usr/local/bin/firecracker" ]; then
     fi
 fi
 
+# Remove Handler API firewall rules
+step "Removing Handler API firewall rules..."
+HANDLER_PORT="${HANDLER_PORT:-4001}"
+for iface in docker0 "br-+" "fc-tap+" "ch-tap+" "tap-+"; do
+    if iptables -C INPUT -i "$iface" -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null; then
+        iptables -D INPUT -i "$iface" -p tcp --dport "$HANDLER_PORT" -j DROP
+        log "Removed iptables rule for $iface"
+    fi
+done
+
 # Remove user data
 step "Handling user data..."
 if [ "$KEEP_DATA" = true ]; then

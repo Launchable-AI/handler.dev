@@ -4,11 +4,11 @@
  * When a client reconnects, they can resume the same tmux session.
  */
 
-import { spawn, ChildProcess, exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn, ChildProcess } from 'child_process';
 import { WebSocket } from 'ws';
 import { injectShellInit } from './shell-init.js';
 import { getConfig } from './config.js';
+import { safeExec } from '../lib/safe-exec.js';
 import {
   getSession as getPersistedSession,
   setSession as setPersistedSession,
@@ -16,8 +16,6 @@ import {
   generateTmuxSessionName,
   type PersistedSession,
 } from './session-store.js';
-
-const execAsync = promisify(exec);
 
 interface TerminalSession {
   process: ChildProcess;
@@ -33,7 +31,7 @@ const sessions = new Map<string, TerminalSession>();
  */
 async function hasTmux(containerId: string): Promise<boolean> {
   try {
-    await execAsync(`docker exec ${containerId} which tmux`);
+    await safeExec('docker', ['exec', containerId, 'which', 'tmux']);
     return true;
   } catch {
     return false;
@@ -45,7 +43,7 @@ async function hasTmux(containerId: string): Promise<boolean> {
  */
 async function tmuxSessionExists(containerId: string, tmuxSession: string): Promise<boolean> {
   try {
-    await execAsync(`docker exec ${containerId} tmux has-session -t ${tmuxSession} 2>/dev/null`);
+    await safeExec('docker', ['exec', containerId, 'tmux', 'has-session', '-t', tmuxSession]);
     return true;
   } catch {
     return false;
@@ -57,10 +55,7 @@ async function tmuxSessionExists(containerId: string, tmuxSession: string): Prom
  */
 async function captureTmuxScrollback(containerId: string, tmuxSession: string, lines: number = 1000): Promise<string> {
   try {
-    const { stdout } = await execAsync(
-      `docker exec ${containerId} tmux capture-pane -t ${tmuxSession} -p -S -${lines}`
-    );
-    return stdout;
+    return await safeExec('docker', ['exec', containerId, 'tmux', 'capture-pane', '-t', tmuxSession, '-p', '-S', `-${lines}`]);
   } catch (err) {
     console.warn(`[Terminal] Failed to capture scrollback for ${tmuxSession}:`, err);
     return '';
@@ -72,7 +67,7 @@ async function captureTmuxScrollback(containerId: string, tmuxSession: string, l
  */
 export async function killTmuxSession(containerId: string, tmuxSession: string): Promise<void> {
   try {
-    await execAsync(`docker exec ${containerId} tmux kill-session -t ${tmuxSession} 2>/dev/null`);
+    await safeExec('docker', ['exec', containerId, 'tmux', 'kill-session', '-t', tmuxSession]);
     console.log(`[Terminal] Killed tmux session ${tmuxSession} in container ${containerId}`);
   } catch {
     // Session may not exist
@@ -363,7 +358,7 @@ export async function resumeTerminalSession(
 
   // Resize the tmux window to match client dimensions
   try {
-    await execAsync(`docker exec ${containerId} tmux resize-window -t ${tmuxSession} -x ${cols} -y ${rows}`);
+    await safeExec('docker', ['exec', containerId, 'tmux', 'resize-window', '-t', tmuxSession, '-x', String(cols), '-y', String(rows)]);
   } catch {
     // Ignore resize errors
   }
@@ -389,7 +384,7 @@ export function resizeSession(sessionId: string, cols: number, rows: number): bo
 
     if (session.tmuxSession) {
       // Also resize tmux window/pane via separate command for proper tmux handling
-      execAsync(`docker exec ${session.containerId} tmux resize-window -t ${session.tmuxSession} -x ${cols} -y ${rows} 2>/dev/null`)
+      safeExec('docker', ['exec', session.containerId, 'tmux', 'resize-window', '-t', session.tmuxSession, '-x', String(cols), '-y', String(rows)])
         .catch(() => { /* ignore errors */ });
     }
 
