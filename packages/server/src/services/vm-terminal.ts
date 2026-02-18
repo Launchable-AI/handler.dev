@@ -48,8 +48,8 @@ async function sshExec(vmIp: string, dataDir: string, command: string): Promise<
   const sshKeyPath = getSshKeyPath(dataDir);
   const escaped = command.replace(/'/g, "'\\''");
   const { stdout } = await execAsync(
-    `ssh -i ${sshKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 agent@${vmIp} '${escaped}'`,
-    { timeout: 10000 }
+    `ssh -i ${sshKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 agent@${vmIp} '${escaped}'`,
+    { timeout: 5000 }
   );
   return stdout;
 }
@@ -287,6 +287,9 @@ function setupVmSessionHandlers(
     sessions.delete(sessionId);
   });
 
+  // Prevent uncaught EPIPE if stdin closes between writable check and write
+  sshProcess.stdin?.on('error', () => {});
+
   sessions.set(sessionId, { process: sshProcess, ws, vmId, tmuxSession, vmIp, dataDir });
 
   ws.send(JSON.stringify({
@@ -416,8 +419,13 @@ export async function resumeVmTerminalSession(
 export function writeToVmSession(sessionId: string, data: string): boolean {
   const session = sessions.get(sessionId);
   if (session && session.process.stdin?.writable) {
-    session.process.stdin.write(data);
-    return true;
+    try {
+      session.process.stdin.write(data);
+      return true;
+    } catch {
+      // EPIPE — process stdin closed between writable check and write
+      return false;
+    }
   }
   return false;
 }
@@ -554,6 +562,9 @@ export function createDaytonaTerminalSession(
     sessions.delete(sessionId);
   });
 
+  // Prevent uncaught EPIPE if stdin closes between writable check and write
+  sshProcess.stdin?.on('error', () => {});
+
   sessions.set(sessionId, { process: sshProcess, ws, vmId: sandboxId });
 
   // Send connected message
@@ -655,6 +666,9 @@ export function createAwsTerminalSession(
     }
   });
 
+  // Prevent uncaught EPIPE if stdin closes between writable check and write
+  sshProcess.stdin?.on('error', () => {});
+
   sessions.set(sessionId, { process: sshProcess, ws, vmId: instanceId });
 
   // Send connected message
@@ -736,6 +750,9 @@ export function createCloudTerminalSession(
     sessions.delete(sessionId);
     try { fs.unlinkSync(keyPath); fs.rmdirSync(tempDir); } catch { /* ignore */ }
   });
+
+  // Prevent uncaught EPIPE if stdin closes between writable check and write
+  sshProcess.stdin?.on('error', () => {});
 
   sessions.set(sessionId, { process: sshProcess, ws, vmId: instanceId });
   ws.send(JSON.stringify({ type: 'connected', sessionId }));

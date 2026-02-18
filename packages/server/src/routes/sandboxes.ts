@@ -26,6 +26,18 @@ import type { SandboxBackend, SandboxStatus } from '../types/sandbox.js';
 
 const sandboxes = new Hono();
 
+/**
+ * Escape a path for use as an SCP remote argument.
+ * SCP passes the remote path to the remote shell, so spaces and special
+ * characters cause "ambiguous target" errors. We escape single quotes and
+ * wrap the entire path in single quotes so the remote shell treats it as
+ * a single token.
+ */
+function escapeRemotePath(p: string): string {
+  // Replace ' with '\'' (end quote, escaped quote, start quote)
+  return "'" + p.replace(/'/g, "'\\''") + "'";
+}
+
 // Lazy initialization state
 let sandboxServiceInitialized = false;
 
@@ -936,7 +948,7 @@ sandboxes.post('/:id/upload', async (c) => {
         const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
         try {
           execSync(
-            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 agent@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
+            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 agent@${sandbox.guestIp} "mkdir -p ${escapeRemotePath(fullDestDir)}"`,
             { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
@@ -945,7 +957,7 @@ sandboxes.post('/:id/upload', async (c) => {
 
         // Upload via SCP
         execSync(
-          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tempPath}" agent@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${tempPath}" "agent@${sandbox.guestIp}:${escapeRemotePath(`${destPath}/${filename}`)}"`,
           { stdio: 'pipe', timeout: 300000 }
         );
       } finally {
@@ -989,7 +1001,7 @@ sandboxes.post('/:id/upload', async (c) => {
         const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
         try {
           execSync(
-            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 dev@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
+            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 dev@${sandbox.guestIp} "mkdir -p ${escapeRemotePath(fullDestDir)}"`,
             { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
@@ -998,7 +1010,7 @@ sandboxes.post('/:id/upload', async (c) => {
 
         // Upload via SCP
         execSync(
-          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tempFilePath}" dev@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${tempFilePath}" "dev@${sandbox.guestIp}:${escapeRemotePath(`${destPath}/${filename}`)}"`,
           { stdio: 'pipe', timeout: 300000 }
         );
       } finally {
@@ -1044,7 +1056,7 @@ sandboxes.post('/:id/upload', async (c) => {
         const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
         try {
           execSync(
-            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ubuntu@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
+            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 ubuntu@${sandbox.guestIp} "mkdir -p ${escapeRemotePath(fullDestDir)}"`,
             { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
@@ -1053,7 +1065,7 @@ sandboxes.post('/:id/upload', async (c) => {
 
         // Upload via SCP
         execSync(
-          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tempFilePath}" ubuntu@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${tempFilePath}" "ubuntu@${sandbox.guestIp}:${escapeRemotePath(`${destPath}/${filename}`)}"`,
           { stdio: 'pipe', timeout: 300000 }
         );
       } finally {
@@ -1101,13 +1113,13 @@ sandboxes.post('/:id/upload', async (c) => {
         const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
         try {
           execSync(
-            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp} "mkdir -p '${fullDestDir}'"`,
+            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 ${sshUser}@${sandbox.guestIp} "mkdir -p ${escapeRemotePath(fullDestDir)}"`,
             { stdio: 'pipe', timeout: 60000 }
           );
         } catch { /* ignore */ }
 
         execSync(
-          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tempFilePath}" ${sshUser}@${sandbox.guestIp}:"${destPath}/${filename}"`,
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${tempFilePath}" "${sshUser}@${sandbox.guestIp}:${escapeRemotePath(`${destPath}/${filename}`)}"`,
           { stdio: 'pipe', timeout: 300000 }
         );
       } finally {
@@ -1248,7 +1260,7 @@ sandboxes.post('/:id/upload-directory', async (c) => {
         // Ensure destination directory exists
         try {
           execSync(
-            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 agent@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 agent@${sandbox.guestIp} "mkdir -p ${escapeRemotePath(destPath)}"`,
             { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
@@ -1257,11 +1269,11 @@ sandboxes.post('/:id/upload-directory', async (c) => {
 
         // Copy tar to VM and extract
         execSync(
-          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tarPath}" agent@${sandbox.guestIp}:/tmp/upload.tar.gz`,
+          `scp -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${tarPath}" agent@${sandbox.guestIp}:/tmp/upload.tar.gz`,
           { stdio: 'pipe', timeout: 300000 }
         );
         execSync(
-          `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 agent@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
+          `ssh -i "${keyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 agent@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C ${escapeRemotePath(destPath)} && rm /tmp/upload.tar.gz"`,
           { stdio: 'pipe', timeout: 120000 }
         );
 
@@ -1283,7 +1295,7 @@ sandboxes.post('/:id/upload-directory', async (c) => {
         // Ensure destination directory exists
         try {
           execSync(
-            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 dev@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 dev@${sandbox.guestIp} "mkdir -p ${escapeRemotePath(destPath)}"`,
             { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
@@ -1292,11 +1304,11 @@ sandboxes.post('/:id/upload-directory', async (c) => {
 
         // Copy tar to workspace and extract
         execSync(
-          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tarPath}" dev@${sandbox.guestIp}:/tmp/upload.tar.gz`,
+          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${tarPath}" dev@${sandbox.guestIp}:/tmp/upload.tar.gz`,
           { stdio: 'pipe', timeout: 300000 }
         );
         execSync(
-          `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 dev@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
+          `ssh -i "${tempKeyPath}" -p ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 dev@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C ${escapeRemotePath(destPath)} && rm /tmp/upload.tar.gz"`,
           { stdio: 'pipe', timeout: 120000 }
         );
 
@@ -1322,7 +1334,7 @@ sandboxes.post('/:id/upload-directory', async (c) => {
         // Ensure destination directory exists
         try {
           execSync(
-            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ubuntu@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 ubuntu@${sandbox.guestIp} "mkdir -p ${escapeRemotePath(destPath)}"`,
             { stdio: 'pipe', timeout: 60000 }
           );
         } catch {
@@ -1331,11 +1343,11 @@ sandboxes.post('/:id/upload-directory', async (c) => {
 
         // Copy tar to instance and extract
         execSync(
-          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tarPath}" ubuntu@${sandbox.guestIp}:/tmp/upload.tar.gz`,
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${tarPath}" ubuntu@${sandbox.guestIp}:/tmp/upload.tar.gz`,
           { stdio: 'pipe', timeout: 300000 }
         );
         execSync(
-          `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ubuntu@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
+          `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 ubuntu@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C ${escapeRemotePath(destPath)} && rm /tmp/upload.tar.gz"`,
           { stdio: 'pipe', timeout: 120000 }
         );
 
@@ -1365,17 +1377,17 @@ sandboxes.post('/:id/upload-directory', async (c) => {
 
         try {
           execSync(
-            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp} "mkdir -p '${destPath}'"`,
+            `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 ${sshUser}@${sandbox.guestIp} "mkdir -p ${escapeRemotePath(destPath)}"`,
             { stdio: 'pipe', timeout: 60000 }
           );
         } catch { /* ignore */ }
 
         execSync(
-          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 "${tarPath}" ${sshUser}@${sandbox.guestIp}:/tmp/upload.tar.gz`,
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${tarPath}" ${sshUser}@${sandbox.guestIp}:/tmp/upload.tar.gz`,
           { stdio: 'pipe', timeout: 300000 }
         );
         execSync(
-          `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C '${destPath}' && rm /tmp/upload.tar.gz"`,
+          `ssh -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 ${sshUser}@${sandbox.guestIp} "tar -xzf /tmp/upload.tar.gz -C ${escapeRemotePath(destPath)} && rm /tmp/upload.tar.gz"`,
           { stdio: 'pipe', timeout: 120000 }
         );
 
@@ -1519,7 +1531,7 @@ sandboxes.get('/:id/files', async (c) => {
       try {
         const portFlag = sshPort !== 22 ? `-p ${sshPort}` : '';
         lsOutput = execSync(
-          `ssh -i "${tempKeyPath}" ${portFlag} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp} "ls -la --time-style=long-iso '${requestedPath}'"`,
+          `ssh -i "${tempKeyPath}" ${portFlag} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 ${sshUser}@${sandbox.guestIp} "ls -la --time-style=long-iso ${escapeRemotePath(requestedPath)}"`,
           { encoding: 'utf-8', timeout: 30000 }
         );
       } finally {
@@ -1620,7 +1632,7 @@ sandboxes.get('/:id/files/download', async (c) => {
       try {
         const port = daytonaMeta.sshPort || 22;
         execSync(
-          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 dev@${sandbox.guestIp}:"${filePath}" "${tmpFile}"`,
+          `scp -i "${tempKeyPath}" -P ${port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "dev@${sandbox.guestIp}:${escapeRemotePath(filePath)}" "${tmpFile}"`,
           { stdio: 'pipe', timeout: 300000 }
         );
         const content = fs.readFileSync(tmpFile);
@@ -1656,7 +1668,7 @@ sandboxes.get('/:id/files/download', async (c) => {
 
       try {
         execSync(
-          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ubuntu@${sandbox.guestIp}:"${filePath}" "${tmpFile}"`,
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "ubuntu@${sandbox.guestIp}:${escapeRemotePath(filePath)}" "${tmpFile}"`,
           { stdio: 'pipe', timeout: 300000 }
         );
         const content = fs.readFileSync(tmpFile);
@@ -1697,7 +1709,7 @@ sandboxes.get('/:id/files/download', async (c) => {
 
       try {
         execSync(
-          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=30 ${sshUser}@${sandbox.guestIp}:"${filePath}" "${tmpFile}"`,
+          `scp -i "${tempKeyPath}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 "${sshUser}@${sandbox.guestIp}:${escapeRemotePath(filePath)}" "${tmpFile}"`,
           { stdio: 'pipe', timeout: 300000 }
         );
         const content = fs.readFileSync(tmpFile);

@@ -614,7 +614,6 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const isDisposedRef = useRef(false);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasConnectedRef = useRef(false); // Track if we ever successfully connected
@@ -636,7 +635,10 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    isDisposedRef.current = false;
+    // Local closure variable — each effect invocation gets its own `disposed`.
+    // This prevents React Strict Mode double-mount from triggering stale
+    // onclose handlers that set state to 'disconnected'.
+    let disposed = false;
     retryCountRef.current = 0;
     wasConnectedRef.current = false;
 
@@ -666,7 +668,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
 
     // Fit helper that uses current wsRef
     const fitAndResize = () => {
-      if (isDisposedRef.current) return;
+      if (disposed) return;
       try {
         fitAddon.fit();
         // Send resize to server so shell redraws with correct dimensions
@@ -691,7 +693,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
 
     // Function to create and connect WebSocket
     const connectWebSocket = () => {
-      if (isDisposedRef.current) return;
+      if (disposed) return;
 
       // Close existing connection if any
       if (wsRef.current) {
@@ -706,7 +708,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (isDisposedRef.current) return;
+        if (disposed) return;
         // Reset retry count on successful connection
         retryCountRef.current = 0;
 
@@ -758,7 +760,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
       };
 
       ws.onmessage = (event) => {
-        if (isDisposedRef.current) return;
+        if (disposed) return;
         try {
           const msg = JSON.parse(event.data);
           switch (msg.type) {
@@ -791,7 +793,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
       };
 
       ws.onclose = () => {
-        if (isDisposedRef.current) return;
+        if (disposed) return;
 
         // Only retry if we had a successful connection before (server restart scenario)
         if (wasConnectedRef.current && retryCountRef.current < MAX_RETRY_COUNT) {
@@ -804,7 +806,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
           term.write(`\r\n\x1b[33m[Connection lost. Reconnecting in ${delay / 1000}s... (attempt ${retryCountRef.current}/${MAX_RETRY_COUNT})]\x1b[0m\r\n`);
 
           retryTimeoutRef.current = setTimeout(() => {
-            if (!isDisposedRef.current) {
+            if (!disposed) {
               connectWebSocket();
             }
           }, delay);
@@ -817,7 +819,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
       };
 
       ws.onerror = () => {
-        if (isDisposedRef.current) return;
+        if (disposed) return;
         // Error will be followed by close, so we handle retry in onclose
         // Only show error state if we haven't connected yet
         if (!wasConnectedRef.current && retryCountRef.current === 0) {
@@ -850,10 +852,10 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
     // Handle resize with debounce
     let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
     const handleResize = () => {
-      if (isDisposedRef.current) return;
+      if (disposed) return;
       if (resizeTimeout) clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
-        if (isDisposedRef.current) return;
+        if (disposed) return;
         try {
           fitAddon.fit();
           const ws = wsRef.current;
@@ -876,7 +878,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
     }
 
     return () => {
-      isDisposedRef.current = true;
+      disposed = true;
       clearTimeout(fitTimeout1);
       clearTimeout(fitTimeout2);
       clearTimeout(fitTimeout3);
