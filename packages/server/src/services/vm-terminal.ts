@@ -10,7 +10,7 @@ import { promisify } from 'util';
 import { WebSocket } from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
-import { injectShellInit, getShellInitContent } from './shell-init.js';
+import { injectShellInit, getShellInitContent, getTmuxThemeContent } from './shell-init.js';
 import { getConfig } from './config.js';
 import {
   getSession as getPersistedSession,
@@ -157,18 +157,23 @@ async function startVmTmuxWithFallback(
 ): Promise<void> {
   const tmuxSession = getVmTmuxSessionName(vmId);
 
-  // Get the shell init content to embed in the remote command
+  // Get the shell init content and tmux theme to embed in the remote command
+  const config = await getConfig();
   const initContent = await getShellInitContent();
+  const theme = config.shellPromptTheme || 'minimal';
+  const tmuxThemeContent = getTmuxThemeContent(theme, !!tmuxStatusBar);
 
   // Build a multi-line remote command that:
   // 1. Writes the shell init to ~/.config/handler/prompt.sh (invisible — no stdin echo)
-  // 2. Ensures .bashrc sources it (so new shells/tmux panes inherit it)
-  // 3. Sets PTY dimensions
-  // 4. Tries tmux with a stderr marker for detection, falls back to bare shell
+  // 2. Writes the tmux status bar theme to ~/.config/handler/tmux-theme.conf
+  // 3. Ensures .bashrc sources the shell init (so new shells/tmux panes inherit it)
+  // 4. Sets PTY dimensions
+  // 5. Tries tmux with markers for detection, falls back to bare shell
   const remoteCmd = [
-    // Write init file using heredoc (quoted delimiter = no variable expansion)
+    // Write init files using heredocs (quoted delimiter = no variable expansion)
     `mkdir -p ~/.config/handler`,
     `cat > ~/.config/handler/prompt.sh << 'HANDLER_INIT_EOF'\n${initContent}\nHANDLER_INIT_EOF`,
+    `cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF`,
     // Ensure .bashrc sources the init file
     `grep -q 'handler/prompt.sh' ~/.bashrc 2>/dev/null || echo '[ -f ~/.config/handler/prompt.sh ] && source ~/.config/handler/prompt.sh' >> ~/.bashrc`,
     // Set terminal dimensions
@@ -176,7 +181,7 @@ async function startVmTmuxWithFallback(
     // Try tmux without exec so parent shell continues after detach/exit.
     // When tmux exits (detach or last pane closed), emit DETACHED marker and fall back to bare shell.
     // If tmux isn't installed, emit UNAVAILABLE marker and use bare shell directly.
-    `if command -v tmux >/dev/null 2>&1; then echo ${TMUX_MARKER}; tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell}${tmuxStatusBar ? '' : " ';' set-option status off"}; echo ${TMUX_DETACHED_MARKER}; exec ${shell}; else echo ${TMUX_UNAVAILABLE_MARKER}; exec ${shell}; fi`,
+    `if command -v tmux >/dev/null 2>&1; then echo ${TMUX_MARKER}; tmux new-session -A -s ${tmuxSession} -x ${cols} -y ${rows} ${shell} ';' source-file ~/.config/handler/tmux-theme.conf; echo ${TMUX_DETACHED_MARKER}; exec ${shell}; else echo ${TMUX_UNAVAILABLE_MARKER}; exec ${shell}; fi`,
   ].join('\n');
 
   const sshArgs = [
@@ -389,10 +394,16 @@ export async function resumeVmTerminalSession(
   const sessionId = `vm-${vmId}-${Date.now()}`;
   console.log(`[VM Terminal] Resuming session: ${sessionId} (tmux: ${tmuxSession})`);
 
-  // Set SSH PTY size then exec into tmux attach.
+  // Write the tmux theme conf and source it on attach.
   // stty ensures tmux sees the correct client dimensions on reattach.
-  const statusOpt = config.tmuxStatusBar ? '' : " ';' set-option status off";
-  const remoteCmd = `stty cols ${cols} rows ${rows} 2>/dev/null; exec tmux attach-session -t ${tmuxSession}${statusOpt}`;
+  const theme = config.shellPromptTheme || 'minimal';
+  const tmuxThemeContent = getTmuxThemeContent(theme, config.tmuxStatusBar === true);
+  const remoteCmd = [
+    `mkdir -p ~/.config/handler`,
+    `cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF`,
+    `stty cols ${cols} rows ${rows} 2>/dev/null`,
+    `exec tmux attach-session -t ${tmuxSession} ';' source-file ~/.config/handler/tmux-theme.conf`,
+  ].join('\n');
 
   const sshArgs = [
     '-tt',
@@ -541,15 +552,21 @@ export function getActiveVmSessionCount(): number {
 }
 
 /**
- * Apply tmux status bar visibility to all active tmux sessions.
- * Runs `tmux set-option status on/off` via SSH on each VM with an active tmux session.
+ * Apply tmux status bar theme to all active tmux sessions.
+ * Writes the themed conf file and sources it via SSH on each VM.
+ * Uses base64 encoding to avoid shell quoting issues with sshExec.
  */
 export async function applyTmuxStatusBar(show: boolean): Promise<void> {
-  const value = show ? 'on' : 'off';
+  const config = await getConfig();
+  const theme = config.shellPromptTheme || 'minimal';
+  const tmuxThemeContent = getTmuxThemeContent(theme, show);
+  const encoded = Buffer.from(tmuxThemeContent).toString('base64');
+
   for (const [id, session] of sessions.entries()) {
     if (session.tmuxSession && session.vmIp && session.dataDir) {
-      sshExec(session.vmIp, session.dataDir, `tmux set-option -t ${session.tmuxSession} status ${value}`)
-        .then(() => console.log(`[VM Terminal] Set tmux status bar ${value} for session ${id}`))
+      const cmd = `mkdir -p ~/.config/handler && echo ${encoded} | base64 -d > ~/.config/handler/tmux-theme.conf && tmux source-file ~/.config/handler/tmux-theme.conf`;
+      sshExec(session.vmIp, session.dataDir, cmd)
+        .then(() => console.log(`[VM Terminal] Applied tmux theme (status ${show ? 'on' : 'off'}) for session ${id}`))
         .catch(() => { /* session may have ended */ });
     }
   }
