@@ -82,9 +82,10 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
 
   const isFailed = sandbox.status === 'error';
+  const isStuckTransition = isTransition && sandbox.status !== 'stopping';
   const canStart = (isStopped || isFailed) && !isTransition;
-  const canStop = isRunning && !isTransition;
-  const canDelete = !isTransition;
+  const canStop = (isRunning || isStuckTransition) && !stopSandbox.isPending;
+  const canDelete = !isTransition || isStuckTransition;
   const canOpenTerminal = isRunning;
   const canRename = !isTransition;
 

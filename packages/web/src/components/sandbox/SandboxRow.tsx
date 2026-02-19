@@ -123,9 +123,11 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
 
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
 
-  const canStart = isStopped && !isTransition;
-  const canStop = isRunning && !isTransition;
-  const canDelete = !isTransition;
+  const isFailed = sandbox.status === 'error';
+  const isStuckTransition = isTransition && sandbox.status !== 'stopping';
+  const canStart = (isStopped || isFailed) && !isTransition;
+  const canStop = (isRunning || isStuckTransition) && !stopSandbox.isPending;
+  const canDelete = !isTransition || isStuckTransition;
   const canOpenTerminal = isRunning;
 
   const handleStart = async () => {
