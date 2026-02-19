@@ -2477,16 +2477,6 @@ export async function getSshKeyInfo(): Promise<{ exists: boolean; publicKey: str
   return fetchAPI<{ exists: boolean; publicKey: string | null }>('/ssh-keys/info');
 }
 
-export async function pushSshKeyToVms(): Promise<{ pushed: number; skipped: number; errors: { vmId: string; error: string }[]; message: string }> {
-  const apiBase = await getApiBase();
-  const response = await fetch(`${apiBase}/ssh-keys/push`, { method: 'POST' });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Failed to push SSH key' }));
-    throw new Error(error.error || 'Failed to push SSH key');
-  }
-  return response.json();
-}
-
 /**
  * Get SSH command for a sandbox (creates SSH access for Daytona sandboxes)
  */

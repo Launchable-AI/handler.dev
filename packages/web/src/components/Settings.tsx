@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap, Palette, Keyboard, Upload, Copy } from 'lucide-react';
+import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap, Palette, Keyboard, Copy } from 'lucide-react';
 import { useConfig, useUpdateConfig, useQuickLaunchConfig, useSetQuickLaunchConfig, useDeleteQuickLaunchConfig, useImages, useVmBaseImages } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
-import { downloadGlobalSshKey, regenerateSshKey, getSshKeyInfo, pushSshKeyToVms } from '../api/client';
+import { downloadGlobalSshKey, regenerateSshKey, getSshKeyInfo } from '../api/client';
 import * as api from '../api/client';
 import type { ModelOption, BackendStatus, QuickLaunchConfig } from '../api/client';
 import { CloudBackendsSettings } from './settings/CloudBackendsSettings';
@@ -28,7 +28,7 @@ export function Settings() {
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
 
   // SSH Key management state
-  const [sshKeyLoading, setSshKeyLoading] = useState<'download' | 'regenerate' | 'push' | null>(null);
+  const [sshKeyLoading, setSshKeyLoading] = useState<'download' | 'regenerate' | null>(null);
   const [sshKeyMessage, setSshKeyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [sshPublicKey, setSshPublicKey] = useState<string | null>(null);
   const [sshKeyExists, setSshKeyExists] = useState(false);
@@ -833,30 +833,6 @@ export function Settings() {
                     )}
                     Regenerate Key
                   </button>
-
-                  <button
-                    onClick={async () => {
-                      setSshKeyLoading('push');
-                      setSshKeyMessage(null);
-                      try {
-                        const result = await pushSshKeyToVms();
-                        setSshKeyMessage({ type: 'success', text: result.message });
-                      } catch (err) {
-                        setSshKeyMessage({ type: 'error', text: err instanceof Error ? err.message : 'Push failed' });
-                      } finally {
-                        setSshKeyLoading(null);
-                      }
-                    }}
-                    disabled={sshKeyLoading !== null}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)] border border-[hsl(var(--purple)/0.3)] disabled:opacity-50"
-                  >
-                    {sshKeyLoading === 'push' ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Upload className="h-3 w-3" />
-                    )}
-                    Push Key to Stopped VMs
-                  </button>
                 </div>
 
                 {sshKeyMessage && (
@@ -868,7 +844,7 @@ export function Settings() {
                 )}
 
                 <p className="text-[10px] text-[hsl(var(--text-muted))] mt-2">
-                  After regenerating, use "Push Key to Stopped VMs" to update existing VMs. Running VMs will get the new key on next reboot via MMDS.
+                  After regenerating, running VMs will get the new key on next reboot via MMDS. Stopped VMs will get the new key when started.
                 </p>
               </div>
 
