@@ -194,6 +194,8 @@ export class FirecrackerService extends EventEmitter {
    * Sync VM states with actual running processes
    */
   private async syncVmStates(): Promise<void> {
+    const STARTUP_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+
     for (const [id, vm] of this.vms) {
       if (vm.status === 'running' && vm.pid) {
         if (!this.isProcessRunning(vm.pid)) {
@@ -201,6 +203,43 @@ export class FirecrackerService extends EventEmitter {
           vm.status = 'stopped';
           vm.pid = undefined;
           vm.stoppedAt = new Date().toISOString();
+          await this.saveVmState(vm);
+        }
+      } else if (vm.status === 'booting' || vm.status === 'creating') {
+        const processAlive = vm.pid ? this.isProcessRunning(vm.pid) : false;
+        const startedAt = vm.startedAt ? new Date(vm.startedAt).getTime() : 0;
+        const elapsed = Date.now() - startedAt;
+
+        if (!processAlive) {
+          // Process is dead — mark as error so user can retry or delete
+          console.warn(`[FirecrackerService] VM ${id} was ${vm.status} but process is gone — marking as error`);
+          vm.status = 'error';
+          vm.error = `VM got stuck in '${vm.status}' state and the process exited`;
+          vm.pid = undefined;
+          if (vm.networkConfig?.tapDevice) {
+            try {
+              await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id);
+            } catch {}
+            vm.networkConfig.tapDevice = undefined;
+          }
+          await this.saveVmState(vm);
+        } else if (elapsed > STARTUP_TIMEOUT_MS) {
+          // Process is alive but startup timed out — kill and mark as error
+          console.warn(`[FirecrackerService] VM ${id} stuck in '${vm.status}' for ${Math.round(elapsed / 1000)}s — killing and marking as error`);
+          try {
+            process.kill(vm.pid!, 'SIGKILL');
+            await this.waitForProcessExit(vm.pid!, 3000);
+          } catch {}
+          vm.status = 'error';
+          vm.error = `VM startup timed out after ${Math.round(elapsed / 1000)} seconds`;
+          vm.pid = undefined;
+          if (vm.networkConfig?.tapDevice) {
+            try {
+              await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id);
+            } catch {}
+            vm.networkConfig.tapDevice = undefined;
+          }
+          this.processes.delete(id);
           await this.saveVmState(vm);
         }
       }
@@ -465,7 +504,7 @@ export class FirecrackerService extends EventEmitter {
 
     try {
       // Clean up stale resources from a previous failed start attempt
-      if (vm.status === 'error' || vm.status === 'creating') {
+      if (vm.status === 'error' || vm.status === 'creating' || vm.status === 'booting') {
         console.log(`[FirecrackerService] Cleaning up stale resources for VM ${id} (was ${vm.status})`);
         // Kill any lingering Firecracker process
         if (vm.pid && this.isProcessRunning(vm.pid)) {

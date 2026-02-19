@@ -38,6 +38,7 @@ import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox, uploadDir
 import { SandboxFileBrowser } from './SandboxFileBrowser';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
+import { isTransitioning } from './StatusIndicator';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox, useUpdateSandboxResources } from '../../hooks/useSandboxes';
 import { useVmSnapshots, useDeleteVmSnapshot, useRollbackVmToSnapshot, useCreateVm } from '../../hooks/useContainers';
 import { useConfirm } from '../ConfirmModal';
@@ -292,6 +293,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
   const isBuilding = sandbox.status === 'building' || sandbox.status === 'creating';
   const isFailed = sandbox.status === 'error';
+  const isStuckTransition = isTransitioning(sandbox.status) && sandbox.status !== 'stopping';
   const isPending = startSandbox.isPending || stopSandbox.isPending || deleteSandbox.isPending;
 
   // Determine if this is a Docker sandbox
@@ -861,10 +863,10 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                 >
                   <ScrollText className="h-3.5 w-3.5" />
                 </button>
-                {isRunning ? (
+                {(isRunning || isStuckTransition) ? (
                   <button
                     onClick={handleStop}
-                    disabled={isPending}
+                    disabled={stopSandbox.isPending}
                     className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--amber))] hover:bg-[hsl(var(--bg-elevated))] disabled:opacity-50 transition-colors"
                     title="Stop"
                   >
