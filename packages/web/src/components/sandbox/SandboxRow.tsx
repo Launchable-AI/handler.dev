@@ -27,6 +27,7 @@ import * as api from '../../api/client';
 import { SandboxFileBrowser } from './SandboxFileBrowser';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
+import { AgentBadges } from './AgentBadges';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
 import { useVmSnapshots, useDeleteVmSnapshot, useRollbackVmToSnapshot, useCreateVm } from '../../hooks/useContainers';
@@ -382,25 +383,28 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
       {/* Name */}
       {isColumnVisible('name') && (
         <td className="px-3 py-2">
-          {isEditing ? (
-            <input
-              ref={editInputRef}
-              type="text"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onBlur={handleRename}
-              onKeyDown={handleEditKeyDown}
-              className="text-sm text-[hsl(var(--text-primary))] bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--cyan))] px-1 py-0.5 outline-none w-full max-w-[150px]"
-            />
-          ) : (
-            <span
-              className={`text-sm text-[hsl(var(--text-primary))] ${canRename ? 'cursor-pointer hover:text-[hsl(var(--cyan))]' : ''}`}
-              onClick={() => canRename && setIsEditing(true)}
-              title={canRename ? 'Click to rename' : undefined}
-            >
-              {sandbox.name}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {isEditing ? (
+              <input
+                ref={editInputRef}
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={handleRename}
+                onKeyDown={handleEditKeyDown}
+                className="text-sm text-[hsl(var(--text-primary))] bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--cyan))] px-1 py-0.5 outline-none w-full max-w-[150px]"
+              />
+            ) : (
+              <span
+                className={`text-sm text-[hsl(var(--text-primary))] ${canRename ? 'cursor-pointer hover:text-[hsl(var(--cyan))]' : ''}`}
+                onClick={() => canRename && setIsEditing(true)}
+                title={canRename ? 'Click to rename' : undefined}
+              >
+                {sandbox.name}
+              </span>
+            )}
+            <AgentBadges sandboxId={sandbox.id} isRunning={isRunning} compact />
+          </div>
         </td>
       )}
 

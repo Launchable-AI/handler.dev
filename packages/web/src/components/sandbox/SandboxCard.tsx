@@ -38,6 +38,7 @@ import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox, uploadDir
 import { SandboxFileBrowser } from './SandboxFileBrowser';
 import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
+import { AgentBadges } from './AgentBadges';
 import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox, useUpdateSandboxResources } from '../../hooks/useSandboxes';
 import { useVmSnapshots, useDeleteVmSnapshot, useRollbackVmToSnapshot, useCreateVm } from '../../hooks/useContainers';
 import { useConfirm } from '../ConfirmModal';
@@ -734,6 +735,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                   {currentState.label}
                 </span>
                 <BackendBadge backend={sandbox.backend} size="sm" />
+                <AgentBadges sandboxId={sandbox.id} isRunning={isRunning} />
               </div>
               <p className="text-[10px] text-[hsl(var(--text-muted))] truncate">
                 {sandbox.image}

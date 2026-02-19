@@ -22,6 +22,7 @@ import { getDigitalOceanService, initializeDigitalOceanService } from '../servic
 import { getLinodeService, initializeLinodeService } from '../services/linode.js';
 import * as dockerService from '../services/docker.js';
 import * as containerBuilder from '../services/container-builder.js';
+import { detectAgentsInDocker, detectAgentsViaSsh } from '../services/agent-detect.js';
 import type { SandboxBackend, SandboxStatus } from '../types/sandbox.js';
 import { execFileSync } from 'child_process';
 import { validateSandboxId, validatePath, validateFilename } from '../lib/validation.js';
@@ -1368,20 +1369,24 @@ sandboxes.get('/:id/files', async (c) => {
     const os = await import('os');
 
     // Parse ls -la output into file info objects
+    // Handles both --time-style=long-iso (YYYY-MM-DD HH:MM) and standard ls date formats (Mon DD HH:MM / Mon DD  YYYY)
     const parseLsOutput = (output: string, dirPath: string) => {
       const lines = output.trim().split('\n');
       const files: Array<{ name: string; type: 'file' | 'directory'; size: number; modified: string }> = [];
+
+      // long-iso format: drwxr-xr-x 2 user group 4096 2024-01-15 10:30 dirname
+      const longIsoRegex = /^([d\-lbcps])[rwxsStT\-]{9}\s+\d+\s+\S+\s+\S+\s+([\d,]+)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s+(.+)$/;
+      // Standard format: drwxr-xr-x 2 user group 4096 Jan 15 10:30 dirname  OR  Jan 15  2024
+      const standardRegex = /^([d\-lbcps])[rwxsStT\-]{9}\s+\d+\s+\S+\s+\S+\s+([\d,]+)\s+([A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\s?\d{4}))\s+(.+)$/;
 
       for (const line of lines) {
         // Skip total line and empty lines
         if (line.startsWith('total ') || !line.trim()) continue;
 
-        // Parse ls -la --time-style=long-iso format:
-        // drwxr-xr-x 2 user group 4096 2024-01-15 10:30 dirname
-        const match = line.match(/^([d\-lbcps])([rwxsStT\-]{9})\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s+(.+)$/);
+        const match = line.match(longIsoRegex) || line.match(standardRegex);
         if (!match) continue;
 
-        const [, typeChar, , sizeStr, dateStr, name] = match;
+        const [, typeChar, sizeStr, dateStr, name] = match;
 
         // Skip . and ..
         if (name === '.' || name === '..') continue;
@@ -1392,7 +1397,7 @@ sandboxes.get('/:id/files', async (c) => {
         files.push({
           name: displayName,
           type: typeChar === 'd' ? 'directory' : 'file',
-          size: parseInt(sizeStr, 10),
+          size: parseInt(sizeStr.replace(/,/g, ''), 10),
           modified: dateStr,
         });
       }
@@ -1404,7 +1409,12 @@ sandboxes.get('/:id/files', async (c) => {
 
     if (sandbox.backend === 'docker') {
       const containerId = id.startsWith('docker-') ? id.slice(7) : id;
-      lsOutput = execFileSync('docker', ['exec', containerId, 'ls', '-la', '--time-style=long-iso', requestedPath], { encoding: 'utf-8', timeout: 30000 });
+      try {
+        lsOutput = execFileSync('docker', ['exec', containerId, 'ls', '-la', '--time-style=long-iso', requestedPath], { encoding: 'utf-8', timeout: 30000 });
+      } catch {
+        // Fallback for BusyBox/Alpine where --time-style is not supported
+        lsOutput = execFileSync('docker', ['exec', containerId, 'ls', '-la', requestedPath], { encoding: 'utf-8', timeout: 30000 });
+      }
     } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
       // Delegate to existing VM service
       const vmService = sandbox.backend === 'cloud-hypervisor'
@@ -1462,7 +1472,12 @@ sandboxes.get('/:id/files', async (c) => {
 
       try {
         const portArgs = sshPort !== 22 ? ['-p', String(sshPort)] : [];
-        lsOutput = execFileSync('ssh', ['-i', tempKeyPath, ...portArgs, ...SSH_OPTS, `${sshUser}@${sandbox.guestIp}`, 'ls', '-la', '--time-style=long-iso', requestedPath], { encoding: 'utf-8', timeout: 30000 });
+        try {
+          lsOutput = execFileSync('ssh', ['-i', tempKeyPath, ...portArgs, ...SSH_OPTS, `${sshUser}@${sandbox.guestIp}`, 'ls', '-la', '--time-style=long-iso', requestedPath], { encoding: 'utf-8', timeout: 30000 });
+        } catch {
+          // Fallback for systems where --time-style is not supported
+          lsOutput = execFileSync('ssh', ['-i', tempKeyPath, ...portArgs, ...SSH_OPTS, `${sshUser}@${sandbox.guestIp}`, 'ls', '-la', requestedPath], { encoding: 'utf-8', timeout: 30000 });
+        }
       } finally {
         fs.rmSync(tempDir, { recursive: true });
       }
@@ -1650,6 +1665,49 @@ sandboxes.get('/:id/files/download', async (c) => {
     console.error('[SandboxRoutes] Download error:', error);
     const message = error instanceof Error ? error.message : 'Failed to download file';
     return c.json({ error: message }, 500);
+  }
+});
+
+// ============ Agent Detection ============
+
+sandboxes.get('/:id/agents', async (c) => {
+  try {
+    const id = c.req.param('id');
+    if (!validateSandboxId(id)) {
+      return c.json({ error: 'Invalid sandbox ID' }, 400);
+    }
+
+    const service = await ensureSandboxServiceInitialized();
+    const sandbox = await service.get(id);
+
+    if (!sandbox) {
+      return c.json({ error: 'Sandbox not found' }, 404);
+    }
+
+    if (sandbox.status !== 'running') {
+      return c.json({ agents: [] });
+    }
+
+    if (sandbox.backend === 'docker') {
+      const containerId = id.startsWith('docker-') ? id.slice(7) : id;
+      const agents = await detectAgentsInDocker(containerId, id);
+      return c.json({ agents });
+    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+      if (!sandbox.guestIp) {
+        return c.json({ agents: [] });
+      }
+      const path = await import('path');
+      const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+      const keyPath = path.join(dataDir, 'ssh-keys', `${id}_ed25519`);
+      const agents = await detectAgentsViaSsh(sandbox.guestIp, 22, 'agent', keyPath, id);
+      return c.json({ agents });
+    }
+
+    // Other backends: return empty for now
+    return c.json({ agents: [] });
+  } catch (error) {
+    console.error('[SandboxRoutes] Agent detection error:', error);
+    return c.json({ agents: [] });
   }
 });
 

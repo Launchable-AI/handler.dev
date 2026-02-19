@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap, Palette } from 'lucide-react';
+import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap, Palette, Keyboard } from 'lucide-react';
 import { useConfig, useUpdateConfig, useQuickLaunchConfig, useSetQuickLaunchConfig, useDeleteQuickLaunchConfig, useImages, useVmBaseImages } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
 import * as api from '../api/client';
@@ -8,8 +8,9 @@ import { CloudBackendsSettings } from './settings/CloudBackendsSettings';
 import { FirecrackerInstallModal } from './settings/FirecrackerInstallModal';
 import { GitHubSettings } from './settings/GitHubSettings';
 import { AppearanceSettings } from './settings/AppearanceSettings';
+import { KeyboardShortcutsSettings } from './settings/KeyboardShortcutsSettings';
 
-type SettingsTab = 'appearance' | 'general' | 'quick-launch' | 'self-hosting' | 'ai' | 'backends' | 'github';
+type SettingsTab = 'appearance' | 'general' | 'quick-launch' | 'self-hosting' | 'ai' | 'backends' | 'github' | 'keyboard';
 type BackendsView = 'local' | 'cloud';
 
 export function Settings() {
@@ -288,6 +289,17 @@ export function Settings() {
         >
           <Github className="h-3.5 w-3.5" />
           GitHub
+        </button>
+        <button
+          onClick={() => setActiveTab('keyboard')}
+          className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
+            activeTab === 'keyboard'
+              ? 'border-[hsl(var(--cyan))] text-[hsl(var(--cyan))]'
+              : 'border-transparent text-[hsl(var(--text-secondary))] hover:text-[hsl(var(--text-primary))]'
+          }`}
+        >
+          <Keyboard className="h-3.5 w-3.5" />
+          Keyboard
         </button>
       </div>
 
@@ -965,6 +977,10 @@ export function Settings() {
 
           {activeTab === 'github' && (
             <GitHubSettings />
+          )}
+
+          {activeTab === 'keyboard' && (
+            <KeyboardShortcutsSettings />
           )}
 
         </div>

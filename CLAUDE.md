@@ -163,6 +163,29 @@ Key files:
 
 When adding new `execSync` calls that handle user input, always use `execFileSync` with an argument array instead. When adding new API endpoints that accept IDs or paths, apply the validators from `validation.ts`.
 
+### Keyboard Shortcuts
+
+A configurable keyboard shortcut system for terminal tab cycling and future actions:
+- `packages/web/src/lib/keyboard-shortcuts.ts` — Shortcut definitions, localStorage storage, combo matching/formatting
+- `packages/web/src/hooks/useKeyboardShortcuts.ts` — Global `window` keydown listener (capture phase) that intercepts before xterm/browser
+- `packages/web/src/components/settings/KeyboardShortcutsSettings.tsx` — Settings panel for enable/disable toggle, remapping (click to record), and reset
+- Settings > Keyboard tab in `packages/web/src/components/Settings.tsx`
+
+Default shortcuts:
+- `Ctrl+]` — Next terminal tab
+- `Ctrl+[` — Previous terminal tab
+
+User overrides stored in localStorage (`handler:shortcuts-enabled`, `handler:shortcuts`). The xterm `attachCustomKeyEventHandler` prevents the terminal from consuming shortcut keys. Add new shortcuts by appending to `SHORTCUT_DEFINITIONS` in `keyboard-shortcuts.ts`.
+
+### Agent Detection
+
+Detects AI coding agents (Claude Code, Codex, Gemini CLI, OpenCode) installed/running inside sandboxes:
+- `packages/server/src/services/agent-detect.ts` — Detection service using `command -v` + `pgrep -af`, with 15s in-memory cache
+- `GET /api/sandboxes/:id/agents` — Endpoint in `packages/server/src/routes/sandboxes.ts`
+- `packages/web/src/components/sandbox/AgentBadges.tsx` — SVG logo badges (grayed = installed, colored + pulse = running)
+- `packages/web/src/hooks/useSandboxes.ts` — `useSandboxAgents()` hook (30s polling, only for running sandboxes)
+- Badges displayed in `SandboxCard`, `SandboxCardCompact`, and `SandboxRow`
+
 ### Key tech choices
 
 - Tailwind CSS v4 (beta) for styling

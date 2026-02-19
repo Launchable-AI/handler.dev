@@ -3821,3 +3821,17 @@ export async function startWork(options: StartWorkOptions): Promise<WorkResult> 
 export async function getWorkStatus(sandboxId: string): Promise<{ status: string; ready: boolean }> {
   return fetchAPI(`/work/status/${sandboxId}`);
 }
+
+// ============ Agent Detection ============
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  installed: boolean;
+  running: boolean;
+}
+
+export async function detectSandboxAgents(id: string): Promise<AgentInfo[]> {
+  const result = await fetchAPI<{ agents: AgentInfo[] }>(`/sandboxes/${encodeURIComponent(id)}/agents`);
+  return result.agents;
+}

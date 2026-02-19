@@ -15,6 +15,8 @@ import {
 import '@xterm/xterm/css/xterm.css';
 import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../lib/terminal-themes';
 import { useTheme } from '../hooks/useTheme';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { matchesCombo, getCombo } from '../lib/keyboard-shortcuts';
 
 // Types
 export type PanelPosition = 'right' | 'bottom';
@@ -208,6 +210,19 @@ export function TerminalPanelProvider({ children }: { children: React.ReactNode 
   const updateTabState = useCallback((tabId: string, state: Partial<TerminalTab>) => {
     setTabs(prev => prev.map(t => t.id === tabId ? { ...t, ...state } : t));
   }, []);
+
+  useKeyboardShortcuts({
+    'terminal.nextTab': () => {
+      if (!isOpen || tabs.length <= 1) return;
+      const idx = tabs.findIndex(t => t.id === activeTabId);
+      setActiveTabId(tabs[(idx + 1) % tabs.length].id);
+    },
+    'terminal.prevTab': () => {
+      if (!isOpen || tabs.length <= 1) return;
+      const idx = tabs.findIndex(t => t.id === activeTabId);
+      setActiveTabId(tabs[(idx - 1 + tabs.length) % tabs.length].id);
+    },
+  });
 
   return (
     <TerminalPanelContext.Provider value={{
@@ -682,6 +697,15 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
     // Open terminal
     term.open(terminalRef.current);
     xtermRef.current = term;
+
+    // Prevent xterm from consuming our global shortcut keys
+    term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      if (matchesCombo(event, getCombo('terminal.nextTab')) ||
+          matchesCombo(event, getCombo('terminal.prevTab'))) {
+        return false;
+      }
+      return true;
+    });
 
     // Fit helper that uses current wsRef
     const fitAndResize = () => {

@@ -24,6 +24,7 @@ import type { Sandbox, VmMeta } from '../../api/client';
 import * as api from '../../api/client';
 import { uploadFileToSandbox, uploadDirectoryToSandbox } from '../../api/client';
 import { BackendBadge } from './BackendBadge';
+import { AgentBadges } from './AgentBadges';
 import { SandboxFileBrowser } from './SandboxFileBrowser';
 import { SandboxLogViewer } from './SandboxLogViewer';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
@@ -307,6 +308,7 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
           )}
         </div>
         <BackendBadge backend={sandbox.backend} size="sm" />
+        <AgentBadges sandboxId={sandbox.id} isRunning={isRunning} compact />
       </div>
 
       {/* Specs */}

@@ -427,6 +427,19 @@ export function useSandboxFiles(id: string, path: string = '/', enabled: boolean
 }
 
 /**
+ * Detect AI agents installed/running in a sandbox
+ */
+export function useSandboxAgents(sandboxId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['sandbox-agents', sandboxId],
+    queryFn: () => api.detectSandboxAgents(sandboxId),
+    enabled: enabled && !!sandboxId,
+    staleTime: 15_000,
+    refetchInterval: enabled ? 30_000 : false,
+  });
+}
+
+/**
  * Fetch sandbox logs
  */
 export function useSandboxLogs(id: string, enabled: boolean = true) {
