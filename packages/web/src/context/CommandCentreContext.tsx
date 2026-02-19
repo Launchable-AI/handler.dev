@@ -36,7 +36,7 @@ const initialState: CommandCentreState = {
 type Action =
   | { type: 'CREATE_SESSION'; payload: TerminalSession }
   | { type: 'CLOSE_SESSION'; payload: string }
-  | { type: 'UPDATE_SESSION_STATUS'; payload: { id: string; status: TerminalSession['status']; errorMessage?: string } }
+  | { type: 'UPDATE_SESSION_STATUS'; payload: { id: string; status: TerminalSession['status']; errorMessage?: string; tmuxState?: TerminalSession['tmuxState'] } }
   | { type: 'SET_ACTIVE_SESSION'; payload: string | null }
   | { type: 'SET_SPLIT_LAYOUT'; payload: SplitLayout }
   | { type: 'FOCUS_SESSION'; payload: string }
@@ -94,7 +94,12 @@ function commandCentreReducer(state: CommandCentreState, action: Action): Comman
         ...state,
         sessions: state.sessions.map(s =>
           s.id === action.payload.id
-            ? { ...s, status: action.payload.status, errorMessage: action.payload.errorMessage }
+            ? {
+                ...s,
+                status: action.payload.status,
+                errorMessage: action.payload.errorMessage,
+                ...(action.payload.tmuxState !== undefined ? { tmuxState: action.payload.tmuxState } : {}),
+              }
             : s
         ),
       };
@@ -316,9 +321,10 @@ export function CommandCentreProvider({ children }: { children: ReactNode }) {
   const updateSessionStatus = useCallback((
     sessionId: string,
     status: TerminalSession['status'],
-    errorMessage?: string
+    errorMessage?: string,
+    tmuxState?: TerminalSession['tmuxState'],
   ) => {
-    dispatch({ type: 'UPDATE_SESSION_STATUS', payload: { id: sessionId, status, errorMessage } });
+    dispatch({ type: 'UPDATE_SESSION_STATUS', payload: { id: sessionId, status, errorMessage, tmuxState } });
   }, []);
 
   const setActiveSession = useCallback((sessionId: string | null) => {

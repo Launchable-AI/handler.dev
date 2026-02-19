@@ -10,6 +10,7 @@ export interface TerminalSession {
   createdAt: Date;
   status: 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
   errorMessage?: string;
+  tmuxState?: 'connected' | 'detached' | 'unavailable';
   // Future: agent status
   agentStatus?: {
     type: 'claude-code' | 'cursor' | 'custom';
@@ -79,7 +80,7 @@ export interface CommandCentreContextValue {
   // Session management
   createSession: (type: 'vm' | 'container', targetId: string, targetName: string, ip?: string) => void;
   closeSession: (sessionId: string) => void;
-  updateSessionStatus: (sessionId: string, status: TerminalSession['status'], errorMessage?: string) => void;
+  updateSessionStatus: (sessionId: string, status: TerminalSession['status'], errorMessage?: string, tmuxState?: TerminalSession['tmuxState']) => void;
 
   // Focus & selection
   setActiveSession: (sessionId: string | null) => void;
