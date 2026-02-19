@@ -7,7 +7,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { spawn, ChildProcess, execSync } from 'child_process';
+import { spawn, ChildProcess, execSync, execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -290,6 +290,48 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
+   * Kill a process and its entire process group.
+   * Firecracker is spawned with detached:true (setsid), so the PID is also the PGID.
+   * Killing the group ensures no child processes (sg, shell) survive.
+   */
+  private killProcessGroup(pid: number, signal: NodeJS.Signals = 'SIGKILL'): void {
+    // Try group kill first (negative PID)
+    try {
+      process.kill(-pid, signal);
+    } catch {
+      // Group kill failed (maybe not a group leader), fall back to individual
+      try {
+        process.kill(pid, signal);
+      } catch {}
+    }
+  }
+
+  /**
+   * Find any Firecracker processes using a specific API socket path.
+   * Scans /proc for processes whose cmdline matches the socket path.
+   * Returns PIDs of matching processes (excludes our own PID).
+   */
+  private findFirecrackerPids(apiSocketPath: string): number[] {
+    const pids: number[] = [];
+    try {
+      const procDirs = fs.readdirSync('/proc').filter(d => /^\d+$/.test(d));
+      for (const pidStr of procDirs) {
+        const pid = parseInt(pidStr, 10);
+        if (pid === process.pid) continue;
+        try {
+          const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf-8');
+          if (cmdline.includes('firecracker') && cmdline.includes(apiSocketPath)) {
+            pids.push(pid);
+          }
+        } catch {
+          // Process may have exited between readdir and readFile
+        }
+      }
+    } catch {}
+    return pids;
+  }
+
+  /**
    * Save VM state to disk
    */
   private async saveVmState(vm: FirecrackerVmState): Promise<void> {
@@ -503,29 +545,45 @@ export class FirecrackerService extends EventEmitter {
     const logFile = path.join(vmDir, 'firecracker.log');
 
     try {
-      // Clean up stale resources from a previous failed start attempt
-      if (vm.status === 'error' || vm.status === 'creating' || vm.status === 'booting') {
-        console.log(`[FirecrackerService] Cleaning up stale resources for VM ${id} (was ${vm.status})`);
-        // Kill any lingering Firecracker process
-        if (vm.pid && this.isProcessRunning(vm.pid)) {
-          try {
-            process.kill(vm.pid, 'SIGKILL');
-            await this.waitForProcessExit(vm.pid, 3000);
-          } catch {}
-        }
-        // Release stale TAP device so it can be re-allocated cleanly
-        if (vm.networkConfig.tapDevice) {
-          try {
-            await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id);
-          } catch {}
-          vm.networkConfig.tapDevice = undefined;
-          vm.networkConfig.guestIp = undefined;
-          vm.networkConfig.mode = 'none';
-          vm.guestIp = undefined;
-        }
+      // Kill ALL Firecracker processes for this VM — by saved PID and by scanning /proc.
+      // The saved PID may be stale (server restart, PID reuse) so we also scan for any
+      // process using this VM's API socket path.
+      if (vm.pid && this.isProcessRunning(vm.pid)) {
+        console.log(`[FirecrackerService] Killing lingering Firecracker process ${vm.pid} for VM ${id} (was ${vm.status})`);
+        this.killProcessGroup(vm.pid);
+        await this.waitForProcessExit(vm.pid, 3000);
         this.processes.delete(id);
         vm.pid = undefined;
+      }
+
+      // Scan /proc for orphaned Firecracker processes using this VM's socket path.
+      // This catches processes that survived a server restart (detached + unref'd).
+      const orphanPids = this.findFirecrackerPids(apiSocket);
+      if (orphanPids.length > 0) {
+        console.warn(`[FirecrackerService] Found ${orphanPids.length} orphaned Firecracker process(es) for VM ${id}: ${orphanPids.join(', ')}`);
+        for (const pid of orphanPids) {
+          this.killProcessGroup(pid);
+        }
+        // Wait for orphans to die
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      if (vm.status === 'error' || vm.status === 'creating' || vm.status === 'booting') {
+        console.log(`[FirecrackerService] Cleaning up stale resources for VM ${id} (was ${vm.status})`);
         vm.error = undefined;
+      }
+
+      // Always release stale TAP before re-allocating — even for stopped VMs.
+      // syncVmStates marks dead VMs as 'stopped' without releasing the TAP, so the
+      // device may be persistent but stale (no longer on the bridge, wrong owner, etc).
+      if (vm.networkConfig.tapDevice) {
+        try {
+          await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id);
+        } catch {}
+        vm.networkConfig.tapDevice = undefined;
+        vm.networkConfig.guestIp = undefined;
+        vm.networkConfig.mode = 'none';
+        vm.guestIp = undefined;
       }
 
       // Re-allocate TAP device if we don't have one (e.g., VM was stopped)
@@ -1213,16 +1271,30 @@ export class FirecrackerService extends EventEmitter {
 
       // Kill process if still running
       if (vm.pid && this.isProcessRunning(vm.pid)) {
-        process.kill(vm.pid, 'SIGTERM');
+        try { process.kill(vm.pid, 'SIGTERM'); } catch {}
         await this.waitForProcessExit(vm.pid, 3000);
+        // SIGKILL the process group if SIGTERM didn't work
+        if (this.isProcessRunning(vm.pid)) {
+          console.warn(`[FirecrackerService] VM ${id} did not exit after SIGTERM, sending SIGKILL to process group`);
+          this.killProcessGroup(vm.pid);
+          await this.waitForProcessExit(vm.pid, 3000);
+        }
       }
     } catch (error) {
       console.warn(`[FirecrackerService] Graceful shutdown failed for VM ${id}, forcing kill`);
       if (vm.pid) {
-        try {
-          process.kill(vm.pid, 'SIGKILL');
-        } catch {
-          // Process may already be dead
+        this.killProcessGroup(vm.pid);
+        await this.waitForProcessExit(vm.pid, 3000);
+      }
+    }
+
+    // Also kill any orphaned processes using this VM's socket path
+    if (vm.apiSocket) {
+      const orphanPids = this.findFirecrackerPids(vm.apiSocket);
+      for (const pid of orphanPids) {
+        if (pid !== vm.pid) {
+          console.warn(`[FirecrackerService] Killing orphaned Firecracker process ${pid} for VM ${id}`);
+          this.killProcessGroup(pid);
         }
       }
     }

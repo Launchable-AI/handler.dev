@@ -8,7 +8,7 @@
  * Installation: sudo ./scripts/user/install-tap-helper.sh --setup-bridge
  */
 
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -285,11 +285,11 @@ export class TapHelper {
     console.log(`[TapHelper] Creating TAP ${tapName} for VM ${vmId}`);
 
     // Retry creation with backoff — the kernel may still be cleaning up the old device
-    const maxRetries = 3;
+    const maxRetries = 4;
     let lastError = '';
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       if (attempt > 0) {
-        const delay = attempt * 500;
+        const delay = 1000 * attempt;
         console.log(`[TapHelper] Retrying TAP creation (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms`);
         await new Promise(resolve => setTimeout(resolve, delay));
 
@@ -300,6 +300,14 @@ export class TapHelper {
             await this.runHelper(['delete', '--name', tapName]);
             await this.waitForDeviceRemoval(tapName);
           } catch {}
+          // Last resort: use ip link delete if helper couldn't remove it
+          if (this.deviceExists(tapName)) {
+            console.warn(`[TapHelper] Helper delete failed, trying ip link delete for ${tapName}`);
+            try {
+              execFileSync('ip', ['link', 'delete', tapName], { timeout: 5000 });
+              await this.waitForDeviceRemoval(tapName);
+            } catch {}
+          }
         }
       }
 
@@ -344,7 +352,7 @@ export class TapHelper {
    * Wait for a TAP device to disappear from the system after deletion.
    * The kernel may take a moment to fully clean up the device.
    */
-  private async waitForDeviceRemoval(tapName: string, timeoutMs: number = 2000): Promise<boolean> {
+  private async waitForDeviceRemoval(tapName: string, timeoutMs: number = 5000): Promise<boolean> {
     const interval = 100;
     const maxAttempts = Math.ceil(timeoutMs / interval);
     for (let i = 0; i < maxAttempts; i++) {
