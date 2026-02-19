@@ -506,9 +506,9 @@ export async function applyDockerTmuxStatusBar(show: boolean): Promise<void> {
         const encoded = Buffer.from(tmuxThemeContent).toString('base64');
         cmd = `mkdir -p ~/.config/handler && echo ${encoded} | base64 -d > ~/.config/handler/tmux-theme.conf && tmux source-file ~/.config/handler/tmux-theme.conf`;
       }
-      execAsync(`docker exec ${session.containerId} bash -c '${cmd.replace(/'/g, "'\\''")}'`)
+      safeExec('docker', ['exec', session.containerId, 'bash', '-c', cmd])
         .then(() => console.log(`[Terminal] Applied tmux theme (status ${show ? 'on' : 'off'}) for session ${id}`))
-        .catch((err) => console.warn(`[Terminal] Failed to apply tmux theme for session ${id}:`, err.message || err));
+        .catch((err: unknown) => console.warn(`[Terminal] Failed to apply tmux theme for session ${id}:`, err instanceof Error ? err.message : err));
     }
   }
 }
