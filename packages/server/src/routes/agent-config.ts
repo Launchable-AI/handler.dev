@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
+import { PROJECT_ROOT } from '../lib/paths.js';
 import * as agentConfigService from '../services/agent-config.js';
 import { injectFilesIntoSandbox } from '../services/sandbox-inject.js';
 import type { FileToInject } from '../services/sandbox-inject.js';
@@ -188,8 +188,6 @@ const KNOWN_MARKETPLACES: Array<{ owner: string; repo: string; branch: string; p
 
 // ============ Custom Marketplace Persistence ============
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const DATA_DIR = join(PROJECT_ROOT, 'data');
 const CUSTOM_MARKETPLACES_FILE = join(DATA_DIR, 'plugin-marketplaces.json');
 

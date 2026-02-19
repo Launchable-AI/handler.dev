@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { PROJECT_ROOT } from '../lib/paths.js';
 
 export interface QuickFile {
   id: string;
@@ -13,8 +13,6 @@ export interface QuickFile {
   updatedAt: string;
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const DATA_FILE = join(PROJECT_ROOT, 'data', 'quick-files.json');
 
 interface QuickFilesData {

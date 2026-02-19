@@ -6,8 +6,7 @@
  */
 
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { execSync } from 'child_process';
@@ -25,9 +24,8 @@ import type {
 import type { SandboxBackend } from '../types/sandbox.js';
 import { getServerByName, type MCPServer } from './mcp-registry.js';
 import { getSandboxService } from './sandbox/index.js';
+import { PROJECT_ROOT } from '../lib/paths.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const DATA_DIR = join(PROJECT_ROOT, 'data');
 const DEPLOYMENTS_FILE = join(DATA_DIR, 'mcp-deployments.json');
 

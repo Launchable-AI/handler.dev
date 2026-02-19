@@ -8,13 +8,11 @@
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { execSync } from 'child_process';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { getConfig, setConfig } from './config.js';
+import { PROJECT_ROOT } from '../lib/paths.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const SSH_KEYS_DIR = join(PROJECT_ROOT, 'data', 'ssh-keys');
 const LINODE_SSH_KEY_NAME = 'linode-key';
 export const LINODE_SSH_KEY_PATH = join(SSH_KEYS_DIR, LINODE_SSH_KEY_NAME);

@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod';
+import { DATA_DIR } from '../lib/paths.js';
 
 export type VmStatus = 'creating' | 'booting' | 'running' | 'paused' | 'stopped' | 'error';
 
@@ -188,9 +189,9 @@ export interface HypervisorConfig {
 
 // Default configuration
 export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = {
-  dataDir: `${process.env.HOME}/.local/share/handler/vms`,
-  baseImagesDir: `${process.env.HOME}/.local/share/handler/base-images`,
-  sshKeysDir: `${process.env.HOME}/.local/share/handler/ssh-keys`,
+  dataDir: `${DATA_DIR}/vms`,
+  baseImagesDir: `${DATA_DIR}/base-images`,
+  sshKeysDir: `${DATA_DIR}/ssh-keys`,
   hypervisorBinary: '/usr/bin/cloud-hypervisor',
   sshPortRangeStart: 10022,
   sshPortRangeEnd: 10122,

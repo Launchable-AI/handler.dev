@@ -1,10 +1,8 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { PROJECT_ROOT, DATA_DIR } from '../lib/paths.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
-const CONFIG_FILE = join(PROJECT_ROOT, 'data', 'config.json');
+const CONFIG_FILE = join(DATA_DIR, 'config.json');
 
 export interface DaytonaConfig {
   apiUrl: string;      // e.g., https://app.daytona.io/api
@@ -136,7 +134,7 @@ const DEFAULT_CONFIG: AppConfig = {
   sshHost: '', // Empty means localhost
   sshJumpHost: '', // Empty means no jump host
   sshJumpHostKeyPath: '', // Empty means use default key
-  dataDirectory: join(PROJECT_ROOT, 'data'),
+  dataDirectory: DATA_DIR,
   cloudBackends: undefined, // No cloud backends configured by default
 };
 

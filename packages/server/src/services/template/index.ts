@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
+import { DATA_DIR } from '../../lib/paths.js';
 import type {
   Template,
   TemplateType,
@@ -507,7 +508,7 @@ let templateServiceInstance: TemplateService | null = null;
 export function getTemplateService(dataDir?: string): TemplateService {
   if (!templateServiceInstance) {
     if (!dataDir) {
-      dataDir = `${process.env.HOME}/.local/share/handler`;
+      dataDir = DATA_DIR;
     }
     templateServiceInstance = new TemplateService(dataDir);
   }

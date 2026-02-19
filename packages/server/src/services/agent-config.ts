@@ -1,10 +1,8 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { PROJECT_ROOT } from '../lib/paths.js';
 import type { AgentConfigPreset, MCPServerConfig, SkillConfig, RuleConfig, HookMatcher, HookEvent, SubagentConfig, PluginRef, PluginMarketplace } from '../types/agent-config.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const CONFIG_FILE = join(PROJECT_ROOT, 'data', 'agent-configs.json');
 
 interface AgentConfigsData {

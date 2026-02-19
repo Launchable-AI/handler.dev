@@ -7,8 +7,7 @@
 
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import {
   EC2Client,
   RunInstancesCommand,
@@ -41,10 +40,9 @@ import {
   type _InstanceType,
 } from '@aws-sdk/client-ec2';
 import { getConfig, setConfig } from './config.js';
+import { PROJECT_ROOT } from '../lib/paths.js';
 
 // Path to store SSH keys (same location as Docker containers use)
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const SSH_KEYS_DIR = join(PROJECT_ROOT, 'data', 'ssh-keys');
 const AWS_SSH_KEY_NAME = 'handler-key';
 export const AWS_SSH_KEY_PATH = join(SSH_KEYS_DIR, `${AWS_SSH_KEY_NAME}.pem`);

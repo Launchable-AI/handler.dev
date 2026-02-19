@@ -32,7 +32,7 @@ const sessions = new Map<string, VmTerminalSession>();
 
 // Get SSH key path
 // SSH keys are stored at dataDir/ssh-keys/id_ed25519
-// dataDir should be the handler data directory (e.g., ~/.local/share/handler)
+// dataDir should be the handler data directory (e.g., {PROJECT_ROOT}/data)
 function getSshKeyPath(dataDir: string): string {
   return path.join(dataDir, 'ssh-keys', 'id_ed25519');
 }

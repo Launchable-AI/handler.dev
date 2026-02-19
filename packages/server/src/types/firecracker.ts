@@ -3,8 +3,8 @@
  * Types for the Firecracker microVM hypervisor integration
  */
 
+import { DATA_DIR } from '../lib/paths.js';
 import * as path from 'path';
-import * as os from 'os';
 
 // ============================================================================
 // Configuration Types
@@ -42,9 +42,9 @@ export interface FirecrackerConfig {
  * Default Firecracker configuration
  */
 export const DEFAULT_FIRECRACKER_CONFIG: FirecrackerConfig = {
-  dataDir: path.join(os.homedir(), '.local/share/handler/firecracker-vms'),
-  baseImagesDir: path.join(os.homedir(), '.local/share/handler/base-images'),
-  sshKeysDir: path.join(os.homedir(), '.local/share/handler/ssh-keys'),
+  dataDir: path.join(DATA_DIR, 'firecracker-vms'),
+  baseImagesDir: path.join(DATA_DIR, 'base-images'),
+  sshKeysDir: path.join(DATA_DIR, 'ssh-keys'),
   firecrackerBinary: '/usr/local/bin/firecracker',
   jailerBinary: '/usr/local/bin/jailer',
   sshPortRangeStart: 10122,  // Different range from cloud-hypervisor (10022-10122)

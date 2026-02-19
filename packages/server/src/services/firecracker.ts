@@ -1012,6 +1012,7 @@ export class FirecrackerService extends EventEmitter {
       }
 
       // 9. Start the VM
+      console.log(`[FirecrackerService] VM ${id} API configured in ${Date.now() - startTime}ms, sending InstanceStart`);
       await this.sendApiRequest(apiSocket, 'PUT', '/actions', {
         action_type: 'InstanceStart',
       });
@@ -1019,17 +1020,21 @@ export class FirecrackerService extends EventEmitter {
       vm.status = 'booting';
       await this.saveVmState(vm);
       this.emit('vm:booting', vm);
-      console.log(`[FirecrackerService] VM ${id} is booting`);
+      console.log(`[FirecrackerService] VM ${id} is booting (InstanceStart sent at ${Date.now() - startTime}ms)`);
 
       // Wait for SSH to be reachable
+      console.log(`[FirecrackerService] VM ${id} waiting for SSH at ${vm.networkConfig.guestIp || '127.0.0.1'}:${vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort}`);
       await this.waitForSshReady(id);
+      console.log(`[FirecrackerService] VM ${id} SSH ready in ${Date.now() - startTime}ms`);
 
       // Configure hostname in /etc/hosts to avoid sudo warnings
       await this.configureHostname(id);
+      console.log(`[FirecrackerService] VM ${id} post-boot config done in ${Date.now() - startTime}ms`);
 
       // Mount attached volumes inside the guest
       if (vm.volumes && vm.volumes.length > 0) {
         await this.mountVolumesInGuest(id);
+        console.log(`[FirecrackerService] VM ${id} volumes mounted in ${Date.now() - startTime}ms`);
       }
 
       vm.status = 'running';
@@ -1155,26 +1160,62 @@ export class FirecrackerService extends EventEmitter {
     const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
     const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
 
-    return new Promise((resolve, reject) => {
-      const check = async () => {
-        try {
-          // Use agent user - the rootfs has SSH keys set up for agent
-          // IdentitiesOnly=yes prevents SSH from trying all agent keys first
-          const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes agent@${host} -p ${port} 'echo ready'`;
-          execSync(sshCmd, { stdio: 'pipe', timeout: 10000 });
-          resolve();
-          return;
-        } catch {
-          if (Date.now() - startTime > timeoutMs) {
-            reject(new Error('Timeout waiting for SSH'));
-            return;
-          }
-          setTimeout(check, 2000);
+    // Phase 1: Wait for TCP port to accept connections (fast — no SSH overhead)
+    let portOpen = false;
+    let attempts = 0;
+    while (!portOpen) {
+      attempts++;
+      if (Date.now() - startTime > timeoutMs) {
+        throw new Error(`Timeout waiting for SSH port ${port} on ${host} (${attempts} attempts over ${Math.round((Date.now() - startTime) / 1000)}s)`);
+      }
+      portOpen = await new Promise<boolean>(resolve => {
+        const sock = net.createConnection({ host: host!, port, timeout: 2000 });
+        sock.on('connect', () => { sock.destroy(); resolve(true); });
+        sock.on('error', () => { sock.destroy(); resolve(false); });
+        sock.on('timeout', () => { sock.destroy(); resolve(false); });
+      });
+      if (!portOpen) {
+        if (attempts % 5 === 0) {
+          console.log(`[FirecrackerService] VM ${vmId} SSH port not open yet (attempt ${attempts}, ${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
         }
-      };
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    console.log(`[FirecrackerService] VM ${vmId} SSH port open after ${Math.round((Date.now() - startTime) / 1000)}s (${attempts} attempts)`);
 
-      check();
-    });
+    // Phase 2: Wait for SSH auth to succeed (port is open, now verify SSH works)
+    let sshAttempts = 0;
+    while (true) {
+      sshAttempts++;
+      try {
+        execFileSync('ssh', [
+          '-i', sshKeyPath,
+          '-o', 'StrictHostKeyChecking=no',
+          '-o', 'UserKnownHostsFile=/dev/null',
+          '-o', 'ConnectTimeout=3',
+          '-o', 'IdentitiesOnly=yes',
+          `agent@${host}`,
+          '-p', port!.toString(),
+          'echo ready',
+        ], { stdio: 'pipe', timeout: 8000 });
+        return; // SSH is ready
+      } catch (err: unknown) {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        if (sshAttempts <= 3 || sshAttempts % 10 === 0) {
+          // Log the actual SSH error so we can diagnose auth failures
+          const stderr = (err as { stderr?: Buffer })?.stderr?.toString?.()?.trim() || '';
+          console.warn(`[FirecrackerService] VM ${vmId} SSH attempt ${sshAttempts} failed (${elapsed}s): ${stderr || (err as Error)?.message || 'unknown error'}`);
+          if (sshAttempts === 1) {
+            console.log(`[FirecrackerService] VM ${vmId} SSH key: ${sshKeyPath} (exists: ${fs.existsSync(sshKeyPath)})`);
+          }
+        }
+        if (Date.now() - startTime > timeoutMs) {
+          const stderr = (err as { stderr?: Buffer })?.stderr?.toString?.()?.trim() || '';
+          throw new Error(`Timeout waiting for SSH on ${host}:${port} after ${elapsed}s (${sshAttempts} attempts). Last error: ${stderr}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
   }
 
   /**
@@ -1192,9 +1233,16 @@ export class FirecrackerService extends EventEmitter {
     try {
       // Add hostname to /etc/hosts if not already present
       const hostsCmd = `grep -q "127.0.0.1.*${hostname}" /etc/hosts || echo "127.0.0.1 ${hostname}" | sudo tee -a /etc/hosts >/dev/null`;
-      const sshCmd = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o IdentitiesOnly=yes agent@${host} -p ${port} '${hostsCmd}'`;
-
-      execSync(sshCmd, { stdio: 'pipe', timeout: 15000 });
+      execFileSync('ssh', [
+        '-i', sshKeyPath,
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
+        '-o', 'ConnectTimeout=5',
+        '-o', 'IdentitiesOnly=yes',
+        `agent@${host}`,
+        '-p', port!.toString(),
+        hostsCmd,
+      ], { stdio: 'pipe', timeout: 10000 });
       console.log(`[FirecrackerService] Configured hostname ${hostname} in /etc/hosts`);
     } catch (error) {
       console.warn(`[FirecrackerService] Failed to configure hostname:`, error);

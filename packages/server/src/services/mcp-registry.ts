@@ -4,12 +4,10 @@
  */
 
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { existsSync } from 'fs';
+import { PROJECT_ROOT } from '../lib/paths.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const DATA_DIR = join(PROJECT_ROOT, 'data');
 const MCP_REGISTRY_FILE = join(DATA_DIR, 'mcp-registry.json');
 const MCP_FAVORITES_FILE = join(DATA_DIR, 'mcp-favorites.json');

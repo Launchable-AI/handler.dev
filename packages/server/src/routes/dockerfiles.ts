@@ -4,6 +4,7 @@ import { readdir, readFile, writeFile, unlink, mkdir, copyFile, stat, rename } f
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { PROJECT_ROOT } from '../lib/paths.js';
 import { SaveDockerfileSchema, RenameDockerfileSchema } from '../types/index.js';
 import * as dockerService from '../services/docker.js';
 import { getPublicKey } from '../services/container-builder.js';
@@ -16,7 +17,6 @@ interface DockerfileInfo {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const DOCKERFILES_DIR = join(PROJECT_ROOT, 'data', 'dockerfiles');
 const TEMPLATES_DIR = join(__dirname, '..', '..', 'templates');
 

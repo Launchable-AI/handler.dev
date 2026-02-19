@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { VmVolume, VmVolumeInfo } from '../types/vm.js';
+import { DATA_DIR } from '../lib/paths.js';
 
 export class VmVolumeService extends EventEmitter {
   private volumesDir: string;
@@ -523,7 +524,7 @@ let vmVolumeService: VmVolumeService | null = null;
 export function getVmVolumeService(dataDir?: string): VmVolumeService {
   if (!vmVolumeService) {
     if (!dataDir) {
-      dataDir = `${process.env.HOME}/.local/share/handler`;
+      dataDir = DATA_DIR;
     }
     vmVolumeService = new VmVolumeService(dataDir);
   }

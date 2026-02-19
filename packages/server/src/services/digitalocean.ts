@@ -6,14 +6,12 @@
 
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { execSync } from 'child_process';
 import { getConfig, setConfig } from './config.js';
+import { PROJECT_ROOT } from '../lib/paths.js';
 
 // Path to store SSH keys
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const SSH_KEYS_DIR = join(PROJECT_ROOT, 'data', 'ssh-keys');
 const DO_SSH_KEY_PATH = join(SSH_KEYS_DIR, 'digitalocean-key');
 const DO_SSH_PUB_KEY_PATH = join(SSH_KEYS_DIR, 'digitalocean-key.pub');

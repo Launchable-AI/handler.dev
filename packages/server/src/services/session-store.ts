@@ -7,9 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { DATA_DIR } from '../lib/paths.js';
 
 export interface PersistedSession {
   sessionId: string;
@@ -25,8 +23,6 @@ export interface PersistedSession {
   dataDir?: string;
 }
 
-// Store file location
-const DATA_DIR = path.resolve(__dirname, '../../../../data');
 const SESSIONS_FILE = path.join(DATA_DIR, 'terminal-sessions.json');
 
 // In-memory cache

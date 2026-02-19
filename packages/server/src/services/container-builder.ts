@@ -1,16 +1,14 @@
 import { execSync } from 'child_process';
 import { mkdir, readFile, rm, access } from 'fs/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import * as dockerService from './docker.js';
 import { appendBuildLog } from './build-tracker.js';
 import { findAvailableSshPort, resolveAvailablePorts } from '../utils/port.js';
 import type { CreateContainerRequest, ContainerInfo } from '../types/index.js';
+import { PROJECT_ROOT } from '../lib/paths.js';
 
 const HANDLER_LABEL = 'handler';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 const SSH_KEYS_DIR = join(PROJECT_ROOT, 'data', 'ssh-keys');
 const APP_KEY_NAME = 'acm'; // Single app-wide SSH key
 

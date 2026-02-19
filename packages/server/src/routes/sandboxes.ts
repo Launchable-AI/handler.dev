@@ -1692,13 +1692,26 @@ sandboxes.get('/:id/agents', async (c) => {
       const containerId = id.startsWith('docker-') ? id.slice(7) : id;
       const agents = await detectAgentsInDocker(containerId, id);
       return c.json({ agents });
-    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+    } else if (sandbox.backend === 'firecracker') {
       if (!sandbox.guestIp) {
         return c.json({ agents: [] });
       }
-      const path = await import('path');
-      const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-      const keyPath = path.join(dataDir, 'ssh-keys', `${id}_ed25519`);
+      const fcService = getFirecrackerService();
+      const keyPath = fcService ? fcService.getSshKeyPath() : '';
+      if (!keyPath) {
+        return c.json({ agents: [] });
+      }
+      const agents = await detectAgentsViaSsh(sandbox.guestIp, 22, 'agent', keyPath, id);
+      return c.json({ agents });
+    } else if (sandbox.backend === 'cloud-hypervisor') {
+      if (!sandbox.guestIp) {
+        return c.json({ agents: [] });
+      }
+      const chService = getCloudHypervisorService();
+      const keyPath = chService ? chService.getSshKeyPath() : '';
+      if (!keyPath) {
+        return c.json({ agents: [] });
+      }
       const agents = await detectAgentsViaSsh(sandbox.guestIp, 22, 'agent', keyPath, id);
       return c.json({ agents });
     }
