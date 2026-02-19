@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap, Palette, Keyboard } from 'lucide-react';
 import { useConfig, useUpdateConfig, useQuickLaunchConfig, useSetQuickLaunchConfig, useDeleteQuickLaunchConfig, useImages, useVmBaseImages } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
+import { downloadGlobalSshKey, regenerateSshKey } from '../api/client';
 import * as api from '../api/client';
 import type { ModelOption, BackendStatus, QuickLaunchConfig } from '../api/client';
 import { CloudBackendsSettings } from './settings/CloudBackendsSettings';
@@ -25,6 +26,10 @@ export function Settings() {
   const [tmuxEnabled, setTmuxEnabled] = useState(true);
   const [tmuxStatusBar, setTmuxStatusBar] = useState(false);
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
+
+  // SSH Key management state
+  const [sshKeyLoading, setSshKeyLoading] = useState<'download' | 'regenerate' | null>(null);
+  const [sshKeyMessage, setSshKeyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // AI Prompts state
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
@@ -721,6 +726,95 @@ export function Settings() {
                     Add Jump Host SSH Key Path to enable remote access
                   </div>
                 )}
+              </div>
+
+              {/* VM SSH Key Management */}
+              <div className="pt-6 border-t border-[hsl(var(--border))]">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                  <Key className="h-3.5 w-3.5" />
+                  VM SSH Key
+                </label>
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
+                  This key is used for SSH access to all VM backends (Firecracker, Cloud-Hypervisor). Download the private key to connect from your machine, or regenerate to create a fresh keypair.
+                </p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setSshKeyLoading('download');
+                      setSshKeyMessage(null);
+                      try {
+                        const blob = await downloadGlobalSshKey();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'handler_vm_key.pem';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        setSshKeyMessage({ type: 'success', text: 'Private key downloaded' });
+                      } catch (err) {
+                        setSshKeyMessage({ type: 'error', text: err instanceof Error ? err.message : 'Download failed' });
+                      } finally {
+                        setSshKeyLoading(null);
+                      }
+                    }}
+                    disabled={sshKeyLoading !== null}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] disabled:opacity-50"
+                  >
+                    {sshKeyLoading === 'download' ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Download className="h-3 w-3" />
+                    )}
+                    Download Current Key
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      setSshKeyLoading('regenerate');
+                      setSshKeyMessage(null);
+                      try {
+                        const blob = await regenerateSshKey();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'handler_vm_key.pem';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        setSshKeyMessage({ type: 'success', text: 'New keypair generated and private key downloaded' });
+                      } catch (err) {
+                        setSshKeyMessage({ type: 'error', text: err instanceof Error ? err.message : 'Regeneration failed' });
+                      } finally {
+                        setSshKeyLoading(null);
+                      }
+                    }}
+                    disabled={sshKeyLoading !== null}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] border border-[hsl(var(--amber)/0.3)] disabled:opacity-50"
+                  >
+                    {sshKeyLoading === 'regenerate' ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                    Regenerate Key
+                  </button>
+                </div>
+
+                {sshKeyMessage && (
+                  <p className={`text-[10px] mt-2 ${
+                    sshKeyMessage.type === 'success' ? 'text-[hsl(var(--green))]' : 'text-[hsl(var(--red))]'
+                  }`}>
+                    {sshKeyMessage.text}
+                  </p>
+                )}
+
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mt-2">
+                  Regenerating will require rebooting running VMs for the new key to take effect.
+                </p>
               </div>
 
               {/* Save Button */}

@@ -694,7 +694,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     <>
       <div
         ref={cardRef}
-        className={`border bg-[hsl(var(--bg-surface))] overflow-hidden transition-all duration-500 ${
+        className={`border bg-[hsl(var(--bg-surface))] overflow-hidden transition-all duration-500 flex flex-col ${
           highlight
             ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)] animate-pulse'
             : 'border-[hsl(var(--border))]'
@@ -737,7 +737,6 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                   {currentState.label}
                 </span>
                 <BackendBadge backend={sandbox.backend} size="sm" />
-                <AgentBadges sandboxId={sandbox.id} isRunning={isRunning} />
               </div>
               <p className="text-[10px] text-[hsl(var(--text-muted))] truncate">
                 {sandbox.image}
@@ -1003,7 +1002,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
         )}
 
         {/* Body */}
-        <div className="px-3 py-2.5 space-y-3">
+        <div className="px-3 py-2.5 space-y-3 flex-1">
           {/* Connection Command */}
           {isRunning && (dockerCommand || sshCommand || isDaytona) && (
             <div className="space-y-1.5">
@@ -1107,9 +1106,9 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
             </div>
           )}
 
-          {/* Ports & Volumes Row */}
-          {(sandbox.ports.length > 0 || volumes.length > 0) && (
-            <div className="grid grid-cols-2 gap-3">
+          {/* Ports, Agents & Volumes Row */}
+          {(sandbox.ports.length > 0 || volumes.length > 0 || isRunning) && (
+            <div className="flex gap-4">
               {/* Ports */}
               {sandbox.ports.length > 0 && (
                 <div className="space-y-1.5">
@@ -1136,9 +1135,19 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                 </div>
               )}
 
+              {/* Agents */}
+              {isRunning && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">
+                    <span>Agents</span>
+                  </div>
+                  <AgentBadges sandboxId={sandbox.id} isRunning={isRunning} />
+                </div>
+              )}
+
               {/* Volumes */}
               {volumes.length > 0 && (
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">
                     <HardDrive className="h-3 w-3" />
                     <span>Volumes</span>
@@ -1269,9 +1278,12 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-3 py-2 bg-[hsl(var(--bg-base))] border-t border-[hsl(var(--border))]">
+        <div className="px-3 py-2 bg-[hsl(var(--bg-base))] border-t border-[hsl(var(--border))] flex items-center justify-between">
           <p className="text-[10px] text-[hsl(var(--text-muted))]">
             Created {new Date(sandbox.createdAt).toLocaleString()}
+          </p>
+          <p className="text-[10px] text-[hsl(var(--text-muted))] font-mono">
+            {sandbox.id}
           </p>
         </div>
       </div>

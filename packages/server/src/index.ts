@@ -206,6 +206,7 @@ import githubRoutes from './routes/github.js';
 import githubAppRoutes from './routes/github-app.js';
 import workRoutes from './routes/work.js';
 import quickFileRoutes from './routes/quick-files.js';
+import sshKeyRoutes from './routes/ssh-keys.js';
 
 const app = new Hono();
 
@@ -275,6 +276,7 @@ app.route('/api/github', githubRoutes);
 app.route('/api/github-app', githubAppRoutes);
 app.route('/api/work', workRoutes);
 app.route('/api/quick-files', quickFileRoutes);
+app.route('/api/ssh-keys', sshKeyRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {

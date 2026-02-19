@@ -163,6 +163,22 @@ Key files:
 
 When adding new `execSync` calls that handle user input, always use `execFileSync` with an argument array instead. When adding new API endpoints that accept IDs or paths, apply the validators from `validation.ts`.
 
+### SSH Key Management
+
+Global VM SSH keypair management for distributing Handler without bundling private keys:
+
+- **Download**: `GET /api/ssh-keys/download` — returns the current private key as a PEM file
+- **Regenerate**: `POST /api/ssh-keys/regenerate` — generates a new ed25519 keypair, returns the new private key
+- Keys are stored at `data/ssh-keys/id_ed25519` (private) and `id_ed25519.pub` (public)
+- All VM backends (Firecracker, Cloud-Hypervisor) share the same keypair
+- UI: Settings > Self-Hosting tab has "Download Current Key" and "Regenerate Key" buttons
+- Running VMs must be rebooted after regeneration for the new key to take effect
+
+Key files:
+- `packages/server/src/routes/ssh-keys.ts` — SSH key management endpoints
+- `packages/web/src/api/client.ts` — `downloadGlobalSshKey()`, `regenerateSshKey()` client functions
+- `packages/web/src/components/Settings.tsx` — VM SSH Key section in Self-Hosting tab
+
 ### Keyboard Shortcuts
 
 A configurable keyboard shortcut system for terminal tab cycling and future actions:

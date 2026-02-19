@@ -2448,6 +2448,32 @@ export async function downloadSandboxSshKey(id: string): Promise<Blob> {
 }
 
 /**
+ * Download the global VM SSH private key
+ */
+export async function downloadGlobalSshKey(): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/ssh-keys/download`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to download SSH key' }));
+    throw new Error(error.error || 'Failed to download SSH key');
+  }
+  return response.blob();
+}
+
+/**
+ * Regenerate the global VM SSH keypair and download the new private key
+ */
+export async function regenerateSshKey(): Promise<Blob> {
+  const apiBase = await getApiBase();
+  const response = await fetch(`${apiBase}/ssh-keys/regenerate`, { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to regenerate SSH key' }));
+    throw new Error(error.error || 'Failed to regenerate SSH key');
+  }
+  return response.blob();
+}
+
+/**
  * Get SSH command for a sandbox (creates SSH access for Daytona sandboxes)
  */
 export async function getSandboxSshCommand(id: string): Promise<string> {

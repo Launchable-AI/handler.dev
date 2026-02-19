@@ -733,8 +733,15 @@ export class FirecrackerService extends EventEmitter {
       execSync(`truncate -s ${overlaySize}G "${overlayPath}"`, { stdio: 'pipe' });
       execSync(`mkfs.ext4 -F -q "${overlayPath}"`, { stdio: 'pipe' });
 
-      // SSH keys are delivered dynamically via MMDS at boot (mmds-configure.sh)
-      // No need to bake keys into the overlay — keeps images portable
+    }
+
+    // Always inject current SSH key into overlay before boot.
+    // This ensures SSH works immediately via overlay-init (before MMDS runs).
+    // MMDS also delivers the key as a backup, but overlay injection is faster.
+    // Only the public key is written — the image stays portable.
+    const currentPubKey = this.readSshPublicKey();
+    if (currentPubKey) {
+      await this.injectSshKeysToOverlay(overlayPath, [currentPubKey]);
     }
 
     // Create dedicated Docker volume (ext4, for /var/lib/docker)
@@ -800,6 +807,8 @@ export class FirecrackerService extends EventEmitter {
         'mkdir /upper/home',
         'mkdir /upper/home/agent',
         'mkdir /upper/home/agent/.ssh',
+        // Remove existing file first (debugfs write fails silently if file exists)
+        'rm /upper/home/agent/.ssh/authorized_keys',
         `write ${tmpKeysFile} /upper/home/agent/.ssh/authorized_keys`,
       ].join('\n') + '\n';
 
@@ -807,9 +816,18 @@ export class FirecrackerService extends EventEmitter {
       fs.writeFileSync(tmpCmdFile, debugfsCommands);
 
       // Run debugfs (doesn't need root!)
-      execSync(`debugfs -w -f "${tmpCmdFile}" "${overlayPath}"`, {
+      const debugfsResult = execSync(`debugfs -w -f "${tmpCmdFile}" "${overlayPath}" 2>&1`, {
         stdio: ['pipe', 'pipe', 'pipe'],
+        encoding: 'utf-8',
       });
+
+      // Log debugfs output for diagnostics (filter out benign "File exists" from mkdir)
+      const debugfsErrors = debugfsResult.split('\n').filter(
+        (line: string) => line.trim() && !line.includes('debugfs:') || line.includes('Could not')
+      );
+      if (debugfsErrors.length > 0) {
+        console.log('[FirecrackerService] debugfs output:', debugfsResult.trim());
+      }
 
       console.log('[FirecrackerService] SSH keys injected into overlay');
     } finally {
@@ -1198,6 +1216,7 @@ export class FirecrackerService extends EventEmitter {
           '-o', 'UserKnownHostsFile=/dev/null',
           '-o', 'ConnectTimeout=3',
           '-o', 'IdentitiesOnly=yes',
+          '-o', 'BatchMode=yes',
           `agent@${host}`,
           '-p', port!.toString(),
           'echo ready',

@@ -1,6 +1,10 @@
 /**
  * AgentBadges — Shows AI agent logos for installed/running agents in a sandbox.
- * Grayed out = installed but not running, full color = running (with pulse animation).
+ * Grayed out = installed but not running, full color + pulse = running.
+ *
+ * Two display modes:
+ * - compact (icons only): for compact cards and table rows
+ * - detailed (icons + text): for full sandbox cards, shown as a section
  */
 
 import { useSandboxAgents } from '../../hooks/useSandboxes';
@@ -16,6 +20,13 @@ const AGENT_COLORS: Record<string, string> = {
   codex: '#10A37F',
   gemini: '#4285F4',
   opencode: '#06B6D4',
+};
+
+const AGENT_LABELS: Record<string, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  gemini: 'Gemini CLI',
+  opencode: 'OpenCode',
 };
 
 function ClaudeLogo({ color, size }: { color: string; size: number }) {
@@ -62,30 +73,63 @@ const AGENT_LOGOS: Record<string, typeof ClaudeLogo> = {
 };
 
 export function AgentBadges({ sandboxId, isRunning, compact }: AgentBadgesProps) {
-  const { data: agents } = useSandboxAgents(sandboxId, isRunning);
+  const { data: agents, isFetched } = useSandboxAgents(sandboxId, isRunning);
 
-  if (!agents) return null;
+  // Don't render anything until first fetch completes (prevents flash of false positives)
+  if (!isFetched || !agents) return null;
 
   const visibleAgents = agents.filter(a => a.installed || a.running);
   if (visibleAgents.length === 0) return null;
 
-  const size = compact ? 12 : 14;
+  // Compact mode: icons only (for compact cards and table rows)
+  if (compact) {
+    return (
+      <div className="flex items-center gap-0.5">
+        {visibleAgents.map(agent => {
+          const Logo = AGENT_LOGOS[agent.id];
+          const color = AGENT_COLORS[agent.id] || '#888';
+          if (!Logo) return null;
 
+          return (
+            <span
+              key={agent.id}
+              title={`${AGENT_LABELS[agent.id] || agent.name}: ${agent.running ? 'running' : 'installed'}`}
+              className={`inline-flex ${agent.running ? 'animate-pulse' : 'opacity-40'}`}
+            >
+              <Logo color={color} size={12} />
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Detailed mode: icon + text labels (for full sandbox cards)
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="space-y-1">
       {visibleAgents.map(agent => {
         const Logo = AGENT_LOGOS[agent.id];
         const color = AGENT_COLORS[agent.id] || '#888';
         if (!Logo) return null;
 
         return (
-          <span
+          <div
             key={agent.id}
-            title={`${agent.name}: ${agent.running ? 'running' : 'installed'}`}
-            className={`inline-flex ${agent.running ? 'animate-pulse' : 'opacity-40'}`}
+            className="flex items-center gap-1.5 text-[10px]"
           >
-            <Logo color={color} size={size} />
-          </span>
+            <span className={agent.running ? 'animate-pulse' : 'opacity-40'}>
+              <Logo color={color} size={12} />
+            </span>
+            <span className={agent.running
+              ? 'text-[hsl(var(--text-primary))]'
+              : 'text-[hsl(var(--text-muted))]'
+            }>
+              {AGENT_LABELS[agent.id] || agent.name}
+            </span>
+            {agent.running && (
+              <span className="text-[hsl(var(--green))]">running</span>
+            )}
+          </div>
         );
       })}
     </div>
