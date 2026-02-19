@@ -733,8 +733,8 @@ export class FirecrackerService extends EventEmitter {
       execSync(`truncate -s ${overlaySize}G "${overlayPath}"`, { stdio: 'pipe' });
       execSync(`mkfs.ext4 -F -q "${overlayPath}"`, { stdio: 'pipe' });
 
-      // Pre-inject SSH keys into the overlay using debugfs (no root needed!)
-      await this.injectSshKeysToOverlay(overlayPath, vm.mmdsMetadata?.ssh?.authorized_keys || []);
+      // SSH keys are delivered dynamically via MMDS at boot (mmds-configure.sh)
+      // No need to bake keys into the overlay — keeps images portable
     }
 
     // Create dedicated Docker volume (ext4, for /var/lib/docker)
@@ -1005,8 +1005,12 @@ export class FirecrackerService extends EventEmitter {
           ipv4_address: '169.254.169.254',
         } as MmdsConfig);
 
-        // 8. Set MMDS metadata
+        // 8. Set MMDS metadata (refresh SSH key to current on every boot)
         if (vm.mmdsMetadata) {
+          const currentPubKey = this.readSshPublicKey();
+          if (currentPubKey) {
+            vm.mmdsMetadata.ssh.authorized_keys = [currentPubKey];
+          }
           await this.sendApiRequest(apiSocket, 'PUT', '/mmds', vm.mmdsMetadata);
         }
       }
@@ -1149,7 +1153,7 @@ export class FirecrackerService extends EventEmitter {
   /**
    * Wait for SSH to be reachable
    */
-  private async waitForSshReady(vmId: string, timeoutMs: number = 120000): Promise<void> {
+  private async waitForSshReady(vmId: string, timeoutMs: number = 15000): Promise<void> {
     const startTime = Date.now();
     const sshKeyPath = this.getSshKeyPath();
     const vm = this.vms.get(vmId);
@@ -2155,6 +2159,17 @@ export class FirecrackerService extends EventEmitter {
     const keyPath = this.getSshKeyPath();
     if (fs.existsSync(keyPath)) {
       return fs.readFileSync(keyPath, 'utf-8');
+    }
+    return null;
+  }
+
+  /**
+   * Read the current SSH public key
+   */
+  private readSshPublicKey(): string | null {
+    const pubKeyPath = this.getSshKeyPath() + '.pub';
+    if (fs.existsSync(pubKeyPath)) {
+      return fs.readFileSync(pubKeyPath, 'utf-8').trim();
     }
     return null;
   }
