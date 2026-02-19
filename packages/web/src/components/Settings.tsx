@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap, Palette, Keyboard } from 'lucide-react';
+import { FolderOpen, Loader2, Sparkles, RotateCcw, Box, Cpu, Search, Maximize2, Server, Key, X, Cog, Download, Trash2, Power, PowerOff, CheckCircle, XCircle, AlertCircle, RefreshCw, Cloud, ChevronDown, Github, Globe, Zap, Palette, Keyboard, Upload, Copy } from 'lucide-react';
 import { useConfig, useUpdateConfig, useQuickLaunchConfig, useSetQuickLaunchConfig, useDeleteQuickLaunchConfig, useImages, useVmBaseImages } from '../hooks/useContainers';
 import { DirectoryPicker } from './DirectoryPicker';
-import { downloadGlobalSshKey, regenerateSshKey } from '../api/client';
+import { downloadGlobalSshKey, regenerateSshKey, getSshKeyInfo, pushSshKeyToVms } from '../api/client';
 import * as api from '../api/client';
 import type { ModelOption, BackendStatus, QuickLaunchConfig } from '../api/client';
 import { CloudBackendsSettings } from './settings/CloudBackendsSettings';
@@ -28,8 +28,11 @@ export function Settings() {
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
 
   // SSH Key management state
-  const [sshKeyLoading, setSshKeyLoading] = useState<'download' | 'regenerate' | null>(null);
+  const [sshKeyLoading, setSshKeyLoading] = useState<'download' | 'regenerate' | 'push' | null>(null);
   const [sshKeyMessage, setSshKeyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [sshPublicKey, setSshPublicKey] = useState<string | null>(null);
+  const [sshKeyExists, setSshKeyExists] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   // AI Prompts state
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
@@ -97,6 +100,16 @@ export function Settings() {
       setQlNamePrefix(quickLaunchConfig.namePrefix || 'sandbox');
     }
   }, [quickLaunchConfig]);
+
+  // Load SSH key info when switching to self-hosting tab
+  useEffect(() => {
+    if (activeTab === 'self-hosting') {
+      getSshKeyInfo().then(info => {
+        setSshKeyExists(info.exists);
+        setSshPublicKey(info.publicKey);
+      }).catch(() => {});
+    }
+  }, [activeTab]);
 
   // Load AI prompts when switching to AI tab
   useEffect(() => {
@@ -395,24 +408,6 @@ export function Settings() {
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* SSH Keys Display Path */}
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
-                  <Key className="h-3.5 w-3.5" />
-                  SSH Keys Display Path
-                </label>
-                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
-                  The path shown in SSH commands for finding the private key on your local machine.
-                </p>
-                <input
-                  type="text"
-                  value={sshKeysDisplayPath}
-                  onChange={(e) => setSshKeysDisplayPath(e.target.value)}
-                  placeholder="~/.ssh"
-                  className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
-                />
               </div>
 
               {/* Preview */}
@@ -738,7 +733,39 @@ export function Settings() {
                   This key is used for SSH access to all VM backends (Firecracker, Cloud-Hypervisor). Download the private key to connect from your machine, or regenerate to create a fresh keypair.
                 </p>
 
-                <div className="flex items-center gap-2">
+                {/* Public key display */}
+                {sshPublicKey && (
+                  <div className="mb-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="text-[10px] text-[hsl(var(--text-muted))] uppercase tracking-wider">Public Key</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(sshPublicKey);
+                          setCopiedKey(true);
+                          setTimeout(() => setCopiedKey(false), 2000);
+                        }}
+                        className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
+                        title="Copy public key"
+                      >
+                        {copiedKey ? (
+                          <CheckCircle className="h-3 w-3 text-[hsl(var(--green))]" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
+                    </div>
+                    <code className="block text-[10px] text-[hsl(var(--text-secondary))] bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] p-2 break-all font-mono select-all">
+                      {sshPublicKey}
+                    </code>
+                  </div>
+                )}
+                {!sshPublicKey && sshKeyExists === false && (
+                  <p className="text-[10px] text-[hsl(var(--amber))] mb-3">
+                    No SSH key exists yet. Generate one or start a VM to create one automatically.
+                  </p>
+                )}
+
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={async () => {
                       setSshKeyLoading('download');
@@ -768,7 +795,7 @@ export function Settings() {
                     ) : (
                       <Download className="h-3 w-3" />
                     )}
-                    Download Current Key
+                    Download Private Key
                   </button>
 
                   <button
@@ -785,6 +812,10 @@ export function Settings() {
                         a.click();
                         document.body.removeChild(a);
                         URL.revokeObjectURL(url);
+                        // Refresh the public key display
+                        const info = await getSshKeyInfo();
+                        setSshKeyExists(info.exists);
+                        setSshPublicKey(info.publicKey);
                         setSshKeyMessage({ type: 'success', text: 'New keypair generated and private key downloaded' });
                       } catch (err) {
                         setSshKeyMessage({ type: 'error', text: err instanceof Error ? err.message : 'Regeneration failed' });
@@ -802,6 +833,30 @@ export function Settings() {
                     )}
                     Regenerate Key
                   </button>
+
+                  <button
+                    onClick={async () => {
+                      setSshKeyLoading('push');
+                      setSshKeyMessage(null);
+                      try {
+                        const result = await pushSshKeyToVms();
+                        setSshKeyMessage({ type: 'success', text: result.message });
+                      } catch (err) {
+                        setSshKeyMessage({ type: 'error', text: err instanceof Error ? err.message : 'Push failed' });
+                      } finally {
+                        setSshKeyLoading(null);
+                      }
+                    }}
+                    disabled={sshKeyLoading !== null}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)] border border-[hsl(var(--purple)/0.3)] disabled:opacity-50"
+                  >
+                    {sshKeyLoading === 'push' ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Upload className="h-3 w-3" />
+                    )}
+                    Push Key to Stopped VMs
+                  </button>
                 </div>
 
                 {sshKeyMessage && (
@@ -813,8 +868,26 @@ export function Settings() {
                 )}
 
                 <p className="text-[10px] text-[hsl(var(--text-muted))] mt-2">
-                  Regenerating will require rebooting running VMs for the new key to take effect.
+                  After regenerating, use "Push Key to Stopped VMs" to update existing VMs. Running VMs will get the new key on next reboot via MMDS.
                 </p>
+              </div>
+
+              {/* SSH Keys Display Path */}
+              <div className="pt-6 border-t border-[hsl(var(--border))]">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                  <Key className="h-3.5 w-3.5" />
+                  SSH Keys Display Path
+                </label>
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
+                  The path shown in SSH commands for finding the private key on your local machine.
+                </p>
+                <input
+                  type="text"
+                  value={sshKeysDisplayPath}
+                  onChange={(e) => setSshKeysDisplayPath(e.target.value)}
+                  placeholder="~/.ssh"
+                  className="w-full px-3 py-2 text-xs bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))]"
+                />
               </div>
 
               {/* Save Button */}

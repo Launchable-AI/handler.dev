@@ -735,15 +735,6 @@ export class FirecrackerService extends EventEmitter {
 
     }
 
-    // Always inject current SSH key into overlay before boot.
-    // This ensures SSH works immediately via overlay-init (before MMDS runs).
-    // MMDS also delivers the key as a backup, but overlay injection is faster.
-    // Only the public key is written — the image stays portable.
-    const currentPubKey = this.readSshPublicKey();
-    if (currentPubKey) {
-      await this.injectSshKeysToOverlay(overlayPath, [currentPubKey]);
-    }
-
     // Create dedicated Docker volume (ext4, for /var/lib/docker)
     // This avoids nested overlayfs issues: Docker overlay2 operates on ext4 directly
     // instead of on top of the guest's overlayfs root.
@@ -1171,7 +1162,7 @@ export class FirecrackerService extends EventEmitter {
   /**
    * Wait for SSH to be reachable
    */
-  private async waitForSshReady(vmId: string, timeoutMs: number = 15000): Promise<void> {
+  private async waitForSshReady(vmId: string, timeoutMs: number = 45000): Promise<void> {
     const startTime = Date.now();
     const sshKeyPath = this.getSshKeyPath();
     const vm = this.vms.get(vmId);
