@@ -121,6 +121,7 @@ export function createImageShellSession(
     shellProcess = spawn('sudo', [
       '-n', 'chroot', mountPoint, '/bin/bash',
     ], {
+      detached: true,
       env: { TERM: 'xterm-256color', HOME: '/root', PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -128,6 +129,7 @@ export function createImageShellSession(
   } catch {
     // sudo not available — fall back to plain shell at mount point
     shellProcess = spawn('bash', ['-i'], {
+      detached: true,
       cwd: mountPoint,
       env: {
         ...process.env,
@@ -136,6 +138,8 @@ export function createImageShellSession(
       stdio: ['pipe', 'pipe', 'pipe'],
     });
   }
+  // Prevent the detached process group from keeping Node alive
+  shellProcess.unref();
 
   const session: ImageShellSession = {
     id: sessionId,
@@ -208,20 +212,50 @@ export function resizeImageShell(_sessionId: string, _cols: number, _rows: numbe
 }
 
 /**
- * Clean up a session: kill process, unmount (if we mounted), remove mount point.
+ * Kill the process group and wait for exit (up to timeout).
  */
-function cleanupSession(sessionId: string): void {
+function killAndWait(proc: ChildProcess, timeoutMs = 3000): Promise<void> {
+  return new Promise((resolve) => {
+    if (proc.exitCode !== null || proc.killed) {
+      resolve();
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      // Force kill after timeout
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGKILL');
+      } catch {
+        try { proc.kill('SIGKILL'); } catch { /* ignore */ }
+      }
+      resolve();
+    }, timeoutMs);
+
+    proc.on('exit', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+
+    // Kill the entire process group (sudo + chroot + bash)
+    try {
+      if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+    } catch {
+      try { proc.kill('SIGTERM'); } catch { /* ignore */ }
+    }
+  });
+}
+
+/**
+ * Clean up a session: kill process group, wait for exit, then unmount if needed.
+ */
+async function cleanupSession(sessionId: string): Promise<void> {
   const session = activeSessions.get(sessionId);
   if (!session) return;
 
   activeSessions.delete(sessionId);
 
-  // Kill the process if still running
-  try {
-    if (!session.process.killed) {
-      session.process.kill('SIGTERM');
-    }
-  } catch { /* ignore */ }
+  // Kill the process group and wait for all children to exit
+  await killAndWait(session.process);
 
   // Only unmount if we were the ones who mounted it
   if (session.selfMounted) {
@@ -246,7 +280,7 @@ function cleanupSession(sessionId: string): void {
 export function closeImageShellByWebSocket(ws: WebSocket): void {
   for (const [id, session] of activeSessions) {
     if (session.ws === ws) {
-      cleanupSession(id);
+      void cleanupSession(id);
       return;
     }
   }
@@ -255,10 +289,10 @@ export function closeImageShellByWebSocket(ws: WebSocket): void {
 /**
  * Clean up all active sessions (called on server shutdown).
  */
-export function cleanupAllImageShells(): void {
-  for (const id of activeSessions.keys()) {
-    cleanupSession(id);
-  }
+export async function cleanupAllImageShells(): Promise<void> {
+  await Promise.all(
+    Array.from(activeSessions.keys()).map(id => cleanupSession(id))
+  );
 }
 
 /**
