@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { HardDrive, Play, Terminal, Upload, Download, Loader2, X, Wrench, ChevronDown, ChevronRight, Layers, Copy, Check, PanelRight, PanelBottom, GripVertical, GripHorizontal } from 'lucide-react';
+import { HardDrive, Play, Terminal, Upload, Download, Loader2, X, Wrench, ChevronDown, ChevronRight, Layers, Copy, Check, PanelRight, PanelBottom, GripVertical, GripHorizontal, Info, Trash2, AlertTriangle } from 'lucide-react';
 import { useBuilderImages } from '../hooks/useImageBuilder';
 import { useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
@@ -16,6 +16,150 @@ function formatSize(bytes: number | null): string {
 function formatDate(dateString: string | null): string {
   if (!dateString) return '-';
   return new Date(dateString).toLocaleString();
+}
+
+const GUIDE_KEY = 'handler-image-builder-guide-open';
+
+function ProcessGuide() {
+  const [open, setOpen] = useState(() => {
+    const stored = localStorage.getItem(GUIDE_KEY);
+    return stored === null ? true : stored === 'true';
+  });
+
+  const toggle = useCallback(() => {
+    setOpen(prev => {
+      localStorage.setItem(GUIDE_KEY, String(!prev));
+      return !prev;
+    });
+  }, []);
+
+  return (
+    <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))]">
+      <button
+        onClick={toggle}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-[hsl(var(--bg-elevated)/0.5)] transition-colors"
+      >
+        <Info className="h-3.5 w-3.5 text-[hsl(var(--cyan))] flex-shrink-0" />
+        <span className="text-xs font-medium text-[hsl(var(--text-secondary))]">
+          How image building works
+        </span>
+        {open
+          ? <ChevronDown className="h-3 w-3 text-[hsl(var(--text-muted))] ml-auto" />
+          : <ChevronRight className="h-3 w-3 text-[hsl(var(--text-muted))] ml-auto" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 text-xs text-[hsl(var(--text-secondary))] leading-relaxed space-y-4">
+          {/* Overview */}
+          <p className="text-[hsl(var(--text-muted))]">
+            Firecracker VMs boot from two files: a <strong className="text-[hsl(var(--text-secondary))]">rootfs.ext4</strong> (root filesystem)
+            and a <strong className="text-[hsl(var(--text-secondary))]">vmlinux</strong> (uncompressed Linux kernel).
+            This page manages the pipeline that creates, customizes, and distributes those files.
+          </p>
+
+          {/* Steps */}
+          <div className="space-y-3">
+            {/* Step 1 */}
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] flex items-center justify-center text-[10px] font-bold mt-0.5">1</div>
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))] mb-0.5">Download a base QCOW2 image</div>
+                <p className="text-[hsl(var(--text-muted))]">
+                  Start with a cloud image (e.g. Ubuntu 24.04 QCOW2 from Canonical). Place it
+                  at <code className="text-[10px] px-1 py-0.5 bg-[hsl(var(--bg-base))]">data/base-images/{'<name>'}/image.qcow2</code>,
+                  or use the <strong className="text-[hsl(var(--text-secondary))]">Download</strong> button to pull a pre-built image from S3.
+                </p>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] flex items-center justify-center text-[10px] font-bold mt-0.5">2</div>
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))] mb-0.5">Prepare the image</div>
+                <p className="text-[hsl(var(--text-muted))]">
+                  The <strong className="text-[hsl(var(--text-secondary))]">Prepare</strong> button
+                  runs <code className="text-[10px] px-1 py-0.5 bg-[hsl(var(--bg-base))]">prepare-fc-image.sh</code>, which:
+                  converts QCOW2 to raw ext4 (<code className="text-[10px]">rootfs.ext4</code>),
+                  extracts the kernel (<code className="text-[10px]">vmlinux</code>),
+                  and installs guest-init scripts (MMDS networking, overlay-init, Docker CE, tmux).
+                </p>
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))] flex items-center justify-center text-[10px] font-bold mt-0.5">3</div>
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))] mb-0.5">Build a custom kernel (optional)</div>
+                <p className="text-[hsl(var(--text-muted))]">
+                  The <strong className="text-[hsl(var(--text-secondary))]">Build Kernel</strong> button
+                  compiles a Linux kernel with Docker support (iptables, overlay2, namespaces, cgroups) all as built-ins,
+                  since Firecracker boots with <code className="text-[10px]">nomodule</code>. Only needed once or when upgrading kernel versions.
+                </p>
+              </div>
+            </div>
+
+            {/* Step 4 */}
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))] flex items-center justify-center text-[10px] font-bold mt-0.5">4</div>
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))] mb-0.5">Inspect and customize</div>
+                <p className="text-[hsl(var(--text-muted))]">
+                  Mount the image filesystem using the mount command on each card, then
+                  use <strong className="text-[hsl(var(--text-secondary))]">Shell</strong> to chroot in and make changes
+                  (install packages, edit configs). Unmount when done.
+                </p>
+              </div>
+            </div>
+
+            {/* Step 5 */}
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))] flex items-center justify-center text-[10px] font-bold mt-0.5">5</div>
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))] mb-0.5">Upload to S3</div>
+                <p className="text-[hsl(var(--text-muted))]">
+                  The <strong className="text-[hsl(var(--text-secondary))]">Upload</strong> button compresses the rootfs, generates SHA256 checksums,
+                  creates a manifest, and uploads everything to S3. Users then run <code className="text-[10px] px-1 py-0.5 bg-[hsl(var(--bg-base))]">download-image.sh</code> to pull it.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Layer images explanation */}
+          <div className="border-t border-[hsl(var(--border))] pt-3">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Layers className="h-3 w-3 text-[hsl(var(--purple))]" />
+              <span className="font-medium text-[hsl(var(--text-primary))]">Layer images</span>
+            </div>
+            <p className="text-[hsl(var(--text-muted))]">
+              When you snapshot a running VM and promote it to a base image, it creates a <strong className="text-[hsl(var(--text-secondary))]">layer image</strong> instead
+              of copying the full disk. A layer contains only the diff from its parent (<code className="text-[10px]">layer.ext4</code>)
+              plus a <code className="text-[10px]">layer.json</code> pointing to the parent. At boot, Firecracker stacks the
+              parent rootfs + layer via overlayfs. Layer images can be uploaded and downloaded just like base images,
+              but they can't be Prepared (they don't come from a QCOW2).
+            </p>
+          </div>
+
+          {/* File layout */}
+          <div className="border-t border-[hsl(var(--border))] pt-3">
+            <div className="font-medium text-[hsl(var(--text-primary))] mb-1.5">File layout</div>
+            <div className="font-mono text-[10px] text-[hsl(var(--text-muted))] bg-[hsl(var(--bg-base))] p-2.5 leading-relaxed">
+              <div>data/base-images/</div>
+              <div className="pl-4">ubuntu-24.04/           <span className="text-[hsl(var(--cyan))]"># base image</span></div>
+              <div className="pl-8">image.qcow2           <span className="text-[hsl(var(--text-muted))]"># source cloud image</span></div>
+              <div className="pl-8">rootfs.ext4            <span className="text-[hsl(var(--text-muted))]"># prepared root filesystem</span></div>
+              <div className="pl-8">vmlinux                <span className="text-[hsl(var(--text-muted))]"># uncompressed kernel</span></div>
+              <div className="pl-4">claude-base/            <span className="text-[hsl(var(--purple))]"># layer image</span></div>
+              <div className="pl-8">layer.ext4             <span className="text-[hsl(var(--text-muted))]"># diff from parent</span></div>
+              <div className="pl-8">layer.json             <span className="text-[hsl(var(--text-muted))]"># {"{"}"parent": "ubuntu-24.04"{"}"}</span></div>
+              <div className="pl-8">vmlinux                <span className="text-[hsl(var(--text-muted))]"># kernel (shared or copied)</span></div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 type OperationStatus = 'idle' | 'running' | 'done' | 'error';
@@ -170,17 +314,77 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function DeleteConfirmDialog({
+  imageName,
+  isLayer,
+  onConfirm,
+  onCancel,
+}: {
+  imageName: string;
+  isLayer: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
+      <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--red)/0.3)] p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle className="h-4 w-4 text-[hsl(var(--red))]" />
+          <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">Delete {imageName}?</h3>
+        </div>
+        <p className="text-xs text-[hsl(var(--text-secondary))] mb-1">
+          This will permanently delete the entire image directory including:
+        </p>
+        <ul className="text-xs text-[hsl(var(--text-muted))] mb-4 space-y-0.5 ml-4 list-disc">
+          {isLayer ? (
+            <>
+              <li>layer.ext4 (filesystem diff)</li>
+              <li>layer.json (parent reference)</li>
+            </>
+          ) : (
+            <>
+              <li>image.qcow2 (source image)</li>
+              <li>rootfs.ext4 (root filesystem)</li>
+            </>
+          )}
+          <li>vmlinux (kernel)</li>
+          <li>Any compressed files (.gz) and manifests</li>
+        </ul>
+        <p className="text-[10px] text-[hsl(var(--red))] mb-4">
+          This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-[10px] font-medium text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-3 py-1.5 text-[10px] font-medium text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.3)] transition-colors"
+          >
+            Delete Image
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ImageCard({
   image,
   onShell,
   onOperation,
   onUploadClick,
+  onDeleteClick,
   activeOperation,
 }: {
   image: ImageBuilderDetail;
   onShell: (name: string) => void;
   onOperation: (type: 'prepare' | 'download', name: string) => void;
   onUploadClick: (image: ImageBuilderDetail) => void;
+  onDeleteClick: (image: ImageBuilderDetail) => void;
   activeOperation: string | null;
 }) {
   const isBusy = activeOperation !== null;
@@ -322,6 +526,15 @@ function ImageCard({
           {activeOperation === 'download' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
           Download
         </button>
+        <button
+          onClick={() => onDeleteClick(image)}
+          disabled={isBusy || image.isMounted}
+          className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.3)] transition-colors disabled:opacity-40 ml-auto"
+          title={image.isMounted ? 'Unmount the filesystem first' : 'Delete image'}
+        >
+          <Trash2 className="h-3 w-3" />
+          Delete
+        </button>
       </div>
     </div>
   );
@@ -351,6 +564,9 @@ export function ImageBuilder() {
 
   // Upload dialog state
   const [uploadDialogImage, setUploadDialogImage] = useState<ImageBuilderDetail | null>(null);
+
+  // Delete dialog state
+  const [deleteDialogImage, setDeleteDialogImage] = useState<ImageBuilderDetail | null>(null);
 
   const setShellPosition = useCallback((pos: ShellPosition) => {
     setShellPositionState(pos);
@@ -520,6 +736,22 @@ export function ImageBuilder() {
     setShellImage(name);
   }, []);
 
+  const handleDeleteClick = useCallback((image: ImageBuilderDetail) => {
+    setDeleteDialogImage(image);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteDialogImage) return;
+    try {
+      await api.deleteBuilderImage(deleteDialogImage.name);
+      queryClient.invalidateQueries({ queryKey: ['builder-images'] });
+      setDeleteDialogImage(null);
+    } catch (error) {
+      console.error('Failed to delete image:', error);
+      alert(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [deleteDialogImage, queryClient]);
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -536,6 +768,16 @@ export function ImageBuilder() {
           image={uploadDialogImage}
           onConfirm={handleUploadConfirm}
           onCancel={() => setUploadDialogImage(null)}
+        />
+      )}
+
+      {/* Delete confirmation dialog */}
+      {deleteDialogImage && (
+        <DeleteConfirmDialog
+          imageName={deleteDialogImage.name}
+          isLayer={deleteDialogImage.isLayer}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteDialogImage(null)}
         />
       )}
 
@@ -564,7 +806,9 @@ export function ImageBuilder() {
       {/* Content area with split view */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Image grid */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <ProcessGuide />
+
           {!images || images.length === 0 ? (
             <div className="text-center py-12">
               <HardDrive className="h-8 w-8 text-[hsl(var(--text-muted))] mx-auto mb-3" />
@@ -582,6 +826,7 @@ export function ImageBuilder() {
                   onShell={handleShell}
                   onOperation={handleOperation}
                   onUploadClick={handleUploadClick}
+                  onDeleteClick={handleDeleteClick}
                   activeOperation={activeOperations[image.name] || null}
                 />
               ))}

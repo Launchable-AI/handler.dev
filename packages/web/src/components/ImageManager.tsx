@@ -496,57 +496,69 @@ export function ImageManager() {
                       <Server className="h-3 w-3" />
                       VM Base Images ({vmBaseImages.length})
                     </div>
-                    {vmBaseImages.map((vmImage) => {
-                      const isHighlighted = highlightedImage === vmImage.name;
-                      const isDeleting = deleteVmBaseImage.isPending && deleteVmBaseImage.variables === vmImage.name;
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-4">
+                      {vmBaseImages.map((vmImage) => {
+                        const isHighlighted = highlightedImage === vmImage.name;
+                        const isDeleting = deleteVmBaseImage.isPending && deleteVmBaseImage.variables === vmImage.name;
 
-                      return (
-                        <div
-                          key={vmImage.name}
-                          className={`p-4 bg-[hsl(var(--bg-surface))] border hover:border-[hsl(var(--border-highlight))] transition-all ${
-                            isHighlighted
-                              ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)] animate-pulse'
-                              : 'border-[hsl(var(--border))]'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <Server className="h-4 w-4 text-[hsl(var(--purple))] flex-shrink-0" />
-                                <span className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{vmImage.name}</span>
-                                <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))] border border-[hsl(var(--purple)/0.2)]">
-                                  VM
-                                </span>
-                                {vmImage.hasWarmupSnapshot && (
-                                  <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
-                                    FAST BOOT
-                                  </span>
-                                )}
-                                {vmImage.isLayered && (
-                                  <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--amber)/0.1)] text-[hsl(var(--amber))] border border-[hsl(var(--amber)/0.2)]">
-                                    LAYERED
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-4 mt-2 text-xs text-[hsl(var(--text-muted))]">
-                                {vmImage.hasKernel && <span className="text-[hsl(var(--green))]">✓ Kernel</span>}
-                                {vmImage.isLayered && vmImage.parent && (
-                                  <span>Parent: {vmImage.parent}</span>
-                                )}
-                                {vmImage.layerSizeMB !== undefined && (
-                                  <span>{vmImage.layerSizeMB} MB layer</span>
-                                )}
+                        return (
+                          <div
+                            key={vmImage.name}
+                            className={`p-4 bg-[hsl(var(--bg-surface))] border hover:border-[hsl(var(--border-highlight))] transition-all ${
+                              isHighlighted
+                                ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)] animate-pulse'
+                                : 'border-[hsl(var(--border))]'
+                            }`}
+                          >
+                            {/* Header */}
+                            <div className="flex items-start gap-2 mb-2">
+                              <Server className="h-4 w-4 text-[hsl(var(--purple))] flex-shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-medium text-[hsl(var(--text-primary))] truncate">{vmImage.name}</div>
                               </div>
                             </div>
+
+                            {/* Badges */}
+                            <div className="flex flex-wrap gap-1.5 mb-3">
+                              <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--purple)/0.1)] text-[hsl(var(--purple))] border border-[hsl(var(--purple)/0.2)]">
+                                VM
+                              </span>
+                              {vmImage.hasWarmupSnapshot && (
+                                <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                                  FAST BOOT
+                                </span>
+                              )}
+                              {vmImage.isLayered && (
+                                <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--amber)/0.1)] text-[hsl(var(--amber))] border border-[hsl(var(--amber)/0.2)]">
+                                  LAYERED
+                                </span>
+                              )}
+                              {vmImage.hasKernel && (
+                                <span className="px-1.5 py-0.5 text-[8px] bg-[hsl(var(--green)/0.1)] text-[hsl(var(--green))] border border-[hsl(var(--green)/0.2)]">
+                                  KERNEL
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Details */}
+                            <div className="text-xs text-[hsl(var(--text-muted))] space-y-0.5 mb-3">
+                              {vmImage.isLayered && vmImage.parent && (
+                                <div>Parent: <span className="text-[hsl(var(--text-secondary))]">{vmImage.parent}</span></div>
+                              )}
+                              {vmImage.layerSizeMB !== undefined && (
+                                <div>{vmImage.layerSizeMB} MB layer</div>
+                              )}
+                            </div>
+
+                            {/* Actions */}
                             <div className="flex items-center gap-1.5">
                               <button
                                 onClick={() => {
-                                  // Open create sandbox form with firecracker backend and this image pre-selected
                                   window.dispatchEvent(new CustomEvent('handler-create-sandbox', {
                                     detail: { backend: 'firecracker', image: vmImage.name }
                                   }));
                                 }}
-                                className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]"
+                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)]"
                                 title="Create a new VM from this base image"
                               >
                                 <Play className="h-3 w-3" />
@@ -555,7 +567,7 @@ export function ImageManager() {
                               {!vmImage.hasWarmupSnapshot && (
                                 <button
                                   onClick={() => handleWarmupVmImage(vmImage.name)}
-                                  className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
+                                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
                                   title="Create fast boot cache"
                                 >
                                   <RefreshCw className="h-3 w-3" />
@@ -565,16 +577,16 @@ export function ImageManager() {
                               <button
                                 onClick={() => handleDeleteVmBaseImage(vmImage.name)}
                                 disabled={isDeleting}
-                                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
+                                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))] ml-auto"
                                 title="Delete"
                               >
-                                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                               </button>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </>
                 )}
 
@@ -585,99 +597,106 @@ export function ImageManager() {
                       <Box className="h-3 w-3" />
                       Docker Images ({images.length})
                     </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                     {images.map((image) => {
                   const tag = image.repoTags[0] || 'untagged';
                   const isDeleting = deletingImageId === image.id;
                   const isPushing = pushingImageId === tag;
                   const isExpanded = expandedDockerfile === image.id;
                   const hasDockerfile = !!image.dockerfile;
+                  const hasExpandedContent = showPushModal === tag || isPushing || isExpanded;
 
                   const isRenaming = renamingImageTag === tag;
                   const isLaunching = launchingImageTag === tag;
 
                   return (
-                    <div key={image.id} className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))]">
-                      <div className="flex items-start justify-between gap-3">
+                    <div key={image.id} className={`p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--border-highlight))] ${
+                      hasExpandedContent ? 'col-span-full' : ''
+                    }`}>
+                      {/* Header */}
+                      <div className="flex items-start gap-2 mb-2">
+                        <Image className="h-4 w-4 text-[hsl(var(--cyan))] flex-shrink-0 mt-0.5" />
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <Image className="h-4 w-4 text-[hsl(var(--cyan))] flex-shrink-0" />
-                            {isRenaming ? (
-                              <input
-                                type="text"
-                                value={renameValue}
-                                onChange={(e) => setRenameValue(e.target.value)}
-                                onBlur={() => handleRenameImage(tag)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleRenameImage(tag);
-                                  if (e.key === 'Escape') { setRenamingImageTag(null); setRenameValue(''); }
-                                }}
-                                className="flex-1 px-2 py-0.5 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--cyan))] text-[hsl(var(--text-primary))] focus:outline-none"
-                                autoFocus
-                              />
-                            ) : (
-                              <button
-                                onClick={() => { setRenamingImageTag(tag); setRenameValue(formatDisplayName(tag)); }}
-                                className="text-sm font-medium text-[hsl(var(--text-primary))] truncate hover:text-[hsl(var(--cyan))] text-left"
-                                title="Click to rename"
-                              >
-                                {formatDisplayName(tag)}
-                              </button>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-[hsl(var(--text-muted))]">
-                            <span className="font-mono opacity-60" title={image.id}>
-                              {image.id.replace('sha256:', '').slice(0, 12)}
-                            </span>
-                            <span className="flex items-center gap-1.5">
-                              <HardDrive className="h-3.5 w-3.5" />
-                              {formatSize(image.size)}
-                            </span>
-                            <span>{formatDate(image.created)}</span>
-                            {image.dockerfileName && (
-                              <span className="flex items-center gap-1.5 text-[hsl(var(--purple))]">
-                                <FileCode className="h-3.5 w-3.5" />
-                                {image.dockerfileName}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          {hasDockerfile && (
+                          {isRenaming ? (
+                            <input
+                              type="text"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={() => handleRenameImage(tag)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleRenameImage(tag);
+                                if (e.key === 'Escape') { setRenamingImageTag(null); setRenameValue(''); }
+                              }}
+                              className="w-full px-2 py-0.5 text-sm bg-[hsl(var(--input-bg))] border border-[hsl(var(--cyan))] text-[hsl(var(--text-primary))] focus:outline-none"
+                              autoFocus
+                            />
+                          ) : (
                             <button
-                              onClick={() => setExpandedDockerfile(isExpanded ? null : image.id)}
-                              className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)] border border-[hsl(var(--purple)/0.3)]"
-                              title="View Dockerfile"
+                              onClick={() => { setRenamingImageTag(tag); setRenameValue(formatDisplayName(tag)); }}
+                              className="text-sm font-medium text-[hsl(var(--text-primary))] truncate hover:text-[hsl(var(--cyan))] text-left block"
+                              title="Click to rename"
                             >
-                              <FileCode className="h-3.5 w-3.5" />
-                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                              {formatDisplayName(tag)}
                             </button>
                           )}
-                          <button
-                            onClick={() => handleLaunchFromImage(tag, 'docker')}
-                            disabled={isLaunching}
-                            className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
-                            title="Create a new Docker sandbox from this image"
-                          >
-                            {isLaunching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                            Launch
-                          </button>
-                          <button
-                            onClick={() => { setShowPushModal(tag); setPushSnapshotName(formatDisplayName(tag)); }}
-                            disabled={isPushing}
-                            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-elevated))]"
-                            title="Push to Registry"
-                          >
-                            {isPushing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                          </button>
-                          <button
-                            onClick={() => handleDeleteImage(image.id, tag)}
-                            disabled={isDeleting}
-                            className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))]"
-                            title="Delete"
-                          >
-                            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                          </button>
                         </div>
+                      </div>
+
+                      {/* Details */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[hsl(var(--text-muted))] mb-3">
+                        <span className="font-mono opacity-60" title={image.id}>
+                          {image.id.replace('sha256:', '').slice(0, 12)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <HardDrive className="h-3 w-3" />
+                          {formatSize(image.size)}
+                        </span>
+                        <span>{formatDate(image.created)}</span>
+                        {image.dockerfileName && (
+                          <span className="flex items-center gap-1 text-[hsl(var(--purple))]">
+                            <FileCode className="h-3 w-3" />
+                            {image.dockerfileName}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1.5">
+                        {hasDockerfile && (
+                          <button
+                            onClick={() => setExpandedDockerfile(isExpanded ? null : image.id)}
+                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)] border border-[hsl(var(--purple)/0.3)]"
+                            title="View Dockerfile"
+                          >
+                            <FileCode className="h-3 w-3" />
+                            {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleLaunchFromImage(tag, 'docker')}
+                          disabled={isLaunching}
+                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] disabled:opacity-50"
+                          title="Create a new Docker sandbox from this image"
+                        >
+                          {isLaunching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                          Launch
+                        </button>
+                        <button
+                          onClick={() => { setShowPushModal(tag); setPushSnapshotName(formatDisplayName(tag)); }}
+                          disabled={isPushing}
+                          className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-elevated))]"
+                          title="Push to Registry"
+                        >
+                          {isPushing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteImage(image.id, tag)}
+                          disabled={isDeleting}
+                          className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--bg-elevated))] ml-auto"
+                          title="Delete"
+                        >
+                          {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </button>
                       </div>
 
                       {/* Push Modal */}
@@ -780,6 +799,7 @@ export function ImageManager() {
                     </div>
                     );
                     })}
+                    </div>
                   </>
                 )}
               </div>

@@ -323,6 +323,32 @@ export function runOperation(
 }
 
 /**
+ * Delete an image directory entirely.
+ * Refuses to delete if the image has an active operation or is mounted.
+ */
+export function deleteImage(name: string): void {
+  const dir = path.join(BASE_IMAGES_DIR, name);
+  if (!fs.existsSync(dir)) {
+    throw new Error(`Image '${name}' not found`);
+  }
+
+  // Refuse if mounted
+  const mountPoint = `/tmp/handler-image-${name}`;
+  if (isMounted(mountPoint)) {
+    throw new Error(`Image '${name}' is currently mounted at ${mountPoint}. Unmount first.`);
+  }
+
+  // Refuse if there's an active operation on this image
+  for (const op of activeOperations.values()) {
+    if (op.imageName === name) {
+      throw new Error(`Image '${name}' has an active ${op.type} operation. Cancel it first.`);
+    }
+  }
+
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/**
  * Cancel a running operation by killing the spawned process.
  */
 export function cancelOperation(id: string): boolean {

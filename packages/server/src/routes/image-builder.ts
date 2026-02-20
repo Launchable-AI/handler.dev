@@ -20,6 +20,7 @@ import {
   runOperation,
   cancelOperation,
   listOperations,
+  deleteImage,
 } from '../services/image-builder.js';
 
 const imageBuilder = new Hono();
@@ -115,6 +116,26 @@ imageBuilder.post('/operations/:id/cancel', (c) => {
     return c.json({ error: 'Operation not found or already completed' }, 404);
   }
   return c.json({ success: true });
+});
+
+/**
+ * DELETE /api/image-builder/:name
+ * Delete an image directory
+ */
+imageBuilder.delete('/:name', (c) => {
+  try {
+    const name = c.req.param('name');
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) {
+      return c.json({ error: 'Invalid image name format' }, 400);
+    }
+    deleteImage(name);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('[Image Builder] Failed to delete image:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message.includes('not found') ? 404 : message.includes('mounted') || message.includes('active') ? 409 : 500;
+    return c.json({ error: message }, status);
+  }
 });
 
 /**

@@ -3902,6 +3902,10 @@ export async function inspectBuilderImage(name: string): Promise<ImageBuilderDet
   return fetchAPI(`/image-builder/${encodeURIComponent(name)}`);
 }
 
+export async function deleteBuilderImage(name: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/image-builder/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
 export async function listBuildOperations(): Promise<BuildOperation[]> {
   return fetchAPI('/image-builder/operations/list');
 }
