@@ -35,13 +35,18 @@ log() { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
+NON_INTERACTIVE=0
+
 usage() {
-    echo "Usage: $0 <base-image-name>"
+    echo "Usage: $0 [--non-interactive] <base-image-name>"
     echo ""
     echo "Prepares a base image for Firecracker by:"
     echo "  1. Converting QCOW2 to raw ext4 format"
     echo "  2. Extracting the kernel (vmlinux)"
     echo "  3. Installing MMDS configuration scripts"
+    echo ""
+    echo "Options:"
+    echo "  --non-interactive  Skip interactive prompts (default to yes)"
     echo ""
     echo "Example:"
     echo "  $0 ubuntu-minimal-24.04"
@@ -51,6 +56,20 @@ usage() {
     echo "  - Required tools: qemu-img, guestfish (or mount with sudo)"
     exit 1
 }
+
+# Parse flags
+while [[ "$1" == --* ]]; do
+    case "$1" in
+        --non-interactive)
+            NON_INTERACTIVE=1
+            shift
+            ;;
+        *)
+            echo "Unknown flag: $1"
+            usage
+            ;;
+    esac
+done
 
 # Check arguments
 if [ $# -lt 1 ]; then
@@ -80,8 +99,12 @@ if [ -f "$RAW_PATH" ]; then
     # Raw image exists - check if we should reconvert
     if [ -f "$QCOW2_PATH" ]; then
         warn "Raw image already exists: $RAW_PATH"
-        read -p "Reconvert from QCOW2? [y/N] " -n 1 -r
-        echo
+        if [ "$NON_INTERACTIVE" = "1" ]; then
+            REPLY="n"
+        else
+            read -p "Reconvert from QCOW2? [y/N] " -n 1 -r
+            echo
+        fi
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             log "Skipping conversion, will update guest scripts only"
             SKIP_CONVERSION=1
@@ -102,8 +125,12 @@ elif [ ! -f "$QCOW2_PATH" ]; then
             echo ""
             warn "QCOW2 image not found locally."
             log "Available for download: $DOWNLOAD_URL ($QCOW2_SIZE)"
-            read -p "Download from S3? [Y/n] " -n 1 -r
-            echo
+            if [ "$NON_INTERACTIVE" = "1" ]; then
+                REPLY="y"
+            else
+                read -p "Download from S3? [Y/n] " -n 1 -r
+                echo
+            fi
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
                 log "Downloading $IMAGE_NAME QCOW2 image..."
                 mkdir -p "$IMAGE_DIR"

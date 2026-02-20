@@ -207,6 +207,14 @@ import githubAppRoutes from './routes/github-app.js';
 import workRoutes from './routes/work.js';
 import quickFileRoutes from './routes/quick-files.js';
 import sshKeyRoutes from './routes/ssh-keys.js';
+import imageBuilderRoutes from './routes/image-builder.js';
+import {
+  createImageShellSession,
+  writeToImageShell,
+  resizeImageShell,
+  closeImageShellByWebSocket,
+  cleanupAllImageShells,
+} from './services/image-shell.js';
 
 const app = new Hono();
 
@@ -245,6 +253,7 @@ app.get('/api/health', async (c) => {
     status: 'ok',
     docker: dockerConnected ? 'connected' : 'disconnected',
     hypervisor,
+    devMode: process.env.environment === 'development',
   });
 });
 
@@ -277,6 +286,7 @@ app.route('/api/github-app', githubAppRoutes);
 app.route('/api/work', workRoutes);
 app.route('/api/quick-files', quickFileRoutes);
 app.route('/api/ssh-keys', sshKeyRoutes);
+app.route('/api/image-builder', imageBuilderRoutes);
 
 // SSE for real-time events (placeholder for now)
 app.get('/api/events', (c) => {
@@ -529,10 +539,39 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
             }
             break;
 
+          case 'start-image-shell':
+            // Start a shell into an image's rootfs (dev-mode only)
+            if (process.env.environment !== 'development') {
+              ws.send(JSON.stringify({ type: 'error', message: 'Image shell is only available in development mode' }));
+              break;
+            }
+            if (msg.imageName) {
+              try {
+                sessionId = createImageShellSession(
+                  msg.imageName,
+                  ws,
+                  msg.cols || 80,
+                  msg.rows || 24,
+                );
+                isVmSession = false; // Uses its own write/resize handlers
+              } catch (err) {
+                console.error('[WS Terminal] Failed to create image shell:', err);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  message: err instanceof Error ? err.message : 'Failed to create image shell'
+                }));
+              }
+            } else {
+              ws.send(JSON.stringify({ type: 'error', message: 'imageName is required' }));
+            }
+            break;
+
           case 'input':
             // Send input to terminal
             if (sessionId && msg.data) {
-              if (isVmSession) {
+              if (sessionId.startsWith('image-')) {
+                writeToImageShell(sessionId, msg.data);
+              } else if (isVmSession) {
                 writeToVmSession(sessionId, msg.data);
               } else {
                 writeToSession(sessionId, msg.data);
@@ -543,7 +582,9 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
           case 'resize':
             // Resize terminal
             if (sessionId && msg.cols && msg.rows) {
-              if (isVmSession) {
+              if (sessionId.startsWith('image-')) {
+                resizeImageShell(sessionId, msg.cols, msg.rows);
+              } else if (isVmSession) {
                 resizeVmSession(sessionId, msg.cols, msg.rows);
               } else {
                 resizeSession(sessionId, msg.cols, msg.rows);
@@ -582,6 +623,7 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
 
     ws.on('close', () => {
       console.log('WebSocket connection closed');
+      closeImageShellByWebSocket(ws);
       if (isVmSession) {
         closeVmSessionByWebSocket(ws);
       } else {
@@ -591,6 +633,7 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
 
     ws.on('error', (err) => {
       console.error('WebSocket error:', err);
+      closeImageShellByWebSocket(ws);
       if (isVmSession) {
         closeVmSessionByWebSocket(ws);
       } else {
@@ -726,6 +769,7 @@ async function main() {
     // Close all terminal sessions (kills SSH/docker exec processes)
     closeAllSessions();
     closeAllVmSessions();
+    cleanupAllImageShells();
 
     // Close all WebSocket connections
     wss.clients.forEach((client) => {

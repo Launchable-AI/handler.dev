@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle, ChevronDown, ChevronRight, Store, Github, Zap } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Settings as SettingsIcon, HardDrive, Package, StickyNote, Cpu, MemoryStick, Activity, Clock, Monitor, LayoutGrid, Boxes, Camera, FileCode, Image, Cog, Puzzle, ChevronDown, ChevronRight, Store, Github, Zap, Hammer } from 'lucide-react';
 import { useExchangeGitHubCode } from './hooks/useGitHub';
 import { Settings } from './components/Settings';
 import { MCPPage } from './components/MCPPage';
@@ -14,6 +14,7 @@ import { AgentConfig } from './components/AgentConfig';
 import { PluginMarketplace } from './components/PluginMarketplace';
 import { Repos } from './components/Repos';
 import { QuickFiles } from './components/QuickFiles';
+import { ImageBuilder } from './components/ImageBuilder';
 import { ConfirmProvider } from './components/ConfirmModal';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ThemeProvider } from './hooks/useTheme';
@@ -23,10 +24,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { SandboxListResponse, Sandbox } from './api/client';
 
 // All possible tabs
-type Tab = 'agents' | 'repos' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'quick-files' | 'settings';
+type Tab = 'agents' | 'repos' | 'sandboxes' | 'volumes' | 'dockerfiles' | 'images' | 'snapshots' | 'mcp' | 'notes' | 'agent-config' | 'plugins' | 'quick-files' | 'image-builder' | 'settings';
 
 // Valid tabs for persistence
-const VALID_TABS: Tab[] = ['agents', 'repos', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'quick-files', 'settings'];
+const VALID_TABS: Tab[] = ['agents', 'repos', 'sandboxes', 'snapshots', 'volumes', 'dockerfiles', 'images', 'mcp', 'notes', 'agent-config', 'plugins', 'quick-files', 'image-builder', 'settings'];
 
 interface NavItemDef {
   id: Tab;
@@ -51,40 +52,49 @@ function isItem(entry: NavEntry): entry is NavItemDef {
   return typeof entry === 'object' && 'id' in entry && !('children' in entry);
 }
 
-const navStructure: NavEntry[] = [
-  { id: 'agents', label: 'Command Centre', icon: LayoutGrid },
-  'separator',
-  {
-    id: 'resources',
-    label: 'Resources',
-    icon: Boxes,
-    children: [
-      { id: 'sandboxes', label: 'Sandboxes', icon: Boxes },
-      { id: 'images', label: 'Images', icon: Image },
-      { id: 'snapshots', label: 'Snapshots', icon: Camera },
-      { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
-      { id: 'volumes', label: 'Volumes', icon: HardDrive },
-      { id: 'quick-files', label: 'Quick Files', icon: Zap },
-    ],
-  },
-  {
-    id: 'extensions',
-    label: 'Extensions',
-    icon: Puzzle,
-    children: [
-      { id: 'repos', label: 'Repos', icon: Github },
-      { id: 'mcp', label: 'MCP Servers', icon: Package },
-      { id: 'plugins', label: 'Plugins', icon: Store },
-    ],
-  },
-  { id: 'agent-config', label: 'Agent Config', icon: Cog },
-  { id: 'notes', label: 'Notes', icon: StickyNote },
-  { id: 'settings', label: 'Settings', icon: SettingsIcon },
-  'spacer',
-];
+function buildNavStructure(devMode: boolean): NavEntry[] {
+  const entries: NavEntry[] = [
+    { id: 'agents', label: 'Command Centre', icon: LayoutGrid },
+    'separator',
+    {
+      id: 'resources',
+      label: 'Resources',
+      icon: Boxes,
+      children: [
+        { id: 'sandboxes', label: 'Sandboxes', icon: Boxes },
+        { id: 'images', label: 'Images', icon: Image },
+        { id: 'snapshots', label: 'Snapshots', icon: Camera },
+        { id: 'dockerfiles', label: 'Dockerfiles', icon: FileCode },
+        { id: 'volumes', label: 'Volumes', icon: HardDrive },
+        { id: 'quick-files', label: 'Quick Files', icon: Zap },
+      ],
+    },
+    {
+      id: 'extensions',
+      label: 'Extensions',
+      icon: Puzzle,
+      children: [
+        { id: 'repos', label: 'Repos', icon: Github },
+        { id: 'mcp', label: 'MCP Servers', icon: Package },
+        { id: 'plugins', label: 'Plugins', icon: Store },
+      ],
+    },
+    { id: 'agent-config', label: 'Agent Config', icon: Cog },
+    { id: 'notes', label: 'Notes', icon: StickyNote },
+  ];
+
+  if (devMode) {
+    entries.push({ id: 'image-builder', label: 'Image Builder', icon: Hammer });
+  }
+
+  entries.push({ id: 'settings', label: 'Settings', icon: SettingsIcon });
+  entries.push('spacer');
+
+  return entries;
+}
 
 // Build a flat lookup of tab id -> label (including group children)
-function getTabLabelMap(): Map<Tab, string> {
+function getTabLabelMap(navStructure: NavEntry[]): Map<Tab, string> {
   const map = new Map<Tab, string>();
   for (const entry of navStructure) {
     if (isItem(entry)) map.set(entry.id, entry.label);
@@ -96,8 +106,6 @@ function getTabLabelMap(): Map<Tab, string> {
   }
   return map;
 }
-
-const tabLabelMap = getTabLabelMap();
 
 // Content area that adjusts for terminal panel
 function TerminalAwareContent({ activeTab, onCreateClick, highlightedSandboxId }: { activeTab: Tab; onCreateClick: () => void; highlightedSandboxId?: string | null }) {
@@ -127,6 +135,7 @@ function TerminalAwareContent({ activeTab, onCreateClick, highlightedSandboxId }
       {activeTab === 'quick-files' && <QuickFiles />}
       {activeTab === 'agent-config' && <AgentConfig />}
       {activeTab === 'plugins' && <PluginMarketplace />}
+      {activeTab === 'image-builder' && <ImageBuilder />}
       {activeTab === 'settings' && <Settings />}
     </div>
   );
@@ -159,6 +168,10 @@ function App() {
   const createContainerMutation = useCreateContainer();
   const createVmMutation = useCreateVm();
   const queryClient = useQueryClient();
+
+  // Build nav structure dynamically based on dev mode
+  const navStructure = useMemo(() => buildNavStructure(health?.devMode === true), [health?.devMode]);
+  const tabLabelMap = useMemo(() => getTabLabelMap(navStructure), [navStructure]);
 
   // Generate unique name based on prefix and existing sandboxes (containers + VMs)
   const generateUniqueName = (prefix: string): string => {

@@ -202,6 +202,41 @@ Detects AI coding agents (Claude Code, Codex, Gemini CLI, OpenCode) installed/ru
 - `packages/web/src/hooks/useSandboxes.ts` — `useSandboxAgents()` hook (30s polling, only for running sandboxes)
 - Badges displayed in `SandboxCard`, `SandboxCardCompact`, and `SandboxRow`
 
+### Image Builder (dev-only)
+
+A UI tool for managing the VM image building pipeline, gated by `environment=development`. Brings the shell-script-based workflow (download, prepare, build kernel, upload) into the web UI with real-time SSE output streaming and the ability to shell into image filesystems via loop-mount + chroot.
+
+**Environment gating**: The health endpoint returns `devMode: true` when `process.env.environment === 'development'`. Server routes reject with 403 otherwise. The nav entry only appears when `health.devMode` is true.
+
+**Layer images**: Images created from VM snapshots have `layer.ext4` + `layer.json` instead of `rootfs.ext4`. The `layer.json` contains a `parent` field pointing to the base image. Layer images show a "Layer of {parent}" badge, have Prepare disabled (layers come from snapshots, not qcow2 conversion), and Shell opens a chroot into the partial layer filesystem. Upload handles layer images by compressing `layer.ext4` and uploading `layer.ext4.gz` + `layer.json` instead of `rootfs.ext4.gz` + `vmlinux`.
+
+**Upload dialog**: Clicking Upload opens a confirmation dialog with AWS Profile (with autocomplete from `~/.aws/config`), S3 Bucket, S3 Region fields, a files preview, and destination path preview. Config is passed as env vars to `upload-fc-image.sh`.
+
+**Shell flow**: Clicking Shell first tries `sudo -n mount` (non-interactive). If sudo requires a password, the UI shows the exact `sudo mount` command for the user to run in their terminal. After mounting manually, clicking Shell again detects the existing mount and opens the session. Uses a stable mount point (`/tmp/handler-image-{name}`) so manual mounts persist across retries. If `sudo -n chroot` is also unavailable, falls back to a plain shell cd'd to the mount point.
+
+**API endpoints** (all prefixed `/api/image-builder`, dev-mode middleware applied):
+- `GET /` — list base images with file presence, sizes, and layer info
+- `GET /aws-profiles` — list AWS CLI profiles from `~/.aws/config`
+- `GET /:name` — inspect single image (includes filesystem info via dumpe2fs)
+- `POST /:name/prepare` — SSE: run `prepare-fc-image.sh --non-interactive`
+- `POST /kernel/build` — SSE: run `build-fc-kernel.sh`
+- `POST /:name/upload` — SSE: run `upload-fc-image.sh` (accepts `{ awsProfile, s3Bucket, s3Region }` body)
+- `POST /:name/download` — SSE: run `download-image.sh`
+- `GET /operations/list` — list active operations
+- `POST /operations/:id/cancel` — cancel running operation
+
+**WebSocket**: `start-image-shell` message type creates a chroot shell session into a `rootfs.ext4` or `layer.ext4` (fallback). Uses the `'image'` terminal target type.
+
+Key files:
+- `packages/server/src/services/image-builder.ts` — Image listing, inspection, operation execution
+- `packages/server/src/services/image-shell.ts` — Loop-mount + chroot shell sessions
+- `packages/server/src/routes/image-builder.ts` — Routes with dev-mode middleware
+- `packages/web/src/hooks/useImageBuilder.ts` — React Query hooks
+- `packages/web/src/components/ImageBuilder.tsx` — Main UI page with upload dialog
+- `packages/web/src/api/client.ts` — `listBuilderImages()`, `inspectBuilderImage()`, `listAwsProfiles()`, `prepareImage()`, `buildKernel()`, `uploadImage()`, `downloadBuilderImage()` functions
+- `scripts/dev/prepare-fc-image.sh` — Shell script with `--non-interactive` flag for server invocation
+- `scripts/dev/upload-fc-image.sh` — Upload script with layer image detection and S3 config env vars
+
 ### Key tech choices
 
 - Tailwind CSS v4 (beta) for styling

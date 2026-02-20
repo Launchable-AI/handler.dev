@@ -125,9 +125,18 @@ IMAGE_DIR="$BASE_IMAGES_DIR/$IMAGE_NAME"
 ROOTFS_PATH="$IMAGE_DIR/rootfs.ext4"
 ROOTFS_GZ_PATH="$IMAGE_DIR/rootfs.ext4.gz"
 KERNEL_PATH="$IMAGE_DIR/vmlinux"
+LAYER_PATH="$IMAGE_DIR/layer.ext4"
+LAYER_GZ_PATH="$IMAGE_DIR/layer.ext4.gz"
+LAYER_JSON_PATH="$IMAGE_DIR/layer.json"
 MANIFEST_PATH="$IMAGE_DIR/manifest.json"
 
 S3_DEST="s3://$S3_BUCKET/$S3_BASE_PATH/$IMAGE_NAME/firecracker"
+
+# Detect layer images
+IS_LAYER=false
+if [ -f "$LAYER_JSON_PATH" ] && [ -f "$LAYER_PATH" ]; then
+    IS_LAYER=true
+fi
 
 # ============================================================================
 # Main
@@ -138,6 +147,7 @@ echo "  Handler Firecracker Image Uploader"
 echo "============================================"
 echo ""
 echo "Image:       $IMAGE_NAME"
+echo "Type:        $([ "$IS_LAYER" = true ] && echo "layer" || echo "base")"
 echo "Source:      $IMAGE_DIR"
 echo "Destination: $S3_DEST"
 echo "Dry run:     $DRY_RUN"
@@ -167,39 +177,61 @@ fi
 
 step "Step 1: Validating local files"
 
-if [ ! -f "$ROOTFS_PATH" ]; then
-    error "Rootfs not found: $ROOTFS_PATH
-
-Run prepare-fc-image.sh first:
-    ./scripts/dev/prepare-fc-image.sh $IMAGE_NAME"
-fi
-log "Found rootfs: $ROOTFS_PATH ($(du -h "$ROOTFS_PATH" | cut -f1))"
-
-if [ ! -f "$KERNEL_PATH" ]; then
-    error "Kernel not found: $KERNEL_PATH
-
-Run prepare-fc-image.sh first:
-    ./scripts/dev/prepare-fc-image.sh $IMAGE_NAME"
-fi
-log "Found kernel: $KERNEL_PATH ($(du -h "$KERNEL_PATH" | cut -f1))"
-
-# ----------------------------------------------------------------------------
-# Step 2: Compress rootfs (if not already compressed)
-# ----------------------------------------------------------------------------
-
-step "Step 2: Compressing rootfs"
-
-if [ -f "$ROOTFS_GZ_PATH" ]; then
-    log "Compressed rootfs already exists: $ROOTFS_GZ_PATH"
-    log "Delete it first if you want to recompress"
+if [ "$IS_LAYER" = true ]; then
+    log "Detected layer image"
+    log "Found layer: $LAYER_PATH ($(du -h "$LAYER_PATH" | cut -f1))"
+    log "Found layer.json: $LAYER_JSON_PATH"
 else
-    log "Compressing rootfs.ext4 -> rootfs.ext4.gz"
-    log "This may take a few minutes..."
-    cmd "gzip -k -9 \"$ROOTFS_PATH\""
+    if [ ! -f "$ROOTFS_PATH" ]; then
+        error "Rootfs not found: $ROOTFS_PATH
 
-    if [ "$DRY_RUN" = false ]; then
-        gzip -k -9 "$ROOTFS_PATH"
-        log "Compression complete: $(du -h "$ROOTFS_GZ_PATH" | cut -f1)"
+Run prepare-fc-image.sh first:
+    ./scripts/dev/prepare-fc-image.sh $IMAGE_NAME"
+    fi
+    log "Found rootfs: $ROOTFS_PATH ($(du -h "$ROOTFS_PATH" | cut -f1))"
+
+    if [ ! -f "$KERNEL_PATH" ]; then
+        error "Kernel not found: $KERNEL_PATH
+
+Run prepare-fc-image.sh first:
+    ./scripts/dev/prepare-fc-image.sh $IMAGE_NAME"
+    fi
+    log "Found kernel: $KERNEL_PATH ($(du -h "$KERNEL_PATH" | cut -f1))"
+fi
+
+# ----------------------------------------------------------------------------
+# Step 2: Compress filesystem image (if not already compressed)
+# ----------------------------------------------------------------------------
+
+step "Step 2: Compressing filesystem image"
+
+if [ "$IS_LAYER" = true ]; then
+    if [ -f "$LAYER_GZ_PATH" ]; then
+        log "Compressed layer already exists: $LAYER_GZ_PATH"
+        log "Delete it first if you want to recompress"
+    else
+        log "Compressing layer.ext4 -> layer.ext4.gz"
+        log "This may take a few minutes..."
+        cmd "gzip -k -9 \"$LAYER_PATH\""
+
+        if [ "$DRY_RUN" = false ]; then
+            gzip -k -9 "$LAYER_PATH"
+            log "Compression complete: $(du -h "$LAYER_GZ_PATH" | cut -f1)"
+        fi
+    fi
+else
+    if [ -f "$ROOTFS_GZ_PATH" ]; then
+        log "Compressed rootfs already exists: $ROOTFS_GZ_PATH"
+        log "Delete it first if you want to recompress"
+    else
+        log "Compressing rootfs.ext4 -> rootfs.ext4.gz"
+        log "This may take a few minutes..."
+        cmd "gzip -k -9 \"$ROOTFS_PATH\""
+
+        if [ "$DRY_RUN" = false ]; then
+            gzip -k -9 "$ROOTFS_PATH"
+            log "Compression complete: $(du -h "$ROOTFS_GZ_PATH" | cut -f1)"
+        fi
     fi
 fi
 
@@ -209,18 +241,34 @@ fi
 
 step "Step 3: Generating SHA256 checksums"
 
-cmd "sha256sum \"$ROOTFS_GZ_PATH\""
-cmd "sha256sum \"$KERNEL_PATH\""
+if [ "$IS_LAYER" = true ]; then
+    cmd "sha256sum \"$LAYER_GZ_PATH\""
+    cmd "sha256sum \"$LAYER_JSON_PATH\""
 
-if [ "$DRY_RUN" = false ]; then
-    ROOTFS_SHA256=$(sha256sum "$ROOTFS_GZ_PATH" | cut -d' ' -f1)
-    KERNEL_SHA256=$(sha256sum "$KERNEL_PATH" | cut -d' ' -f1)
+    if [ "$DRY_RUN" = false ]; then
+        LAYER_SHA256=$(sha256sum "$LAYER_GZ_PATH" | cut -d' ' -f1)
+        LAYER_JSON_SHA256=$(sha256sum "$LAYER_JSON_PATH" | cut -d' ' -f1)
 
-    log "Rootfs SHA256: $ROOTFS_SHA256"
-    log "Kernel SHA256: $KERNEL_SHA256"
+        log "Layer SHA256: $LAYER_SHA256"
+        log "Layer JSON SHA256: $LAYER_JSON_SHA256"
+    else
+        LAYER_SHA256="<layer-sha256-placeholder>"
+        LAYER_JSON_SHA256="<layer-json-sha256-placeholder>"
+    fi
 else
-    ROOTFS_SHA256="<rootfs-sha256-placeholder>"
-    KERNEL_SHA256="<kernel-sha256-placeholder>"
+    cmd "sha256sum \"$ROOTFS_GZ_PATH\""
+    cmd "sha256sum \"$KERNEL_PATH\""
+
+    if [ "$DRY_RUN" = false ]; then
+        ROOTFS_SHA256=$(sha256sum "$ROOTFS_GZ_PATH" | cut -d' ' -f1)
+        KERNEL_SHA256=$(sha256sum "$KERNEL_PATH" | cut -d' ' -f1)
+
+        log "Rootfs SHA256: $ROOTFS_SHA256"
+        log "Kernel SHA256: $KERNEL_SHA256"
+    else
+        ROOTFS_SHA256="<rootfs-sha256-placeholder>"
+        KERNEL_SHA256="<kernel-sha256-placeholder>"
+    fi
 fi
 
 # ----------------------------------------------------------------------------
@@ -229,7 +277,32 @@ fi
 
 step "Step 4: Creating manifest.json"
 
-MANIFEST_CONTENT=$(cat <<EOF
+if [ "$IS_LAYER" = true ]; then
+    PARENT_IMAGE=$(python3 -c "import json; print(json.load(open('$LAYER_JSON_PATH'))['parent'])" 2>/dev/null || echo "unknown")
+
+    MANIFEST_CONTENT=$(cat <<EOF
+{
+  "name": "$IMAGE_NAME",
+  "type": "firecracker-layer",
+  "version": "1.0",
+  "created": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "parent": "$PARENT_IMAGE",
+  "files": {
+    "layer": {
+      "filename": "layer.ext4.gz",
+      "sha256": "$LAYER_SHA256",
+      "compressed": true
+    },
+    "layerJson": {
+      "filename": "layer.json",
+      "sha256": "$LAYER_JSON_SHA256"
+    }
+  }
+}
+EOF
+)
+else
+    MANIFEST_CONTENT=$(cat <<EOF
 {
   "name": "$IMAGE_NAME",
   "type": "firecracker",
@@ -249,6 +322,7 @@ MANIFEST_CONTENT=$(cat <<EOF
 }
 EOF
 )
+fi
 
 log "Manifest content:"
 echo "$MANIFEST_CONTENT" | sed 's/^/    /'
@@ -273,18 +347,34 @@ if [ "$DRY_RUN" = false ]; then
     aws s3 cp "$MANIFEST_PATH" "$S3_DEST/manifest.json" --region $S3_REGION
 fi
 
-log "Uploading kernel (~43MB)..."
-cmd "aws s3 cp \"$KERNEL_PATH\" \"$S3_DEST/vmlinux\" --region $S3_REGION"
+if [ "$IS_LAYER" = true ]; then
+    log "Uploading layer.json..."
+    cmd "aws s3 cp \"$LAYER_JSON_PATH\" \"$S3_DEST/layer.json\" --region $S3_REGION"
 
-if [ "$DRY_RUN" = false ]; then
-    aws s3 cp "$KERNEL_PATH" "$S3_DEST/vmlinux" --region $S3_REGION
-fi
+    if [ "$DRY_RUN" = false ]; then
+        aws s3 cp "$LAYER_JSON_PATH" "$S3_DEST/layer.json" --region $S3_REGION
+    fi
 
-log "Uploading rootfs (~415MB, this may take a while)..."
-cmd "aws s3 cp \"$ROOTFS_GZ_PATH\" \"$S3_DEST/rootfs.ext4.gz\" --region $S3_REGION"
+    log "Uploading layer.ext4.gz (this may take a while)..."
+    cmd "aws s3 cp \"$LAYER_GZ_PATH\" \"$S3_DEST/layer.ext4.gz\" --region $S3_REGION"
 
-if [ "$DRY_RUN" = false ]; then
-    aws s3 cp "$ROOTFS_GZ_PATH" "$S3_DEST/rootfs.ext4.gz" --region $S3_REGION
+    if [ "$DRY_RUN" = false ]; then
+        aws s3 cp "$LAYER_GZ_PATH" "$S3_DEST/layer.ext4.gz" --region $S3_REGION
+    fi
+else
+    log "Uploading kernel (~43MB)..."
+    cmd "aws s3 cp \"$KERNEL_PATH\" \"$S3_DEST/vmlinux\" --region $S3_REGION"
+
+    if [ "$DRY_RUN" = false ]; then
+        aws s3 cp "$KERNEL_PATH" "$S3_DEST/vmlinux" --region $S3_REGION
+    fi
+
+    log "Uploading rootfs (~415MB, this may take a while)..."
+    cmd "aws s3 cp \"$ROOTFS_GZ_PATH\" \"$S3_DEST/rootfs.ext4.gz\" --region $S3_REGION"
+
+    if [ "$DRY_RUN" = false ]; then
+        aws s3 cp "$ROOTFS_GZ_PATH" "$S3_DEST/rootfs.ext4.gz" --region $S3_REGION
+    fi
 fi
 
 # ----------------------------------------------------------------------------

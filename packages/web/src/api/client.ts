@@ -449,7 +449,7 @@ export async function buildDockerfile(
 }
 
 // Health
-export async function checkHealth(): Promise<{ status: string; docker: string }> {
+export async function checkHealth(): Promise<{ status: string; docker: string; devMode?: boolean }> {
   return fetchAPI('/health');
 }
 
@@ -3864,4 +3864,184 @@ export interface AgentInfo {
 export async function detectSandboxAgents(id: string): Promise<AgentInfo[]> {
   const result = await fetchAPI<{ agents: AgentInfo[] }>(`/sandboxes/${encodeURIComponent(id)}/agents`);
   return result.agents;
+}
+
+// ============ Image Builder (dev-mode only) ============
+
+export interface ImageBuilderDetail {
+  name: string;
+  hasQcow2: boolean;
+  hasRootfs: boolean;
+  hasKernel: boolean;
+  qcow2SizeBytes: number | null;
+  rootfsSizeBytes: number | null;
+  kernelSizeBytes: number | null;
+  modifiedAt: string | null;
+  filesystemInfo?: string;
+  isLayer: boolean;
+  hasLayer: boolean;
+  layerSizeBytes: number | null;
+  parentImage: string | null;
+  isMounted: boolean;
+  mountCommand: string | null;
+  umountCommand: string | null;
+}
+
+export interface BuildOperation {
+  id: string;
+  type: string;
+  imageName?: string;
+  startedAt: string;
+}
+
+export async function listBuilderImages(): Promise<ImageBuilderDetail[]> {
+  return fetchAPI('/image-builder');
+}
+
+export async function inspectBuilderImage(name: string): Promise<ImageBuilderDetail> {
+  return fetchAPI(`/image-builder/${encodeURIComponent(name)}`);
+}
+
+export async function listBuildOperations(): Promise<BuildOperation[]> {
+  return fetchAPI('/image-builder/operations/list');
+}
+
+export async function cancelBuildOperation(id: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/image-builder/operations/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+}
+
+export async function listAwsProfiles(): Promise<{ profiles: string[] }> {
+  return fetchAPI('/image-builder/aws-profiles');
+}
+
+/**
+ * Run an image builder SSE operation and stream output.
+ * Returns a cancel function.
+ */
+function runBuilderSseOperation(
+  url: string,
+  method: string,
+  body: unknown | undefined,
+  onOutput: (line: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): () => void {
+  const controller = new AbortController();
+
+  (async () => {
+    const serverUrl = getServerUrl();
+
+    const fetchOpts: RequestInit = {
+      method,
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+    };
+    if (body !== undefined) {
+      fetchOpts.body = JSON.stringify(body);
+    }
+
+    try {
+      const response = await fetch(`${serverUrl}${url}`, fetchOpts);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Operation failed' }));
+        onError(error.error || 'Operation failed');
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        onError('No response stream');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split('\n\n');
+        buffer = blocks.pop() || '';
+
+        for (const block of blocks) {
+          const eventMatch = block.match(/event: (\w+)/);
+          const dataMatch = block.match(/data: (.+)/s);
+
+          if (eventMatch && dataMatch) {
+            const event = eventMatch[1];
+            try {
+              const data = JSON.parse(dataMatch[1]);
+              if (event === 'output') {
+                onOutput(data.line);
+              } else if (event === 'done') {
+                onDone();
+              } else if (event === 'error') {
+                onError(data.error || 'Operation failed');
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        onError(err.message);
+      }
+    }
+  })();
+
+  return () => controller.abort();
+}
+
+export function prepareImage(
+  name: string,
+  onOutput: (line: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): () => void {
+  return runBuilderSseOperation(
+    `/api/image-builder/${encodeURIComponent(name)}/prepare`,
+    'POST', undefined, onOutput, onDone, onError,
+  );
+}
+
+export function buildKernel(
+  opts: { version?: string },
+  onOutput: (line: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): () => void {
+  return runBuilderSseOperation(
+    '/api/image-builder/kernel/build',
+    'POST', opts.version ? { version: opts.version } : {}, onOutput, onDone, onError,
+  );
+}
+
+export function uploadImage(
+  name: string,
+  onOutput: (line: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+  config?: { awsProfile?: string; s3Bucket?: string; s3Region?: string },
+): () => void {
+  return runBuilderSseOperation(
+    `/api/image-builder/${encodeURIComponent(name)}/upload`,
+    'POST', config || {}, onOutput, onDone, onError,
+  );
+}
+
+export function downloadBuilderImage(
+  name: string,
+  onOutput: (line: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): () => void {
+  return runBuilderSseOperation(
+    `/api/image-builder/${encodeURIComponent(name)}/download`,
+    'POST', undefined, onOutput, onDone, onError,
+  );
 }

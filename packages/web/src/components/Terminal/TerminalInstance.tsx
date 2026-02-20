@@ -12,7 +12,7 @@ import { useTheme } from '../../hooks/useTheme';
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
 
 export interface TerminalTarget {
-  type: 'vm' | 'container';
+  type: 'vm' | 'container' | 'image';
   id: string;
   ip?: string;
   /** Override the working directory for the shell session */
@@ -273,6 +273,14 @@ export function TerminalInstance({
               rows: term.rows,
             }));
           }
+        } else if (target.type === 'image') {
+          // Image shell — chroot into rootfs
+          ws.send(JSON.stringify({
+            type: 'start-image-shell',
+            imageName: target.id,
+            cols: term.cols,
+            rows: term.rows,
+          }));
         } else if (target.type === 'vm') {
           ws.send(JSON.stringify({
             type: 'start-vm',
@@ -325,7 +333,14 @@ export function TerminalInstance({
               clearSavedSession();
               term.write('\r\n\x1b[33m[Previous session expired, starting new session...]\x1b[0m\r\n');
               // Start a new session based on target type
-              if (target.type === 'vm') {
+              if (target.type === 'image') {
+                ws.send(JSON.stringify({
+                  type: 'start-image-shell',
+                  imageName: target.id,
+                  cols: term.cols,
+                  rows: term.rows,
+                }));
+              } else if (target.type === 'vm') {
                 ws.send(JSON.stringify({
                   type: 'start-vm',
                   vmId: target.id,
@@ -591,7 +606,9 @@ export function TerminalInstance({
           <div className="p-4 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--red)/0.3)] max-w-sm text-center">
             <p className="text-xs text-[hsl(var(--red))] mb-2">{errorMessage}</p>
             <p className="text-[10px] text-[hsl(var(--text-muted))]">
-              {target.type === 'vm'
+              {target.type === 'image'
+                ? 'Make sure the rootfs.ext4 exists and sudo is available'
+                : target.type === 'vm'
                 ? 'Make sure the VM is running and SSH is available'
                 : 'Make sure the container is running'}
             </p>
