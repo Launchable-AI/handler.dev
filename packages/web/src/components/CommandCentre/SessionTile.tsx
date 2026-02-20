@@ -160,6 +160,10 @@ export function SessionTile({
     updateSessionStatus(session.id, state, errorMessage);
   }, [session.id, updateSessionStatus]);
 
+  const handleTmuxStateChange = useCallback((tmuxState: 'connected' | 'detached' | 'unavailable') => {
+    updateSessionStatus(session.id, session.status, undefined, tmuxState);
+  }, [session.id, session.status, updateSessionStatus]);
+
   const handleClick = useCallback(() => {
     if (onClick) {
       onClick();
@@ -296,6 +300,24 @@ export function SessionTile({
               {session.targetIp}
             </span>
           )}
+          {session.tmuxState && (
+            <span className={`inline-flex items-center gap-1 px-1 py-0.5 rounded text-[8px] uppercase tracking-wider ${
+              session.tmuxState === 'connected'
+                ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
+                : session.tmuxState === 'detached'
+                ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
+                : 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
+            }`}>
+              <span className={`inline-block w-1 h-1 rounded-full ${
+                session.tmuxState === 'connected'
+                  ? 'bg-[hsl(var(--green))]'
+                  : session.tmuxState === 'detached'
+                  ? 'bg-[hsl(var(--amber))]'
+                  : 'bg-[hsl(var(--red))]'
+              }`} />
+              tmux
+            </span>
+          )}
         </div>
 
         {/* Actions - show for both thumbnail and full view */}
@@ -395,6 +417,7 @@ export function SessionTile({
             ip: session.targetIp,
           }}
           onStateChange={handleStateChange}
+          onTmuxStateChange={handleTmuxStateChange}
           showStatusBar={false}
           fontSize={isThumbnail ? Math.max(6, Math.floor(fontSize * 0.6)) : fontSize}
         />

@@ -80,11 +80,14 @@ Terminal sessions for Docker containers and VMs use **tmux** for persistence (co
   - **Red**: tmux not installed (no persistence available)
   - Hidden when tmux persistence is disabled in config
 
+The tmux badge is displayed in both the TerminalPanel popout (via its own internal TerminalInstance) and the Command Centre grid view (via `onTmuxStateChange` callback on `TerminalInstance` → `SessionTile` header). The `TerminalInstance` component handles `session-update` WebSocket messages from the server to track tmux state changes.
+
 Key files:
 - `packages/server/src/services/terminal.ts` — tmux-based terminal sessions (Docker)
 - `packages/server/src/services/vm-terminal.ts` — tmux-based terminal sessions (VMs)
 - `packages/server/src/services/session-store.ts` — session persistence
-- `packages/web/src/components/Terminal/TerminalInstance.tsx` — auto-reconnection logic
+- `packages/web/src/components/Terminal/TerminalInstance.tsx` — auto-reconnection logic, tmux state via `onTmuxStateChange` callback
+- `packages/web/src/components/CommandCentre/SessionTile.tsx` — tmux badge in Command Centre session tiles
 
 For tmux persistence to work, containers/VMs must have `tmux` installed (the default.dockerfile and Firecracker images include it). When `tmuxEnabled` is set to `false` in config, plain shell sessions are used instead. The tmux status bar can be toggled via `tmuxStatusBar` in config (default: `false` / hidden).
 
@@ -201,6 +204,7 @@ Detects AI coding agents (Claude Code, Codex, Gemini CLI, OpenCode) installed/ru
 - `packages/web/src/components/sandbox/AgentBadges.tsx` — SVG logo badges (grayed = installed, colored + pulse = running)
 - `packages/web/src/hooks/useSandboxes.ts` — `useSandboxAgents()` hook (30s polling, only for running sandboxes)
 - Badges displayed in `SandboxCard`, `SandboxCardCompact`, and `SandboxRow`
+- The detection script uses `_dp=$$` + `grep -v` to exclude the script's own shell process from `pgrep` results (prevents false positives where all agents appear "running" because the detection script's command line contains all agent names). SSH detection passes the script directly as the remote command (no `sh -c` wrapper) since SSH already runs it through the user's shell.
 
 ### Image Builder (dev-only)
 

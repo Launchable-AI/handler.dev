@@ -23,8 +23,10 @@ import {
   Check,
 } from 'lucide-react';
 import { useCommandCentre } from '../../hooks/useCommandCentre';
-import { useVms, useContainers, useVolumes, useVmVolumes } from '../../hooks/useContainers';
+import { useSandboxes } from '../../hooks/useSandboxes';
+import { useVolumes, useVmVolumes } from '../../hooks/useContainers';
 import { useCanvas } from '../../context/CanvasContext';
+import type { Sandbox } from '../../api/client';
 
 interface ToolBarProps {
   className?: string;
@@ -44,10 +46,11 @@ export function ToolBar({ className = '' }: ToolBarProps) {
   const [showPicker, setShowPicker] = useState(false);
   const [isOpeningAll, setIsOpeningAll] = useState(false);
   const [showResources, setShowResources] = useState(false);
-  const { data: vms } = useVms();
-  const { data: containers } = useContainers();
+  const { data: sandboxData } = useSandboxes();
   const { data: dockerVolumes } = useVolumes();
   const { data: vmVolumes } = useVmVolumes();
+
+  const sandboxes = sandboxData?.sandboxes || [];
 
   const sessionCount = state.sessions.length;
   const { fontSize, splitLayout, focusedSessionIds, isFullscreen, maximizedSessionId, viewMode } = state;
@@ -75,14 +78,20 @@ export function ToolBar({ className = '' }: ToolBarProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreen, maximizedSessionId, toggleFullscreen, maximizeSession]);
 
-  // Count running instances
-  const runningVMs = vms?.filter(vm => vm.state === 'running') || [];
-  const runningContainers = containers?.filter(c => c.state === 'running') || [];
-  const totalRunning = runningVMs.length + runningContainers.length;
+  // Classify sandboxes by type
+  const isVmBackend = (s: Sandbox) => s.backend === 'cloud-hypervisor' || s.backend === 'firecracker';
+  const isContainerBackend = (s: Sandbox) => s.backend === 'docker';
+
+  const allVMs = sandboxes.filter(isVmBackend);
+  const allContainers = sandboxes.filter(isContainerBackend);
+  const runningVMs = allVMs.filter(s => s.status === 'running');
+  const runningContainers = allContainers.filter(s => s.status === 'running');
+  const runningSandboxes = sandboxes.filter(s => s.status === 'running');
+  const totalRunning = runningSandboxes.length;
 
   // Resource stats
-  const totalVMs = vms?.length || 0;
-  const totalContainers = containers?.length || 0;
+  const totalVMs = allVMs.length;
+  const totalContainers = allContainers.length;
   const totalDockerVolumes = dockerVolumes?.length || 0;
   const totalVmVolumes = vmVolumes?.length || 0;
 
@@ -91,13 +100,9 @@ export function ToolBar({ className = '' }: ToolBarProps) {
     setIsOpeningAll(true);
 
     // Small delay between creating sessions for smoother UI
-    for (const vm of runningVMs) {
-      createSession('vm', vm.id, vm.name, vm.guestIp);
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    for (const container of runningContainers) {
-      createSession('container', container.id, container.name);
+    for (const sandbox of runningSandboxes) {
+      const sessionType = isVmBackend(sandbox) ? 'vm' : 'container';
+      createSession(sessionType, sandbox.id, sandbox.name, sandbox.guestIp);
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
@@ -493,19 +498,16 @@ interface SessionPickerProps {
 
 function SessionPicker({ onClose }: SessionPickerProps) {
   const { createSession } = useCommandCentre();
-  const { data: vms, isLoading: vmsLoading } = useVms();
-  const { data: containers, isLoading: containersLoading } = useContainers();
+  const { data: sandboxData, isLoading } = useSandboxes();
 
-  const runningVMs = vms?.filter(vm => vm.state === 'running') || [];
-  const runningContainers = containers?.filter(c => c.state === 'running') || [];
+  const sandboxes = sandboxData?.sandboxes || [];
+  const isVmBackend = (s: Sandbox) => s.backend === 'cloud-hypervisor' || s.backend === 'firecracker';
+  const runningVMs = sandboxes.filter(s => isVmBackend(s) && s.status === 'running');
+  const runningContainers = sandboxes.filter(s => s.backend === 'docker' && s.status === 'running');
 
-  const handleSelectVm = (vm: { id: string; name: string; guestIp?: string }) => {
-    createSession('vm', vm.id, vm.name, vm.guestIp);
-    onClose();
-  };
-
-  const handleSelectContainer = (container: { id: string; name: string }) => {
-    createSession('container', container.id, container.name);
+  const handleSelect = (sandbox: Sandbox) => {
+    const sessionType = isVmBackend(sandbox) ? 'vm' : 'container';
+    createSession(sessionType, sandbox.id, sandbox.name, sandbox.guestIp);
     onClose();
   };
 
@@ -525,7 +527,7 @@ function SessionPicker({ onClose }: SessionPickerProps) {
         </div>
 
         <div>
-          {vmsLoading ? (
+          {isLoading ? (
             <div className="px-4 py-3 text-xs text-[hsl(var(--text-muted))]">
               Loading...
             </div>
@@ -537,7 +539,7 @@ function SessionPicker({ onClose }: SessionPickerProps) {
             runningVMs.map(vm => (
               <button
                 key={vm.id}
-                onClick={() => handleSelectVm(vm)}
+                onClick={() => handleSelect(vm)}
                 className="w-full flex items-center gap-3 px-3 py-2 text-xs text-left hover:bg-[hsl(var(--bg-elevated))] transition-colors"
               >
                 <Server className="h-3.5 w-3.5 text-[hsl(var(--green))]" />
@@ -545,11 +547,16 @@ function SessionPicker({ onClose }: SessionPickerProps) {
                   <div className="font-medium text-[hsl(var(--text-primary))] truncate">
                     {vm.name}
                   </div>
-                  {vm.guestIp && (
-                    <div className="text-[10px] text-[hsl(var(--text-muted))]">
-                      {vm.guestIp}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {vm.guestIp && (
+                      <span className="text-[10px] text-[hsl(var(--text-muted))]">
+                        {vm.guestIp}
+                      </span>
+                    )}
+                    <span className="text-[9px] text-[hsl(var(--text-muted))] opacity-60">
+                      {vm.backend === 'firecracker' ? 'FC' : 'CH'}
+                    </span>
+                  </div>
                 </div>
               </button>
             ))
@@ -565,7 +572,7 @@ function SessionPicker({ onClose }: SessionPickerProps) {
         </div>
 
         <div>
-          {containersLoading ? (
+          {isLoading ? (
             <div className="px-4 py-3 text-xs text-[hsl(var(--text-muted))]">
               Loading...
             </div>
@@ -577,7 +584,7 @@ function SessionPicker({ onClose }: SessionPickerProps) {
             runningContainers.map(container => (
               <button
                 key={container.id}
-                onClick={() => handleSelectContainer(container)}
+                onClick={() => handleSelect(container)}
                 className="w-full flex items-center gap-3 px-3 py-2 text-xs text-left hover:bg-[hsl(var(--bg-elevated))] transition-colors"
               >
                 <Container className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />

@@ -23,8 +23,11 @@ const AGENTS: Array<{ id: AgentId; name: string }> = [
   { id: 'opencode', name: 'OpenCode' },
 ];
 
-const DETECTION_SCRIPT = AGENTS.map(a =>
-  `command -v ${a.id} >/dev/null 2>&1 && echo "${a.id}:installed"; pgrep -af '${a.id}' >/dev/null 2>&1 && echo "${a.id}:running"`
+// Detection script that avoids false positives from the script's own process.
+// _dp=$$ captures the current shell PID, then grep -v filters it from pgrep output
+// so the sh/bash process running this script doesn't match itself.
+const DETECTION_SCRIPT = '_dp=$$; ' + AGENTS.map(a =>
+  `command -v ${a.id} >/dev/null 2>&1 && echo "${a.id}:installed"; pgrep -af '[${a.id[0]}]${a.id.slice(1)}' 2>/dev/null | grep -v "^$_dp " | grep -q . && echo "${a.id}:running"`
 ).join('; ') + '; echo "__AGENT_DETECT_DONE__"';
 
 // In-memory cache
@@ -91,12 +94,14 @@ export async function detectAgentsViaSsh(
 
   try {
     const portArgs = port !== 22 ? ['-p', String(port)] : [];
+    // Pass detection script directly — SSH sends all post-hostname args as a
+    // single command string to the remote shell, so no sh -c wrapper needed.
     const output = execFileSync('ssh', [
       '-i', keyPath,
       ...portArgs,
       ...SSH_OPTS,
       `${user}@${host}`,
-      'sh', '-c', DETECTION_SCRIPT,
+      DETECTION_SCRIPT,
     ], { encoding: 'utf-8', timeout: 5000 });
     const agents = parseDetectionOutput(output);
     cache.set(sandboxId, { agents, timestamp: Date.now() });

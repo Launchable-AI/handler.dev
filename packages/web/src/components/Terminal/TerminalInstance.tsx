@@ -28,6 +28,7 @@ export interface ShellState {
 export interface TerminalInstanceProps {
   target: TerminalTarget;
   onStateChange?: (state: ConnectionState, errorMessage?: string) => void;
+  onTmuxStateChange?: (tmuxState: 'connected' | 'detached' | 'unavailable') => void;
   onShellState?: (state: ShellState) => void;
   onUrlsDetected?: (urls: string[]) => void;
   showStatusBar?: boolean;
@@ -41,6 +42,7 @@ const SESSION_STORAGE_KEY = 'handler-terminal-session-';
 export function TerminalInstance({
   target,
   onStateChange,
+  onTmuxStateChange,
   onShellState,
   onUrlsDetected,
   showStatusBar = true,
@@ -76,6 +78,8 @@ export function TerminalInstance({
   // Stable callback refs to avoid re-running effect
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
+  const onTmuxStateChangeRef = useRef(onTmuxStateChange);
+  onTmuxStateChangeRef.current = onTmuxStateChange;
   const onShellStateRef = useRef(onShellState);
   onShellStateRef.current = onShellState;
   const onUrlsDetectedRef = useRef(onUrlsDetected);
@@ -311,6 +315,9 @@ export function TerminalInstance({
             case 'connected':
               updateState('connected');
               setIsTmuxSession(!!msg.tmuxSession);
+              if (msg.tmuxSession) {
+                onTmuxStateChangeRef.current?.('connected');
+              }
               term.focus();
               setTimeout(fitAndResize, 50);
               setTimeout(fitAndResize, 200);
@@ -368,6 +375,14 @@ export function TerminalInstance({
               updateState('disconnected');
               term.write('\r\n\x1b[33m[Session ended]\x1b[0m\r\n');
               clearSavedSession(); // Session ended, clear saved state
+              break;
+            case 'session-update':
+              // Server detected tmux state change via stdout marker
+              if (msg.tmuxState) {
+                const tmuxConnected = msg.tmuxState === 'connected';
+                setIsTmuxSession(tmuxConnected);
+                onTmuxStateChangeRef.current?.(msg.tmuxState);
+              }
               break;
             case 'error':
               updateState('error', msg.message);
