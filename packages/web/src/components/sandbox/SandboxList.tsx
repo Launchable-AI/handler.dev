@@ -581,7 +581,7 @@ export function SandboxList({ onCreateClick, highlightedId }: SandboxListProps) 
             )}
 
             {viewMode === 'detailed' && (
-              <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))' }}>
                 {sandboxes.map((sandbox) => (
                   <SandboxCard key={sandbox.id} sandbox={sandbox} highlight={highlightId === sandbox.id} />
                 ))}
