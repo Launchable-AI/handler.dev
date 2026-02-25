@@ -5,6 +5,7 @@ import { readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { getConfig, setConfig } from '../services/config.js';
+import { reloadServices } from '../services/data-dir.js';
 import { applyTmuxStatusBar } from '../services/vm-terminal.js';
 import { applyDockerTmuxStatusBar } from '../services/terminal.js';
 
@@ -34,12 +35,27 @@ configRoutes.get('/', async (c) => {
 // Update config
 configRoutes.patch('/', zValidator('json', UpdateConfigSchema), async (c) => {
   const updates = c.req.valid('json');
+  const oldConfig = await getConfig();
   const newConfig = await setConfig(updates);
 
   // Apply tmux status bar change to running sessions immediately (both Docker and VM)
   if (updates.tmuxStatusBar !== undefined) {
     applyTmuxStatusBar(updates.tmuxStatusBar).catch(() => {});
     applyDockerTmuxStatusBar(updates.tmuxStatusBar).catch(() => {});
+  }
+
+  // If data directory changed, reload all services and scan the new directory
+  const oldDataDir = oldConfig.dataDirectory;
+  const newDataDir = newConfig.dataDirectory;
+  if (newDataDir && newDataDir !== oldDataDir) {
+    try {
+      const scanResult = await reloadServices(newDataDir);
+      return c.json({ ...newConfig, _dataDirScan: scanResult });
+    } catch (error) {
+      console.error('[config] Failed to reload services after data dir change:', error);
+      // Still return the config even if reload fails
+      return c.json(newConfig);
+    }
   }
 
   return c.json(newConfig);

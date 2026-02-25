@@ -8,27 +8,27 @@
 
 import { Hono } from 'hono';
 import * as fs from 'fs';
-import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { DATA_DIR } from '../lib/paths.js';
+import { getDataPath } from '../services/data-dir.js';
 
 const sshKeys = new Hono();
 
-const SSH_KEYS_DIR = path.join(DATA_DIR, 'ssh-keys');
-const PRIVATE_KEY_PATH = path.join(SSH_KEYS_DIR, 'id_ed25519');
-const PUBLIC_KEY_PATH = path.join(SSH_KEYS_DIR, 'id_ed25519.pub');
+async function getSshKeysDir() { return getDataPath('ssh-keys'); }
+async function getPrivateKeyPath() { return getDataPath('ssh-keys', 'id_ed25519'); }
+async function getPublicKeyPath() { return getDataPath('ssh-keys', 'id_ed25519.pub'); }
 
 /**
  * GET /api/ssh-keys/info
  * Returns the current public key content and whether a keypair exists
  */
 sshKeys.get('/info', async (c) => {
-  const exists = fs.existsSync(PUBLIC_KEY_PATH);
+  const publicKeyPath = await getPublicKeyPath();
+  const exists = fs.existsSync(publicKeyPath);
   if (!exists) {
     return c.json({ exists: false, publicKey: null });
   }
 
-  const publicKey = fs.readFileSync(PUBLIC_KEY_PATH, 'utf-8').trim();
+  const publicKey = fs.readFileSync(publicKeyPath, 'utf-8').trim();
   return c.json({ exists: true, publicKey });
 });
 
@@ -37,11 +37,12 @@ sshKeys.get('/info', async (c) => {
  * Download the current VM SSH private key
  */
 sshKeys.get('/download', async (c) => {
-  if (!fs.existsSync(PRIVATE_KEY_PATH)) {
+  const privateKeyPath = await getPrivateKeyPath();
+  if (!fs.existsSync(privateKeyPath)) {
     return c.json({ error: 'No SSH key exists yet. Start a VM or regenerate to create one.' }, 404);
   }
 
-  const privateKey = fs.readFileSync(PRIVATE_KEY_PATH, 'utf-8');
+  const privateKey = fs.readFileSync(privateKeyPath, 'utf-8');
 
   return new Response(privateKey, {
     headers: {
@@ -58,31 +59,35 @@ sshKeys.get('/download', async (c) => {
  */
 sshKeys.post('/regenerate', async (c) => {
   try {
+    const sshKeysDir = await getSshKeysDir();
+    const privateKeyPath = await getPrivateKeyPath();
+    const publicKeyPath = await getPublicKeyPath();
+
     // Ensure directory exists
-    if (!fs.existsSync(SSH_KEYS_DIR)) {
-      fs.mkdirSync(SSH_KEYS_DIR, { recursive: true });
+    if (!fs.existsSync(sshKeysDir)) {
+      fs.mkdirSync(sshKeysDir, { recursive: true });
     }
 
     // Remove existing keys if they exist
-    if (fs.existsSync(PRIVATE_KEY_PATH)) {
-      fs.unlinkSync(PRIVATE_KEY_PATH);
+    if (fs.existsSync(privateKeyPath)) {
+      fs.unlinkSync(privateKeyPath);
     }
-    if (fs.existsSync(PUBLIC_KEY_PATH)) {
-      fs.unlinkSync(PUBLIC_KEY_PATH);
+    if (fs.existsSync(publicKeyPath)) {
+      fs.unlinkSync(publicKeyPath);
     }
 
     // Generate new keypair using execFileSync (safe, no shell)
     execFileSync('ssh-keygen', [
       '-t', 'ed25519',
-      '-f', PRIVATE_KEY_PATH,
+      '-f', privateKeyPath,
       '-N', '',
       '-q',
     ]);
 
     // Set proper permissions
-    fs.chmodSync(PRIVATE_KEY_PATH, 0o600);
+    fs.chmodSync(privateKeyPath, 0o600);
 
-    const privateKey = fs.readFileSync(PRIVATE_KEY_PATH, 'utf-8');
+    const privateKey = fs.readFileSync(privateKeyPath, 'utf-8');
 
     return new Response(privateKey, {
       headers: {

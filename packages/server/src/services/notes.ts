@@ -1,8 +1,10 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
-import { PROJECT_ROOT } from '../lib/paths.js';
+import { dirname } from 'path';
+import { getDataPath } from './data-dir.js';
 
-const NOTES_FILE = join(PROJECT_ROOT, 'data', 'notes.json');
+async function getNotesFile() {
+  return getDataPath('notes.json');
+}
 
 export interface Note {
   id: string;
@@ -29,7 +31,8 @@ async function loadNotes(): Promise<NotesData> {
   }
 
   try {
-    const content = await readFile(NOTES_FILE, 'utf-8');
+    const notesFile = await getNotesFile();
+    const content = await readFile(notesFile, 'utf-8');
     cachedData = JSON.parse(content) as NotesData;
     return cachedData;
   } catch {
@@ -38,9 +41,14 @@ async function loadNotes(): Promise<NotesData> {
 }
 
 async function saveNotes(data: NotesData): Promise<void> {
-  await mkdir(dirname(NOTES_FILE), { recursive: true });
-  await writeFile(NOTES_FILE, JSON.stringify(data, null, 2));
+  const notesFile = await getNotesFile();
+  await mkdir(dirname(notesFile), { recursive: true });
+  await writeFile(notesFile, JSON.stringify(data, null, 2));
   cachedData = data;
+}
+
+export function resetNotesCache(): void {
+  cachedData = null;
 }
 
 function generateId(): string {

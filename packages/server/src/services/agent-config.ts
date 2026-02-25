@@ -1,9 +1,11 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
-import { PROJECT_ROOT } from '../lib/paths.js';
+import { dirname } from 'path';
+import { getDataPath } from './data-dir.js';
 import type { AgentConfigPreset, MCPServerConfig, SkillConfig, RuleConfig, HookMatcher, HookEvent, SubagentConfig, PluginRef, PluginMarketplace } from '../types/agent-config.js';
 
-const CONFIG_FILE = join(PROJECT_ROOT, 'data', 'agent-configs.json');
+async function getConfigFile() {
+  return getDataPath('agent-configs.json');
+}
 
 interface AgentConfigsData {
   configs: AgentConfigPreset[];
@@ -21,7 +23,8 @@ async function loadConfigs(): Promise<AgentConfigsData> {
   }
 
   try {
-    const content = await readFile(CONFIG_FILE, 'utf-8');
+    const configFile = await getConfigFile();
+    const content = await readFile(configFile, 'utf-8');
     cachedData = JSON.parse(content) as AgentConfigsData;
     return cachedData;
   } catch {
@@ -30,9 +33,14 @@ async function loadConfigs(): Promise<AgentConfigsData> {
 }
 
 async function saveConfigs(data: AgentConfigsData): Promise<void> {
-  await mkdir(dirname(CONFIG_FILE), { recursive: true });
-  await writeFile(CONFIG_FILE, JSON.stringify(data, null, 2));
+  const configFile = await getConfigFile();
+  await mkdir(dirname(configFile), { recursive: true });
+  await writeFile(configFile, JSON.stringify(data, null, 2));
   cachedData = data;
+}
+
+export function resetAgentConfigsCache(): void {
+  cachedData = null;
 }
 
 function generateId(): string {

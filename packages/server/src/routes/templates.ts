@@ -7,7 +7,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { getTemplateService, initializeTemplateService } from '../services/template/index.js';
+import { getTemplateService, initializeTemplateService, resetTemplateService } from '../services/template/index.js';
 import type { TemplateType, TemplateStatus, TemplateArtifactBackend } from '../types/template.js';
 
 const templates = new Hono();
@@ -358,5 +358,13 @@ templates.get('/:id/build/logs', async (c) => {
     return c.json({ error: message }, 500);
   }
 });
+
+/**
+ * Reset template service state when data directory changes.
+ */
+export function resetTemplateServiceState(): void {
+  resetTemplateService();
+  templateServiceInitialized = false;
+}
 
 export default templates;

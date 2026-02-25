@@ -6,7 +6,7 @@
  */
 
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { execSync } from 'child_process';
@@ -24,10 +24,9 @@ import type {
 import type { SandboxBackend } from '../types/sandbox.js';
 import { getServerByName, type MCPServer } from './mcp-registry.js';
 import { getSandboxService } from './sandbox/index.js';
-import { PROJECT_ROOT } from '../lib/paths.js';
+import { getDataPath } from './data-dir.js';
 
-const DATA_DIR = join(PROJECT_ROOT, 'data');
-const DEPLOYMENTS_FILE = join(DATA_DIR, 'mcp-deployments.json');
+async function getDeploymentsFile() { return getDataPath('mcp-deployments.json'); }
 
 // Image mapping for install methods
 const BASE_IMAGES: Record<MCPInstallMethod, string> = {
@@ -45,8 +44,9 @@ const DEFAULT_MCP_PORT = 3000;
 
 async function loadStore(): Promise<MCPDeploymentStore> {
   try {
-    if (existsSync(DEPLOYMENTS_FILE)) {
-      const data = await readFile(DEPLOYMENTS_FILE, 'utf-8');
+    const deploymentsFile = await getDeploymentsFile();
+    if (existsSync(deploymentsFile)) {
+      const data = await readFile(deploymentsFile, 'utf-8');
       return JSON.parse(data);
     }
   } catch (error) {
@@ -56,8 +56,9 @@ async function loadStore(): Promise<MCPDeploymentStore> {
 }
 
 async function saveStore(store: MCPDeploymentStore): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(DEPLOYMENTS_FILE, JSON.stringify(store, null, 2));
+  const deploymentsFile = await getDeploymentsFile();
+  await mkdir(dirname(deploymentsFile), { recursive: true });
+  await writeFile(deploymentsFile, JSON.stringify(store, null, 2));
 }
 
 function generateId(): string {

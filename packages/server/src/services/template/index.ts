@@ -523,3 +523,11 @@ export async function initializeTemplateService(dataDir?: string): Promise<Templ
   await service.initialize();
   return service;
 }
+
+/**
+ * Reset the template service singleton so it gets re-created
+ * with the new data directory on next access.
+ */
+export function resetTemplateService(): void {
+  templateServiceInstance = null;
+}

@@ -4,7 +4,7 @@ import { readdir, readFile, writeFile, unlink, mkdir, copyFile, stat, rename } f
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { PROJECT_ROOT } from '../lib/paths.js';
+import { getDataPath } from '../services/data-dir.js';
 import { SaveDockerfileSchema, RenameDockerfileSchema } from '../types/index.js';
 import * as dockerService from '../services/docker.js';
 import { getPublicKey } from '../services/container-builder.js';
@@ -17,7 +17,7 @@ interface DockerfileInfo {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DOCKERFILES_DIR = join(PROJECT_ROOT, 'data', 'dockerfiles');
+async function getDockerfilesDir() { return getDataPath('dockerfiles'); }
 const TEMPLATES_DIR = join(__dirname, '..', '..', 'templates');
 
 interface TemplateInfo {
@@ -69,15 +69,16 @@ dockerfiles.get('/templates/:name', async (c) => {
 
 // Ensure dockerfiles directory exists and has default template
 async function ensureDir() {
-  await mkdir(DOCKERFILES_DIR, { recursive: true });
+  const dockerfilesDir = await getDockerfilesDir();
+  await mkdir(dockerfilesDir, { recursive: true });
 
   // Copy default template if no dockerfiles exist
-  const files = await readdir(DOCKERFILES_DIR).catch(() => []);
+  const files = await readdir(dockerfilesDir).catch(() => []);
   const hasDockerfiles = files.some((f) => f.endsWith('.dockerfile'));
 
   if (!hasDockerfiles) {
     const defaultSrc = join(TEMPLATES_DIR, 'default.dockerfile');
-    const defaultDst = join(DOCKERFILES_DIR, 'default.dockerfile');
+    const defaultDst = join(dockerfilesDir, 'default.dockerfile');
     if (existsSync(defaultSrc)) {
       await copyFile(defaultSrc, defaultDst);
     }
@@ -87,15 +88,16 @@ async function ensureDir() {
 // List all saved Dockerfiles with metadata (including system templates)
 dockerfiles.get('/', async (c) => {
   await ensureDir();
+  const dockerfilesDir = await getDockerfilesDir();
 
   try {
     // Get user dockerfiles
-    const userFiles = await readdir(DOCKERFILES_DIR);
+    const userFiles = await readdir(dockerfilesDir);
     const userDockerfiles = userFiles.filter((f) => f.endsWith('.dockerfile'));
 
     const userList: DockerfileInfo[] = await Promise.all(
       userDockerfiles.map(async (f) => {
-        const filePath = join(DOCKERFILES_DIR, f);
+        const filePath = join(dockerfilesDir, f);
         const stats = await stat(filePath);
         return {
           name: f.replace('.dockerfile', ''),
@@ -139,7 +141,8 @@ dockerfiles.get('/', async (c) => {
 // Get specific Dockerfile (checks user dir first, then system templates)
 dockerfiles.get('/:name', async (c) => {
   const name = c.req.param('name');
-  const userPath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const dockerfilesDir = await getDockerfilesDir();
+  const userPath = join(dockerfilesDir, `${name}.dockerfile`);
   const systemPath = join(TEMPLATES_DIR, `${name}.dockerfile`);
 
   // Try user directory first
@@ -163,7 +166,8 @@ dockerfiles.post('/:name', zValidator('json', SaveDockerfileSchema), async (c) =
 
   const name = c.req.param('name');
   const { content } = c.req.valid('json');
-  const filePath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const dockerfilesDir = await getDockerfilesDir();
+  const filePath = join(dockerfilesDir, `${name}.dockerfile`);
 
   try {
     await writeFile(filePath, content, 'utf-8');
@@ -177,7 +181,8 @@ dockerfiles.post('/:name', zValidator('json', SaveDockerfileSchema), async (c) =
 // Delete Dockerfile
 dockerfiles.delete('/:name', async (c) => {
   const name = c.req.param('name');
-  const filePath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const dockerfilesDir = await getDockerfilesDir();
+  const filePath = join(dockerfilesDir, `${name}.dockerfile`);
 
   try {
     await unlink(filePath);
@@ -191,8 +196,9 @@ dockerfiles.delete('/:name', async (c) => {
 dockerfiles.patch('/:name', zValidator('json', RenameDockerfileSchema), async (c) => {
   const name = c.req.param('name');
   const { newName } = c.req.valid('json');
-  const oldPath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
-  const newPath = join(DOCKERFILES_DIR, `${newName}.dockerfile`);
+  const dockerfilesDir = await getDockerfilesDir();
+  const oldPath = join(dockerfilesDir, `${name}.dockerfile`);
+  const newPath = join(dockerfilesDir, `${newName}.dockerfile`);
 
   // Check if source exists
   if (!existsSync(oldPath)) {
@@ -217,7 +223,8 @@ dockerfiles.patch('/:name', zValidator('json', RenameDockerfileSchema), async (c
 dockerfiles.post('/:name/build', async (c) => {
   const name = c.req.param('name');
   const version = c.req.query('version'); // Optional version tag (e.g., timestamp)
-  const userPath = join(DOCKERFILES_DIR, `${name}.dockerfile`);
+  const dockerfilesDir = await getDockerfilesDir();
+  const userPath = join(dockerfilesDir, `${name}.dockerfile`);
   const systemPath = join(TEMPLATES_DIR, `${name}.dockerfile`);
 
   // Check user directory first, then system templates
