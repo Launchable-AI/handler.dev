@@ -707,22 +707,42 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
       return true;
     });
 
-    // Fit helper that uses current wsRef
+    // Fit immediately (throttled via rAF), debounce only the WebSocket resize message
+    let lastSentCols = 0;
+    let lastSentRows = 0;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let fitRafId: number | null = null;
+
+    const sendResizeIfChanged = () => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN &&
+          (term.cols !== lastSentCols || term.rows !== lastSentRows)) {
+        lastSentCols = term.cols;
+        lastSentRows = term.rows;
+        ws.send(JSON.stringify({
+          type: 'resize',
+          cols: term.cols,
+          rows: term.rows,
+        }));
+      }
+    };
+
     const fitAndResize = () => {
       if (disposed) return;
-      try {
-        fitAddon.fit();
-        // Send resize to server so shell redraws with correct dimensions
-        const ws = wsRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'resize',
-            cols: term.cols,
-            rows: term.rows,
-          }));
-        }
-      } catch (e) {
-        console.warn('[Terminal] Fit failed:', e);
+      // Fit immediately (throttled to one per frame)
+      if (fitRafId === null) {
+        fitRafId = requestAnimationFrame(() => {
+          fitRafId = null;
+          if (disposed) return;
+          try {
+            fitAddon.fit();
+          } catch (e) {
+            console.warn('[Terminal] Fit failed:', e);
+          }
+          // Debounce the server resize message
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(sendResizeIfChanged, 150);
+        });
       }
     };
 
@@ -809,9 +829,8 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
               wasConnectedRef.current = true;
               onStateChangeRef.current({ connectionState: 'connected', retryCount: 0, tmuxState: msg.tmuxSession ? 'connected' : undefined });
               term.focus();
-              // Fit again after connection and send resize to ensure shell has correct size
-              setTimeout(fitAndResize, 50);
-              setTimeout(fitAndResize, 200);
+              // Fit after connection and send resize to ensure shell has correct size
+              fitAndResize();
               break;
             case 'output':
               term.write(msg.data);
@@ -878,15 +897,8 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
     // Initial connection
     connectWebSocket();
 
-    // Schedule multiple fit attempts - these will also send resize messages
-    const fitTimeout1 = setTimeout(fitAndResize, 100);
-    const fitTimeout2 = setTimeout(fitAndResize, 300);
-    const fitTimeout3 = setTimeout(fitAndResize, 600);
-
-    // Also fit on next animation frame for good measure
-    const rafId = requestAnimationFrame(() => {
-      requestAnimationFrame(fitAndResize);
-    });
+    // Fit on init
+    fitAndResize();
 
     // Handle terminal input
     const dataDisposable = term.onData((data) => {
@@ -896,41 +908,15 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
       }
     });
 
-    // Handle resize with debounce
-    let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-    const handleResize = () => {
-      if (disposed) return;
-      if (resizeTimeout) clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(() => {
-        if (disposed) return;
-        try {
-          fitAddon.fit();
-          const ws = wsRef.current;
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              type: 'resize',
-              cols: term.cols,
-              rows: term.rows,
-            }));
-          }
-        } catch (e) {
-          console.warn('[Terminal] Resize failed:', e);
-        }
-      }, 100);
-    };
-
-    const resizeObserver = new ResizeObserver(() => handleResize());
+    const resizeObserver = new ResizeObserver(() => fitAndResize());
     if (terminalRef.current) {
       resizeObserver.observe(terminalRef.current);
     }
 
     return () => {
       disposed = true;
-      clearTimeout(fitTimeout1);
-      clearTimeout(fitTimeout2);
-      clearTimeout(fitTimeout3);
-      cancelAnimationFrame(rafId);
-      if (resizeTimeout) clearTimeout(resizeTimeout);
+      if (resizeTimer) clearTimeout(resizeTimer);
+      if (fitRafId !== null) cancelAnimationFrame(fitRafId);
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
       resizeObserver.disconnect();
       dataDisposable.dispose();

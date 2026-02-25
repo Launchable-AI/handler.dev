@@ -22,6 +22,8 @@ interface TerminalSession {
   ws: WebSocket;
   containerId: string;
   tmuxSession: string;
+  lastCols?: number;
+  lastRows?: number;
 }
 
 const sessions = new Map<string, TerminalSession>();
@@ -391,9 +393,14 @@ export function writeToSession(sessionId: string, data: string): boolean {
 export function resizeSession(sessionId: string, cols: number, rows: number): boolean {
   const session = sessions.get(sessionId);
   if (session && session.process.stdin?.writable) {
-    // Always send stty through stdin - this sets the TTY size for the innermost shell
-    // Ctrl+U clears current line, then stty sets dimensions, then clear refreshes display
-    session.process.stdin.write(`\x15stty cols ${cols} rows ${rows} 2>/dev/null; clear\n`);
+    // Skip if dimensions haven't changed
+    if (session.lastCols === cols && session.lastRows === rows) return true;
+    session.lastCols = cols;
+    session.lastRows = rows;
+
+    // Send stty through stdin to set the TTY size for the innermost shell
+    // Ctrl+U clears current line, then stty sets dimensions
+    session.process.stdin.write(`\x15stty cols ${cols} rows ${rows} 2>/dev/null\n`);
 
     if (session.tmuxSession) {
       // Also resize tmux window/pane via separate command for proper tmux handling
