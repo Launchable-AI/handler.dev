@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "description": "A web application for spawning and managing isolated compute sandboxes",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Launchable-AI/handler.dev.git"
+  },
+  "author": "Launchable.ai",
+  "homepage": "https://github.com/Launchable-AI/handler.dev",
   "scripts": {
     "dev": "pnpm run dev:server & sleep 2 && pnpm run dev:web",
     "dev:server": "pnpm --filter server run dev",
@@ -12,5 +20,10 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-xml-parser": ">=5.3.6"
+    }
   }
 }

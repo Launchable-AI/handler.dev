@@ -4,7 +4,7 @@
  * Uses Azure service principal credentials for docker login.
  */
 
-import { execSync, spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import type { ContainerRegistry, RegistryPushResult, ProgressCallback, RegistryType } from './index.js';
 
 export class AcrRegistry implements ContainerRegistry {
@@ -19,10 +19,10 @@ export class AcrRegistry implements ContainerRegistry {
 
   async login(): Promise<void> {
     // ACR supports SP login: docker login with clientId as username, clientSecret as password
-    execSync(
-      `echo "${this.clientSecret}" | docker login ${this.loginServer} -u ${this.clientId} --password-stdin`,
-      { stdio: 'pipe' }
-    );
+    execFileSync('docker', ['login', this.loginServer, '-u', this.clientId, '--password-stdin'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      input: this.clientSecret,
+    });
   }
 
   getRemoteImageTag(_localImage: string, imageName: string): string {
@@ -38,7 +38,7 @@ export class AcrRegistry implements ContainerRegistry {
     const remoteImage = this.getRemoteImageTag(localImage, imageName);
 
     onProgress(`Tagging ${localImage} as ${remoteImage}`, 'info');
-    execSync(`docker tag ${localImage} ${remoteImage}`, { stdio: 'pipe' });
+    execFileSync('docker', ['tag', localImage, remoteImage], { stdio: 'pipe' });
 
     onProgress(`Pushing ${remoteImage}...`, 'info');
     await this.dockerPush(remoteImage, onProgress);
@@ -55,7 +55,7 @@ export class AcrRegistry implements ContainerRegistry {
 
   async logout(): Promise<void> {
     try {
-      execSync(`docker logout ${this.loginServer}`, { stdio: 'pipe' });
+      execFileSync('docker', ['logout', this.loginServer], { stdio: 'pipe' });
     } catch {
       // Ignore
     }

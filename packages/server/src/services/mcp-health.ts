@@ -5,7 +5,7 @@
  * MCP server deployments and updates their status.
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import {
   listDeployments,
   updateDeploymentStatus,
@@ -91,10 +91,10 @@ async function checkStdioHealth(
 
     if (sandbox.terminalType === 'docker-exec' && sandbox.backendMeta?.type === 'docker') {
       const containerId = (sandbox.backendMeta as { containerId: string }).containerId;
-      const result = execSync(
-        `docker exec ${containerId} pgrep -f "${command}" 2>/dev/null || true`,
-        { timeout: 10000, stdio: 'pipe' }
-      ).toString().trim();
+      const result = execFileSync('docker', ['exec', containerId, 'sh', '-c', `pgrep -f ${JSON.stringify(command)} 2>/dev/null || true`], {
+        timeout: 10000,
+        stdio: 'pipe',
+      }).toString().trim();
       return result.length > 0;
     }
 

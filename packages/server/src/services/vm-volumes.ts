@@ -7,7 +7,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -122,14 +122,14 @@ export class VmVolumeService extends EventEmitter {
     try {
       // Create sparse image file
       console.log(`[VmVolumeService] Creating ${config.sizeGb}GB sparse image`);
-      execSync(`truncate -s ${config.sizeGb}G "${imagePath}"`, { stdio: 'pipe' });
+      execFileSync('truncate', ['-s', `${config.sizeGb}G`, imagePath], { stdio: 'pipe' });
 
       // Format the image
       console.log(`[VmVolumeService] Formatting as ${format}`);
       if (format === 'ext4') {
-        execSync(`mkfs.ext4 -F -q "${imagePath}"`, { stdio: 'pipe' });
+        execFileSync('mkfs.ext4', ['-F', '-q', imagePath], { stdio: 'pipe' });
       } else {
-        execSync(`mkfs.xfs -f -q "${imagePath}"`, { stdio: 'pipe' });
+        execFileSync('mkfs.xfs', ['-f', '-q', imagePath], { stdio: 'pipe' });
       }
 
       // Get actual size
@@ -310,12 +310,12 @@ export class VmVolumeService extends EventEmitter {
     const imagePath = path.join(this.volumesDir, id, 'volume.img');
 
     // Extend the image file
-    execSync(`truncate -s ${newSizeGb}G "${imagePath}"`, { stdio: 'pipe' });
+    execFileSync('truncate', ['-s', `${newSizeGb}G`, imagePath], { stdio: 'pipe' });
 
     // Resize the filesystem
     if (volume.format === 'ext4') {
-      execSync(`e2fsck -f -y "${imagePath}"`, { stdio: 'pipe' });
-      execSync(`resize2fs "${imagePath}"`, { stdio: 'pipe' });
+      execFileSync('e2fsck', ['-f', '-y', imagePath], { stdio: 'pipe' });
+      execFileSync('resize2fs', [imagePath], { stdio: 'pipe' });
     } else {
       // XFS requires mounting to resize
       throw new Error('XFS resize is not supported for detached volumes');
@@ -349,8 +349,9 @@ export class VmVolumeService extends EventEmitter {
 
     try {
       // Use debugfs to list directory contents
-      const result = execSync(`debugfs -R "ls -l ${dirPath}" "${imagePath}" 2>/dev/null`, {
+      const result = execFileSync('debugfs', ['-R', `ls -l ${dirPath}`, imagePath], {
         encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
       const files: { name: string; type: 'file' | 'directory'; size: number }[] = [];
@@ -418,7 +419,7 @@ export class VmVolumeService extends EventEmitter {
         for (const part of parts) {
           currentPath += `/${part}`;
           try {
-            execSync(`debugfs -w -R "mkdir ${currentPath}" "${imagePath}" 2>/dev/null`, { stdio: 'pipe' });
+            execFileSync('debugfs', ['-w', '-R', `mkdir ${currentPath}`, imagePath], { stdio: 'pipe' });
           } catch {
             // Directory may already exist
           }
@@ -426,7 +427,7 @@ export class VmVolumeService extends EventEmitter {
       }
 
       // Write the file
-      execSync(`debugfs -w -R "write ${tmpFile} ${destFilePath}" "${imagePath}"`, { stdio: 'pipe' });
+      execFileSync('debugfs', ['-w', '-R', `write ${tmpFile} ${destFilePath}`, imagePath], { stdio: 'pipe' });
 
       console.log(`[VmVolumeService] Uploaded ${fileName} to volume ${id}:${destFilePath}`);
 
@@ -462,7 +463,7 @@ export class VmVolumeService extends EventEmitter {
 
     try {
       // Extract file using debugfs
-      execSync(`debugfs -R "dump ${filePath} ${tmpFile}" "${imagePath}"`, { stdio: 'pipe' });
+      execFileSync('debugfs', ['-R', `dump ${filePath} ${tmpFile}`, imagePath], { stdio: 'pipe' });
 
       const content = fs.readFileSync(tmpFile);
       return content;
@@ -494,7 +495,7 @@ export class VmVolumeService extends EventEmitter {
     const imagePath = path.join(this.volumesDir, id, 'volume.img');
 
     // Delete using debugfs rm command
-    execSync(`debugfs -w -R "rm ${filePath}" "${imagePath}"`, { stdio: 'pipe' });
+    execFileSync('debugfs', ['-w', '-R', `rm ${filePath}`, imagePath], { stdio: 'pipe' });
 
     console.log(`[VmVolumeService] Deleted ${filePath} from volume ${id}`);
   }

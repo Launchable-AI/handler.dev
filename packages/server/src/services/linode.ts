@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { getConfig, setConfig } from './config.js';
@@ -402,16 +402,15 @@ export class LinodeService {
 
     // Remove any existing keys to avoid ssh-keygen prompt
     if (existsSync(LINODE_SSH_KEY_PATH)) {
-      execSync(`rm -f "${LINODE_SSH_KEY_PATH}" "${LINODE_SSH_PUB_KEY_PATH}"`);
+      execFileSync('rm', ['-f', LINODE_SSH_KEY_PATH, LINODE_SSH_PUB_KEY_PATH]);
     }
 
-    execSync(
-      `ssh-keygen -t ed25519 -f "${LINODE_SSH_KEY_PATH}" -N "" -C "handler-linode"`,
-      { stdio: 'pipe' },
-    );
+    execFileSync('ssh-keygen', ['-t', 'ed25519', '-f', LINODE_SSH_KEY_PATH, '-N', '', '-C', 'handler-linode'], {
+      stdio: 'pipe',
+    });
 
     // Set proper permissions
-    execSync(`chmod 600 "${LINODE_SSH_KEY_PATH}"`);
+    execFileSync('chmod', ['600', LINODE_SSH_KEY_PATH]);
 
     console.log('[LinodeService] Generated SSH key pair:', LINODE_SSH_KEY_PATH);
 

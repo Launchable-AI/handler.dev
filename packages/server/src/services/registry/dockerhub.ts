@@ -4,7 +4,7 @@
  * Uses username/password for docker login to Docker Hub.
  */
 
-import { execSync, spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import type { ContainerRegistry, RegistryPushResult, ProgressCallback, RegistryType } from './index.js';
 
 export class DockerHubRegistry implements ContainerRegistry {
@@ -16,10 +16,10 @@ export class DockerHubRegistry implements ContainerRegistry {
   ) {}
 
   async login(): Promise<void> {
-    execSync(
-      `echo "${this.password}" | docker login -u ${this.username} --password-stdin`,
-      { stdio: 'pipe' }
-    );
+    execFileSync('docker', ['login', '-u', this.username, '--password-stdin'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      input: this.password,
+    });
   }
 
   getRemoteImageTag(_localImage: string, imageName: string): string {
@@ -36,7 +36,7 @@ export class DockerHubRegistry implements ContainerRegistry {
     const remoteImage = this.getRemoteImageTag(localImage, imageName);
 
     onProgress(`Tagging ${localImage} as ${remoteImage}`, 'info');
-    execSync(`docker tag ${localImage} ${remoteImage}`, { stdio: 'pipe' });
+    execFileSync('docker', ['tag', localImage, remoteImage], { stdio: 'pipe' });
 
     onProgress(`Pushing ${remoteImage}...`, 'info');
     await this.dockerPush(remoteImage, onProgress);
@@ -53,7 +53,7 @@ export class DockerHubRegistry implements ContainerRegistry {
 
   async logout(): Promise<void> {
     try {
-      execSync('docker logout', { stdio: 'pipe' });
+      execFileSync('docker', ['logout'], { stdio: 'pipe' });
     } catch {
       // Ignore
     }

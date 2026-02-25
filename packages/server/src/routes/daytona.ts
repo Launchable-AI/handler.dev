@@ -116,16 +116,16 @@ daytona.post('/snapshots/push', async (c) => {
   }
 
   // Check if Docker is available
-  const { execSync } = await import('child_process');
+  const { execFileSync } = await import('child_process');
   try {
-    execSync('docker version', { stdio: 'pipe' });
+    execFileSync('docker', ['version'], { stdio: 'pipe' });
   } catch {
     return c.json({ error: 'Docker is not available on the server' }, 500);
   }
 
   // Check if local image exists
   try {
-    execSync(`docker image inspect ${body.localImage}`, { stdio: 'pipe' });
+    execFileSync('docker', ['image', 'inspect', body.localImage as string], { stdio: 'pipe' });
   } catch {
     return c.json({ error: `Local image not found: ${body.localImage}` }, 404);
   }

@@ -1,4 +1,5 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import { writeFileSync } from 'fs';
 import { mkdir, readFile, rm, access } from 'fs/promises';
 import { join } from 'path';
 import * as dockerService from './docker.js';
@@ -134,7 +135,8 @@ async function getOrCreateAppSshKey(): Promise<{ publicKey: string; privateKey: 
     // Key exists, read and return it
     const privateKey = await readFile(privateKeyPath, 'utf-8');
     // Regenerate public key from private key if needed
-    execSync(`ssh-keygen -y -f "${privateKeyPath}" > "${publicKeyPath}"`, { stdio: 'pipe' });
+    const pubKeyOutput = execFileSync('ssh-keygen', ['-y', '-f', privateKeyPath], { encoding: 'utf-8' });
+    writeFileSync(publicKeyPath, pubKeyOutput);
     const publicKey = await readFile(publicKeyPath, 'utf-8');
     await rm(publicKeyPath);
     return { publicKey: publicKey.trim(), privateKey };
@@ -143,7 +145,7 @@ async function getOrCreateAppSshKey(): Promise<{ publicKey: string; privateKey: 
   }
 
   // Generate key pair using ssh-keygen
-  execSync(`ssh-keygen -t rsa -b 4096 -f "${privateKeyPath}" -N "" -C "handler"`, {
+  execFileSync('ssh-keygen', ['-t', 'rsa', '-b', '4096', '-f', privateKeyPath, '-N', '', '-C', 'handler'], {
     stdio: 'pipe',
   });
 
