@@ -28,6 +28,43 @@ pnpm lint
 
 Requires Node 22+. Uses pnpm workspaces.
 
+## Testing
+
+Uses **Vitest** for both packages. Server tests run in Node environment; web tests use happy-dom + @testing-library/react.
+
+```bash
+# Run all tests (both packages in parallel)
+pnpm test
+
+# Watch mode
+pnpm test:watch
+
+# Coverage report
+pnpm test:coverage
+
+# Single package
+pnpm --filter server test
+pnpm --filter web test
+```
+
+### Conventions
+
+- Test files live next to source in `__tests__/` directories (e.g., `src/lib/__tests__/validation.test.ts`)
+- Use `.test.ts` for pure logic, `.test.tsx` for component tests
+- Server tests can use `vi.mock()` for heavy dependencies (Docker, Hypervisor)
+- Web component tests use the custom `render()` from `src/test/test-utils.tsx` which wraps QueryClientProvider
+- Vitest globals (`describe`, `it`, `expect`, `vi`) are available without imports (configured in vitest configs)
+
+### Test structure
+
+- `packages/server/src/lib/__tests__/` — Validation, safe-exec utilities
+- `packages/server/src/services/__tests__/` — Build tracker, service logic
+- `packages/server/src/routes/__tests__/` — Route integration tests (Hono `app.request()`)
+- `packages/web/src/lib/__tests__/` — Utils, keyboard shortcuts
+- `packages/web/src/components/__tests__/` — Component tests
+- `packages/web/src/test/setup.ts` — testing-library matchers + cleanup
+- `packages/web/src/test/test-utils.tsx` — Custom render with providers
+
 ## Monorepo Structure
 
 - `packages/server/` — Hono (Node.js) backend API
