@@ -222,20 +222,41 @@ export function TerminalInstance({
     // Track current WebSocket for reconnection
     let currentWs: WebSocket | null = null;
 
-    // Initial fit and resize helpers
+    // Fit immediately (throttled via rAF), debounce only the WebSocket resize message
+    let lastSentCols = 0;
+    let lastSentRows = 0;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let fitRafId: number | null = null;
+
+    const sendResizeIfChanged = () => {
+      if (currentWs?.readyState === WebSocket.OPEN &&
+          (term.cols !== lastSentCols || term.rows !== lastSentRows)) {
+        lastSentCols = term.cols;
+        lastSentRows = term.rows;
+        currentWs.send(JSON.stringify({
+          type: 'resize',
+          cols: term.cols,
+          rows: term.rows,
+        }));
+      }
+    };
+
     const fitAndResize = () => {
       if (isDisposedRef.current) return;
-      try {
-        fitAddon.fit();
-        if (currentWs?.readyState === WebSocket.OPEN) {
-          currentWs.send(JSON.stringify({
-            type: 'resize',
-            cols: term.cols,
-            rows: term.rows,
-          }));
-        }
-      } catch (e) {
-        console.warn('[Terminal] Fit failed:', e);
+      // Fit immediately (throttled to one per frame)
+      if (fitRafId === null) {
+        fitRafId = requestAnimationFrame(() => {
+          fitRafId = null;
+          if (isDisposedRef.current) return;
+          try {
+            fitAddon.fit();
+          } catch (e) {
+            console.warn('[Terminal] Fit failed:', e);
+          }
+          // Debounce the server resize message
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(sendResizeIfChanged, 150);
+        });
       }
     };
 
@@ -319,8 +340,7 @@ export function TerminalInstance({
                 onTmuxStateChangeRef.current?.('connected');
               }
               term.focus();
-              setTimeout(fitAndResize, 50);
-              setTimeout(fitAndResize, 200);
+              fitAndResize();
               // Save session ID for future reconnection
               if (msg.sessionId) {
                 saveSession(msg.sessionId);
@@ -418,14 +438,8 @@ export function TerminalInstance({
       };
     };
 
-    // Schedule multiple fit attempts
-    const fitTimeout1 = setTimeout(fitAndResize, 100);
-    const fitTimeout2 = setTimeout(fitAndResize, 300);
-    const fitTimeout3 = setTimeout(fitAndResize, 600);
-
-    const rafId = requestAnimationFrame(() => {
-      requestAnimationFrame(fitAndResize);
-    });
+    // Fit on init
+    fitAndResize();
 
     // Check for saved session and attempt resume on initial connect
     const savedSession = getSavedSession();
@@ -438,38 +452,13 @@ export function TerminalInstance({
       }
     });
 
-    // Handle resize with debounce
-    let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-    const handleResize = () => {
-      if (isDisposedRef.current) return;
-      if (resizeTimeout) clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(() => {
-        if (isDisposedRef.current) return;
-        try {
-          fitAddon.fit();
-          if (currentWs?.readyState === WebSocket.OPEN) {
-            currentWs.send(JSON.stringify({
-              type: 'resize',
-              cols: term.cols,
-              rows: term.rows,
-            }));
-          }
-        } catch (e) {
-          console.warn('[Terminal] Resize failed:', e);
-        }
-      }, 50);
-    };
-
-    const resizeObserver = new ResizeObserver(() => handleResize());
+    const resizeObserver = new ResizeObserver(() => fitAndResize());
     resizeObserver.observe(containerEl);
 
     // Store cleanup for resources created inside init()
     cleanupRef.current = () => {
-      clearTimeout(fitTimeout1);
-      clearTimeout(fitTimeout2);
-      clearTimeout(fitTimeout3);
-      cancelAnimationFrame(rafId);
-      if (resizeTimeout) clearTimeout(resizeTimeout);
+      if (resizeTimer) clearTimeout(resizeTimer);
+      if (fitRafId !== null) cancelAnimationFrame(fitRafId);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       resizeObserver.disconnect();
       if (scanTimeout) clearTimeout(scanTimeout);

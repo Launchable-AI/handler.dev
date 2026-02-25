@@ -26,6 +26,8 @@ interface VmTerminalSession {
   tmuxSession?: string;
   vmIp?: string;
   dataDir?: string;
+  lastCols?: number;
+  lastRows?: number;
 }
 
 const sessions = new Map<string, VmTerminalSession>();
@@ -489,6 +491,11 @@ export function resizeVmSession(sessionId: string, cols: number, rows: number): 
   const session = sessions.get(sessionId);
   if (!session) return false;
 
+  // Skip if dimensions haven't changed
+  if (session.lastCols === cols && session.lastRows === rows) return true;
+  session.lastCols = cols;
+  session.lastRows = rows;
+
   if (session.tmuxSession && session.vmIp && session.dataDir) {
     // For tmux sessions: resize the SSH PTY that tmux is attached to.
     // Find the client's TTY via tmux, then use stty -F to resize it.
@@ -503,7 +510,7 @@ export function resizeVmSession(sessionId: string, cols: number, rows: number): 
     return true;
   } else if (session.process.stdin?.writable) {
     // For non-tmux sessions: use stty through stdin (changes the SSH PTY directly)
-    session.process.stdin.write(`\x15stty cols ${cols} rows ${rows} 2>/dev/null; clear\n`);
+    session.process.stdin.write(`\x15stty cols ${cols} rows ${rows} 2>/dev/null\n`);
     console.log(`[VM Terminal] Resized session ${sessionId}: ${cols}x${rows}`);
     return true;
   }
