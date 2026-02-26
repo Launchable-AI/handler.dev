@@ -219,10 +219,12 @@ fi
 # Mount dedicated Docker volume if specified
 # This gives Docker its own ext4 filesystem, avoiding nested overlayfs issues.
 # Docker overlay2 can then operate directly on ext4 instead of on the guest's overlayfs root.
-if [ -n "$docker_volume" ] && [ -b "/dev/${docker_volume}" ]; then
-    echo "[overlay-init] Mounting Docker volume /dev/${docker_volume} at /var/lib/docker"
+# NOTE: After pivot_root, /dev is the overlay's static /dev (not devtmpfs).
+# Real device nodes are at /rom/dev/ (the pre-pivot root).
+if [ -n "$docker_volume" ] && [ -b "/rom/dev/${docker_volume}" ]; then
+    echo "[overlay-init] Mounting Docker volume /rom/dev/${docker_volume} at /var/lib/docker"
     mkdir -p /var/lib/docker
-    /bin/mount -t ext4 -o noatime "/dev/${docker_volume}" /var/lib/docker
+    /bin/mount -t ext4 -o noatime "/rom/dev/${docker_volume}" /var/lib/docker
 
     # Also put containerd's data on the ext4 volume.
     # containerd uses overlayfs snapshotter at /var/lib/containerd, which fails
