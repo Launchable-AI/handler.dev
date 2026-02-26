@@ -2,8 +2,8 @@
 # Build a Docker-capable Firecracker kernel
 #
 # This script builds a custom Linux kernel for Firecracker that includes
-# full Docker support (iptables, overlay2, namespaces, cgroups) with all
-# required options compiled as built-ins (=y), not modules (=m).
+# full Docker support (iptables, nf_tables, overlay2, namespaces, cgroups)
+# with all required options compiled as built-ins (=y), not modules (=m).
 #
 # Firecracker boots with 'nomodule' so =m options are effectively disabled.
 #
