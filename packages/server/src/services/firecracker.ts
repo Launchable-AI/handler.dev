@@ -820,7 +820,7 @@ export class FirecrackerService extends EventEmitter {
       // - overlay_root=vdX: Specifies which device is the writable overlay
       // - parent_layers=vdb,vdc: Specifies intermediate layer devices (if any)
       // - root=/dev/vda ro: Mount base rootfs read-only
-      let bootArgs = `console=ttyS0 reboot=k panic=1 root=/dev/vda ro init=/sbin/overlay-init overlay_root=${overlayDevice}`;
+      let bootArgs = `console=ttyS0 reboot=k panic=1 acpi=off root=/dev/vda ro init=/sbin/overlay-init overlay_root=${overlayDevice}`;
 
       // Add docker_volume device to boot args (dedicated ext4 for /var/lib/docker)
       // This avoids nested overlayfs: Docker's overlay2 operates on ext4 directly
