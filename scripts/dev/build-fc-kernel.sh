@@ -2,8 +2,8 @@
 # Build a Docker-capable Firecracker kernel
 #
 # This script builds a custom Linux kernel for Firecracker that includes
-# full Docker support (iptables, overlay2, namespaces, cgroups) with all
-# required options compiled as built-ins (=y), not modules (=m).
+# full Docker support (iptables, nf_tables, overlay2, namespaces, cgroups)
+# with all required options compiled as built-ins (=y), not modules (=m).
 #
 # Firecracker boots with 'nomodule' so =m options are effectively disabled.
 #
@@ -259,7 +259,31 @@ CONFIG_NF_CONNTRACK_TFTP=y
 CONFIG_NF_NAT=y
 CONFIG_NF_NAT_MASQUERADE=y
 
-# IPv4 iptables
+# nf_tables (required by iptables-nft, the default on Ubuntu 22.04+)
+# Without these, Docker fails with "Error initializing network controller"
+# because iptables-nft calls into the nf_tables kernel API
+CONFIG_NF_TABLES=y
+CONFIG_NF_TABLES_INET=y
+CONFIG_NF_TABLES_NETDEV=y
+CONFIG_NFT_NUMGEN=y
+CONFIG_NFT_CT=y
+CONFIG_NFT_COUNTER=y
+CONFIG_NFT_CONNLIMIT=y
+CONFIG_NFT_LOG=y
+CONFIG_NFT_LIMIT=y
+CONFIG_NFT_MASQ=y
+CONFIG_NFT_REDIR=y
+CONFIG_NFT_NAT=y
+CONFIG_NFT_REJECT=y
+CONFIG_NFT_HASH=y
+CONFIG_NFT_FIB=y
+CONFIG_NFT_FIB_INET=y
+CONFIG_NFT_FIB_IPV4=y
+CONFIG_NFT_FIB_IPV6=y
+# iptables-nft compatibility layer (translates iptables rules to nf_tables)
+CONFIG_NFT_COMPAT=y
+
+# IPv4 iptables (legacy x_tables — kept as fallback)
 CONFIG_IP_NF_IPTABLES=y
 CONFIG_IP_NF_FILTER=y
 CONFIG_IP_NF_NAT=y
@@ -322,6 +346,13 @@ CONFIG_SECCOMP=y
 CONFIG_SECCOMP_FILTER=y
 CONFIG_KEYS=y
 
+# --- Virtio MMIO cmdline device discovery ---
+# Firecracker <= v1.10 registers virtio-mmio devices via kernel cmdline
+# parameters (virtio_mmio.device=...). Without this, no block/net devices
+# appear and the kernel panics on root mount.
+# Can be removed after upgrading to Firecracker >= v1.14 (ACPI discovery).
+CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y
+
 # --- Misc (Docker runtime) ---
 CONFIG_AUTOFS4_FS=y
 CONFIG_FHANDLE=y
@@ -363,6 +394,10 @@ VERIFY_OPTS=(
     CONFIG_OVERLAY_FS
     CONFIG_NF_CONNTRACK
     CONFIG_NF_NAT
+    CONFIG_NF_TABLES
+    CONFIG_NFT_NAT
+    CONFIG_NFT_MASQ
+    CONFIG_NFT_COMPAT
     CONFIG_IP_NF_IPTABLES
     CONFIG_IP_NF_NAT
     CONFIG_IP_NF_TARGET_MASQUERADE
@@ -439,6 +474,8 @@ step "Step 8: Quick Docker compatibility check"
 KCONFIG=".config"
 DOCKER_CHECKS=(
     "CONFIG_OVERLAY_FS=y:overlay2 storage"
+    "CONFIG_NF_TABLES=y:nf_tables (iptables-nft)"
+    "CONFIG_NFT_COMPAT=y:iptables-nft compat"
     "CONFIG_IP_NF_NAT=y:iptables NAT"
     "CONFIG_VETH=y:container networking"
     "CONFIG_BRIDGE=y:bridge networking"
