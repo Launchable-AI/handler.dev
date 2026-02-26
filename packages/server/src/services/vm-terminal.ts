@@ -44,6 +44,7 @@ const SSH_OPTS = [
   '-o', 'IdentitiesOnly=yes',
   '-o', 'StrictHostKeyChecking=no',
   '-o', 'UserKnownHostsFile=/dev/null',
+  '-o', 'LogLevel=ERROR',
   '-o', 'ConnectTimeout=3',
 ];
 
@@ -193,6 +194,7 @@ async function startVmTmuxWithFallback(
     '-o', 'IdentitiesOnly=yes',
     '-o', 'StrictHostKeyChecking=no',
     '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'LogLevel=ERROR',
     '-o', 'ConnectTimeout=10',
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',
@@ -205,7 +207,7 @@ async function startVmTmuxWithFallback(
   });
 
   // Don't pass tmuxSession yet — we'll detect it via the stderr marker
-  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, undefined, sshProcess, tmuxSession);
+  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, undefined, sshProcess, tmuxSession, cols, rows);
 
   // Clean up old persisted sessions for this VM, then persist the new one
   for (const old of listByVm(vmId)) {
@@ -247,6 +249,7 @@ function startVmBareSession(
     '-o', 'IdentitiesOnly=yes',
     '-o', 'StrictHostKeyChecking=no',
     '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'LogLevel=ERROR',
     '-o', 'ConnectTimeout=10',
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',
@@ -258,7 +261,7 @@ function startVmBareSession(
     env: { ...process.env, TERM: 'xterm-256color' }
   });
 
-  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, undefined, sshProcess);
+  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, undefined, sshProcess, undefined, cols, rows);
 }
 
 /**
@@ -272,7 +275,9 @@ function setupVmSessionHandlers(
   dataDir: string,
   tmuxSession: string | undefined,
   sshProcess: ChildProcess,
-  pendingTmuxSession?: string // tmux session name to detect via stderr marker
+  pendingTmuxSession?: string, // tmux session name to detect via stderr marker
+  initialCols?: number,
+  initialRows?: number
 ): void {
   // SSH -tt merges stdout/stderr through the PTY, so all markers arrive on stdout
   sshProcess.stdout?.on('data', (data: Buffer) => {
@@ -337,7 +342,10 @@ function setupVmSessionHandlers(
   // Prevent uncaught EPIPE if stdin closes between writable check and write
   sshProcess.stdin?.on('error', () => {});
 
-  sessions.set(sessionId, { process: sshProcess, ws, vmId, tmuxSession, vmIp, dataDir });
+  sessions.set(sessionId, {
+    process: sshProcess, ws, vmId, tmuxSession, vmIp, dataDir,
+    lastCols: initialCols, lastRows: initialRows,
+  });
 
   ws.send(JSON.stringify({
     type: 'connected',
@@ -414,6 +422,7 @@ export async function resumeVmTerminalSession(
     '-o', 'IdentitiesOnly=yes',
     '-o', 'StrictHostKeyChecking=no',
     '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'LogLevel=ERROR',
     '-o', 'ConnectTimeout=10',
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',
@@ -454,7 +463,7 @@ export async function resumeVmTerminalSession(
     sessions.delete(sessionId);
   });
 
-  sessions.set(sessionId, { process: sshProcess, ws, vmId, tmuxSession, vmIp, dataDir });
+  sessions.set(sessionId, { process: sshProcess, ws, vmId, tmuxSession, vmIp, dataDir, lastCols: cols, lastRows: rows });
 
   // Update persisted session with new sessionId
   setPersistedSession({
@@ -695,6 +704,7 @@ export function createAwsTerminalSession(
     '-o', 'IdentitiesOnly=yes',               // Only use specified key, not agent keys
     '-o', 'StrictHostKeyChecking=no',         // Don't prompt for host key
     '-o', 'UserKnownHostsFile=/dev/null',     // Don't save host keys
+    '-o', 'LogLevel=ERROR',                   // Suppress "Warning: Permanently added" messages
     '-o', 'ConnectTimeout=10',                // Connection timeout
     '-o', 'ServerAliveInterval=30',           // Keep-alive
     '-o', 'ServerAliveCountMax=3',            // Keep-alive retries
@@ -799,6 +809,7 @@ export function createCloudTerminalSession(
     '-o', 'IdentitiesOnly=yes',
     '-o', 'StrictHostKeyChecking=no',
     '-o', 'UserKnownHostsFile=/dev/null',
+    '-o', 'LogLevel=ERROR',
     '-o', 'ConnectTimeout=10',
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',

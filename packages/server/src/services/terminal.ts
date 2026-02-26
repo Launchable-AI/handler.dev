@@ -157,7 +157,7 @@ async function startTmuxSession(
 
   const process = spawn('docker', args);
 
-  setupSessionHandlers(ws, sessionId, containerId, tmuxSession, process, true);
+  setupSessionHandlers(ws, sessionId, containerId, tmuxSession, process, true, cols, rows);
 }
 
 /**
@@ -188,7 +188,7 @@ function startScriptSession(
 
   const process = spawn('docker', args);
 
-  setupSessionHandlers(ws, sessionId, containerId, '', process, false);
+  setupSessionHandlers(ws, sessionId, containerId, '', process, false, cols, rows);
 }
 
 /**
@@ -200,7 +200,9 @@ function setupSessionHandlers(
   containerId: string,
   tmuxSession: string,
   process: ChildProcess,
-  isTmux: boolean
+  isTmux: boolean,
+  initialCols?: number,
+  initialRows?: number
 ): void {
   // Handle process output → WebSocket
   process.stdout?.on('data', (data: Buffer) => {
@@ -235,7 +237,10 @@ function setupSessionHandlers(
     sessions.delete(sessionId);
   });
 
-  sessions.set(sessionId, { process, ws, containerId, tmuxSession });
+  sessions.set(sessionId, {
+    process, ws, containerId, tmuxSession,
+    lastCols: initialCols, lastRows: initialRows,
+  });
 
   // Persist session metadata for reconnection (only for tmux sessions)
   if (isTmux && tmuxSession) {
@@ -354,7 +359,7 @@ export async function resumeTerminalSession(
     sessions.delete(sessionId);
   });
 
-  sessions.set(sessionId, { process, ws, containerId, tmuxSession });
+  sessions.set(sessionId, { process, ws, containerId, tmuxSession, lastCols: cols, lastRows: rows });
 
   // Update persisted session with new sessionId
   setPersistedSession({
@@ -392,26 +397,25 @@ export function writeToSession(sessionId: string, data: string): boolean {
 
 export function resizeSession(sessionId: string, cols: number, rows: number): boolean {
   const session = sessions.get(sessionId);
-  if (session && session.process.stdin?.writable) {
-    // Skip if dimensions haven't changed
-    if (session.lastCols === cols && session.lastRows === rows) return true;
-    session.lastCols = cols;
-    session.lastRows = rows;
+  if (!session) return false;
 
-    // Send stty through stdin to set the TTY size for the innermost shell
-    // Ctrl+U clears current line, then stty sets dimensions
+  // Skip if dimensions haven't changed
+  if (session.lastCols === cols && session.lastRows === rows) return true;
+  session.lastCols = cols;
+  session.lastRows = rows;
+
+  if (session.tmuxSession) {
+    // For tmux sessions: resize via docker exec (no stdin echo).
+    // tmux resize-window handles the PTY and sends SIGWINCH to the shell.
+    safeExec('docker', ['exec', session.containerId, 'tmux', 'resize-window', '-t', session.tmuxSession, '-x', String(cols), '-y', String(rows)])
+      .catch(() => { /* ignore errors */ });
+  } else if (session.process.stdin?.writable) {
+    // For non-tmux sessions: send stty through stdin (only fallback)
     session.process.stdin.write(`\x15stty cols ${cols} rows ${rows} 2>/dev/null\n`);
-
-    if (session.tmuxSession) {
-      // Also resize tmux window/pane via separate command for proper tmux handling
-      safeExec('docker', ['exec', session.containerId, 'tmux', 'resize-window', '-t', session.tmuxSession, '-x', String(cols), '-y', String(rows)])
-        .catch(() => { /* ignore errors */ });
-    }
-
-    console.log(`   Resized session ${sessionId}: ${cols}x${rows}`);
-    return true;
   }
-  return false;
+
+  console.log(`   Resized session ${sessionId}: ${cols}x${rows}`);
+  return true;
 }
 
 export function closeSession(sessionId: string): void {
