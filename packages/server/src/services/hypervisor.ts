@@ -551,7 +551,9 @@ export class CloudHypervisorService extends EventEmitter {
 
     // Handle snapshot-based launch
     let sourceSnapshot: VmState['sourceSnapshot'];
-    let baseImage = config.baseImage || this.config.defaultBaseImage;
+    const appConfig = await getConfig();
+    const defaultImage = appConfig.defaultFirecrackerImage || this.config.defaultBaseImage;
+    let baseImage = config.baseImage || defaultImage;
     let vcpus = config.vcpus || this.config.defaultVcpus;
     let memoryMb = config.memoryMb || this.config.defaultMemoryMb;
     let diskGb = config.diskGb || this.config.defaultDiskGb;

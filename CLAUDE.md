@@ -256,10 +256,21 @@ A UI tool for managing the VM image building pipeline, gated by `environment=dev
 
 **Shell flow**: Clicking Shell first tries `sudo -n mount` (non-interactive). If sudo requires a password, the UI shows the exact `sudo mount` command for the user to run in their terminal. After mounting manually, clicking Shell again detects the existing mount and opens the session. Uses a stable mount point (`/tmp/handler-image-{name}`) so manual mounts persist across retries. If `sudo -n chroot` is also unavailable, falls back to a plain shell cd'd to the mount point.
 
+**Duplicate**: The Duplicate button creates a full copy of a base image (rootfs.ext4 + vmlinux) with a new name using `cp --reflink=auto --sparse=always`. This is the workflow for creating derivative images (e.g., `handler-dev` from `ubuntu-24.04`): duplicate, mount, shell in to install tools, upload as a new distributable image.
+
+**Manifest management**: The global manifest (`scripts/dev/global-manifest.json`) tracks which images are available for distribution. Each image entry can have `"default": true` to mark it as the default for new installations. The Image Builder UI shows manifest badges on image cards and provides Add/Remove/Set Default controls. Manifest management functions: `readGlobalManifest()`, `addImageToManifest()`, `removeImageFromManifest()`, `setManifestDefault()`.
+
+**Default image resolution**: The `defaultFirecrackerImage` config option in `AppConfig` overrides which base image is used when creating VMs without specifying a `baseImage`. The `download-image.sh` script resolves the default via: `HANDLER_DEFAULT_IMAGE` env var → manifest `default: true` entry → fallback `ubuntu-24.04`. The `setup.sh` script delegates to `download-image.sh` which handles the resolution.
+
 **API endpoints** (all prefixed `/api/image-builder`, dev-mode middleware applied):
 - `GET /` — list base images with file presence, sizes, and layer info
 - `GET /aws-profiles` — list AWS CLI profiles from `~/.aws/config`
+- `GET /manifest` — get the global manifest JSON
+- `POST /manifest/add` — add image to manifest (body: `{ name, description, isDefault? }`)
+- `POST /manifest/remove` — remove image from manifest (body: `{ name }`)
+- `POST /manifest/set-default` — set default image in manifest (body: `{ name }`)
 - `GET /:name` — inspect single image (includes filesystem info via dumpe2fs)
+- `POST /:name/duplicate` — SSE: duplicate image (body: `{ name: destName }`)
 - `POST /:name/prepare` — SSE: run `prepare-fc-image.sh --non-interactive`
 - `POST /kernel/build` — SSE: run `build-fc-kernel.sh`
 - `POST /:name/upload` — SSE: run `upload-fc-image.sh` (accepts `{ awsProfile, s3Bucket, s3Region }` body)
@@ -270,14 +281,15 @@ A UI tool for managing the VM image building pipeline, gated by `environment=dev
 **WebSocket**: `start-image-shell` message type creates a chroot shell session into a `rootfs.ext4` or `layer.ext4` (fallback). Uses the `'image'` terminal target type.
 
 Key files:
-- `packages/server/src/services/image-builder.ts` — Image listing, inspection, operation execution
+- `packages/server/src/services/image-builder.ts` — Image listing, inspection, operation execution, manifest CRUD
 - `packages/server/src/services/image-shell.ts` — Loop-mount + chroot shell sessions
 - `packages/server/src/routes/image-builder.ts` — Routes with dev-mode middleware
 - `packages/web/src/hooks/useImageBuilder.ts` — React Query hooks
-- `packages/web/src/components/ImageBuilder.tsx` — Main UI page with upload dialog
-- `packages/web/src/api/client.ts` — `listBuilderImages()`, `inspectBuilderImage()`, `listAwsProfiles()`, `prepareImage()`, `buildKernel()`, `uploadImage()`, `downloadBuilderImage()` functions
+- `packages/web/src/components/ImageBuilder.tsx` — Main UI page with upload, duplicate, and manifest controls
+- `packages/web/src/api/client.ts` — `listBuilderImages()`, `inspectBuilderImage()`, `listAwsProfiles()`, `prepareImage()`, `buildKernel()`, `uploadImage()`, `downloadBuilderImage()`, `duplicateImage()`, `getGlobalManifest()`, `addToManifest()`, `removeFromManifest()`, `setManifestDefault()` functions
 - `scripts/dev/prepare-fc-image.sh` — Shell script with `--non-interactive` flag for server invocation
 - `scripts/dev/upload-fc-image.sh` — Upload script with layer image detection and S3 config env vars
+- `scripts/dev/global-manifest.json` — Global image manifest with `default` field support
 
 ### Dynamic Data Directory
 

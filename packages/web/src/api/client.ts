@@ -4063,3 +4063,57 @@ export function downloadBuilderImage(
     'POST', undefined, onOutput, onDone, onError,
   );
 }
+
+export function duplicateImage(
+  sourceName: string,
+  destName: string,
+  onOutput: (line: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): () => void {
+  return runBuilderSseOperation(
+    `/api/image-builder/${encodeURIComponent(sourceName)}/duplicate`,
+    'POST', { name: destName }, onOutput, onDone, onError,
+  );
+}
+
+// Global manifest management
+
+export interface ManifestImage {
+  name: string;
+  description: string;
+  type: string;
+  path: string;
+  default?: boolean;
+}
+
+export interface GlobalManifest {
+  version: string;
+  description: string;
+  images: ManifestImage[];
+}
+
+export async function getGlobalManifest(): Promise<GlobalManifest> {
+  return fetchAPI('/image-builder/manifest');
+}
+
+export async function addToManifest(name: string, description: string, isDefault?: boolean): Promise<GlobalManifest> {
+  return fetchAPI('/image-builder/manifest/add', {
+    method: 'POST',
+    body: JSON.stringify({ name, description, isDefault }),
+  });
+}
+
+export async function removeFromManifest(name: string): Promise<GlobalManifest> {
+  return fetchAPI('/image-builder/manifest/remove', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function setManifestDefault(name: string): Promise<GlobalManifest> {
+  return fetchAPI('/image-builder/manifest/set-default', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}

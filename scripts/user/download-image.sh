@@ -30,7 +30,7 @@ DATA_DIR="${HANDLER_DATA_DIR:-$REAL_HOME/.local/share/handler}"
 IMAGES_DIR="$DATA_DIR/base-images"
 
 # Defaults
-IMAGE_NAME="ubuntu-24.04"
+IMAGE_NAME=""
 FORCE=false
 KEEP_COMPRESSED=false
 
@@ -86,6 +86,30 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Resolve default image name if not specified via --image
+if [ -z "$IMAGE_NAME" ]; then
+    # Check HANDLER_DEFAULT_IMAGE env var first
+    if [ -n "$HANDLER_DEFAULT_IMAGE" ]; then
+        IMAGE_NAME="$HANDLER_DEFAULT_IMAGE"
+    else
+        # Try to read default from global manifest
+        MANIFEST_URL="${BASE_URL}/../global-manifest.json"
+        DEFAULT_FROM_MANIFEST=$(curl -fsSL "$MANIFEST_URL" 2>/dev/null | python3 -c "
+import sys, json
+m = json.load(sys.stdin)
+for img in m.get('images', []):
+    if img.get('default'):
+        print(img['name'])
+        break
+" 2>/dev/null || echo "")
+        if [ -n "$DEFAULT_FROM_MANIFEST" ]; then
+            IMAGE_NAME="$DEFAULT_FROM_MANIFEST"
+        else
+            IMAGE_NAME="ubuntu-24.04"
+        fi
+    fi
+fi
 
 IMAGE_DIR="$IMAGES_DIR/$IMAGE_NAME"
 IMAGE_URL="$BASE_URL/$IMAGE_NAME/firecracker"
