@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { PROJECT_ROOT } from '../lib/paths.js';
+import { dirname } from 'path';
+import { getDataPath } from '../services/data-dir.js';
 import * as agentConfigService from '../services/agent-config.js';
 import { injectFilesIntoSandbox } from '../services/sandbox-inject.js';
 import type { FileToInject } from '../services/sandbox-inject.js';
@@ -188,8 +188,7 @@ const KNOWN_MARKETPLACES: Array<{ owner: string; repo: string; branch: string; p
 
 // ============ Custom Marketplace Persistence ============
 
-const DATA_DIR = join(PROJECT_ROOT, 'data');
-const CUSTOM_MARKETPLACES_FILE = join(DATA_DIR, 'plugin-marketplaces.json');
+async function getCustomMarketplacesFile() { return getDataPath('plugin-marketplaces.json'); }
 
 interface CustomMarketplace {
   owner: string;
@@ -204,7 +203,8 @@ interface CustomMarketplacesStore {
 
 async function loadCustomMarketplaces(): Promise<CustomMarketplace[]> {
   try {
-    const raw = await readFile(CUSTOM_MARKETPLACES_FILE, 'utf-8');
+    const filePath = await getCustomMarketplacesFile();
+    const raw = await readFile(filePath, 'utf-8');
     const store = JSON.parse(raw) as CustomMarketplacesStore;
     return store.marketplaces || [];
   } catch {
@@ -213,8 +213,13 @@ async function loadCustomMarketplaces(): Promise<CustomMarketplace[]> {
 }
 
 async function saveCustomMarketplaces(marketplaces: CustomMarketplace[]): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(CUSTOM_MARKETPLACES_FILE, JSON.stringify({ marketplaces } as CustomMarketplacesStore, null, 2));
+  const filePath = await getCustomMarketplacesFile();
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify({ marketplaces } as CustomMarketplacesStore, null, 2));
+}
+
+export function resetMarketplaceCache(): void {
+  marketplaceCache.clear();
 }
 
 const marketplaceCache = new Map<string, { data: MarketplaceData; fetchedAt: number }>();

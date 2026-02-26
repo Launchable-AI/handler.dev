@@ -5,6 +5,7 @@ import { DirectoryPicker } from './DirectoryPicker';
 import { downloadGlobalSshKey, regenerateSshKey, getSshKeyInfo } from '../api/client';
 import * as api from '../api/client';
 import type { ModelOption, BackendStatus, QuickLaunchConfig } from '../api/client';
+import { useQueryClient } from '@tanstack/react-query';
 import { CloudBackendsSettings } from './settings/CloudBackendsSettings';
 import { FirecrackerInstallModal } from './settings/FirecrackerInstallModal';
 import { GitHubSettings } from './settings/GitHubSettings';
@@ -17,8 +18,10 @@ type BackendsView = 'local' | 'cloud';
 export function Settings() {
   const { data: config, isLoading } = useConfig();
   const updateMutation = useUpdateConfig();
+  const queryClient = useQueryClient();
 
   const [dataDirectory, setDataDirectory] = useState('');
+  const [dataDirMessage, setDataDirMessage] = useState<{ type: 'info' | 'success'; text: string } | null>(null);
   const [sshHost, setSshHost] = useState('');
   const [sshJumpHost, setSshJumpHost] = useState('');
   const [sshJumpHostKeyPath, setSshJumpHostKeyPath] = useState('');
@@ -210,13 +213,38 @@ export function Settings() {
   };
 
   const handleSave = async () => {
-    await updateMutation.mutateAsync({
+    setDataDirMessage(null);
+    const result = await updateMutation.mutateAsync({
       sshHost: sshHost || '',
       sshJumpHost: sshJumpHost || '',
       sshJumpHostKeyPath: sshJumpHostKeyPath || '',
       sshKeysDisplayPath: sshKeysDisplayPath || '~/.ssh',
       dataDirectory: dataDirectory || undefined,
     });
+
+    // If data directory was changed, show scan results and refresh caches
+    const scan = result._dataDirScan;
+    if (scan) {
+      // Invalidate all data caches so UI reflects the new directory
+      queryClient.invalidateQueries({ queryKey: ['quick-files'] });
+      queryClient.invalidateQueries({ queryKey: ['notes'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-configs'] });
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      queryClient.invalidateQueries({ queryKey: ['dockerfiles'] });
+
+      if (scan.isEmpty) {
+        setDataDirMessage({ type: 'info', text: 'Switched to empty directory — no existing data found.' });
+      } else {
+        const parts: string[] = [];
+        if (scan.quickFiles > 0) parts.push(`${scan.quickFiles} quick file${scan.quickFiles !== 1 ? 's' : ''}`);
+        if (scan.notes > 0) parts.push(`${scan.notes} note${scan.notes !== 1 ? 's' : ''}`);
+        if (scan.agentConfigs > 0) parts.push(`${scan.agentConfigs} agent config${scan.agentConfigs !== 1 ? 's' : ''}`);
+        if (scan.templates > 0) parts.push(`${scan.templates} template${scan.templates !== 1 ? 's' : ''}`);
+        if (scan.dockerfiles > 0) parts.push(`${scan.dockerfiles} dockerfile${scan.dockerfiles !== 1 ? 's' : ''}`);
+        if (scan.sshKeysExist) parts.push('SSH keys');
+        setDataDirMessage({ type: 'success', text: `Loaded: ${parts.join(', ')}` });
+      }
+    }
   };
 
   if (isLoading) {
@@ -421,15 +449,27 @@ export function Settings() {
               </div>
 
               {/* Save Button */}
-              <div className="flex justify-end pt-4 border-t border-[hsl(var(--border))]">
-                <button
-                  onClick={handleSave}
-                  disabled={updateMutation.isPending}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-[hsl(var(--cyan))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50"
-                >
-                  {updateMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-                  Save Settings
-                </button>
+              <div className="flex flex-col gap-3 pt-4 border-t border-[hsl(var(--border))]">
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSave}
+                    disabled={updateMutation.isPending}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs bg-[hsl(var(--cyan))] text-[hsl(var(--bg-base))] hover:bg-[hsl(var(--cyan)/0.9)] disabled:opacity-50"
+                  >
+                    {updateMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                    Save Settings
+                  </button>
+                </div>
+                {dataDirMessage && (
+                  <div className={`flex items-center gap-2 px-3 py-2 text-xs rounded border ${
+                    dataDirMessage.type === 'success'
+                      ? 'bg-[hsl(var(--green)/0.1)] border-[hsl(var(--green)/0.3)] text-[hsl(var(--green))]'
+                      : 'bg-[hsl(var(--cyan)/0.1)] border-[hsl(var(--cyan)/0.3)] text-[hsl(var(--cyan))]'
+                  }`}>
+                    {dataDirMessage.type === 'success' ? <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" /> : <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" />}
+                    {dataDirMessage.text}
+                  </div>
+                )}
               </div>
             </div>
           )}

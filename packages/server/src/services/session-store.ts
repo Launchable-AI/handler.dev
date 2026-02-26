@@ -23,7 +23,7 @@ export interface PersistedSession {
   dataDir?: string;
 }
 
-const SESSIONS_FILE = path.join(DATA_DIR, 'terminal-sessions.json');
+let sessionsFile = path.join(DATA_DIR, 'terminal-sessions.json');
 
 // In-memory cache
 let sessions: Map<string, PersistedSession> = new Map();
@@ -39,8 +39,8 @@ function loadSessions(): void {
   if (loaded) return;
 
   try {
-    if (fs.existsSync(SESSIONS_FILE)) {
-      const data = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf-8'));
+    if (fs.existsSync(sessionsFile)) {
+      const data = JSON.parse(fs.readFileSync(sessionsFile, 'utf-8'));
       sessions = new Map(Object.entries(data));
     }
   } catch (err) {
@@ -56,12 +56,13 @@ function loadSessions(): void {
 function saveSessions(): void {
   try {
     // Ensure data directory exists
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    const dataDir = path.dirname(sessionsFile);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
 
     const data = Object.fromEntries(sessions);
-    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2));
+    fs.writeFileSync(sessionsFile, JSON.stringify(data, null, 2));
   } catch (err) {
     console.warn('[SessionStore] Failed to save sessions:', err);
   }
@@ -212,4 +213,13 @@ export function generateTmuxSessionName(id: string): string {
   // Use short ID + timestamp for uniqueness
   const shortId = id.slice(0, 8);
   return `handler-${shortId}-${Date.now()}`;
+}
+
+/**
+ * Reset session store cache when data directory changes.
+ */
+export function resetSessionStoreCache(newDataDir: string): void {
+  sessionsFile = path.join(newDataDir, 'terminal-sessions.json');
+  sessions = new Map();
+  loaded = false;
 }

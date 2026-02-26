@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
-import { PROJECT_ROOT } from '../lib/paths.js';
+import { dirname } from 'path';
+import { getDataPath } from './data-dir.js';
 
 export interface QuickFile {
   id: string;
@@ -13,7 +13,9 @@ export interface QuickFile {
   updatedAt: string;
 }
 
-const DATA_FILE = join(PROJECT_ROOT, 'data', 'quick-files.json');
+async function getDataFile() {
+  return getDataPath('quick-files.json');
+}
 
 interface QuickFilesData {
   files: QuickFile[];
@@ -31,7 +33,8 @@ async function loadData(): Promise<QuickFilesData> {
   }
 
   try {
-    const content = await readFile(DATA_FILE, 'utf-8');
+    const dataFile = await getDataFile();
+    const content = await readFile(dataFile, 'utf-8');
     cachedData = JSON.parse(content) as QuickFilesData;
     return cachedData;
   } catch {
@@ -40,9 +43,14 @@ async function loadData(): Promise<QuickFilesData> {
 }
 
 async function saveData(data: QuickFilesData): Promise<void> {
-  await mkdir(dirname(DATA_FILE), { recursive: true });
-  await writeFile(DATA_FILE, JSON.stringify(data, null, 2));
+  const dataFile = await getDataFile();
+  await mkdir(dirname(dataFile), { recursive: true });
+  await writeFile(dataFile, JSON.stringify(data, null, 2));
   cachedData = data;
+}
+
+export function resetQuickFilesCache(): void {
+  cachedData = null;
 }
 
 function generateId(): string {

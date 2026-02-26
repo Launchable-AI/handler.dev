@@ -242,6 +242,21 @@ Key files:
 - `scripts/dev/prepare-fc-image.sh` — Shell script with `--non-interactive` flag for server invocation
 - `scripts/dev/upload-fc-image.sh` — Upload script with layer image detection and S3 config env vars
 
+### Dynamic Data Directory
+
+The data directory is configurable via Settings > General > Data Directory. When changed, all services dynamically resolve paths using `getDataPath()` from `packages/server/src/services/data-dir.ts` instead of the static `DATA_DIR` constant.
+
+- **`data-dir.ts`**: Central helper with `getDataDir()`, `getDataPath(...segments)`, and `reloadServices(newDataDir)` — reads `config.dataDirectory` from config, falls back to `DATA_DIR`
+- **Service pattern**: Each service that stores data (quick-files, notes, agent-config, mcp-registry, mcp-deploy, session-store) uses `async getDataFile() { return getDataPath('filename.json'); }` instead of a hardcoded `const DATA_FILE = join(...)`. Each exports a `resetXxxCache()` function.
+- **Singleton services** (template, vm-volumes): Export `resetXxxService()` that nulls the singleton so it re-creates with the new data dir on next access.
+- **Route files** (dockerfiles, agent-config, ssh-keys): Use `async getXxxDir() { return getDataPath('subdir'); }` called in each handler.
+- **Config route** (`routes/config.ts`): PATCH handler detects `dataDirectory` changes, calls `reloadServices()`, and returns a `_dataDirScan` object with item counts.
+- **Frontend** (`Settings.tsx`): After save, reads `_dataDirScan` from the response, invalidates React Query caches, and shows an inline notification with what was loaded.
+
+What stays on the static `DATA_DIR`: `config.json` itself (bootstrap file), VM infrastructure paths (firecracker-vms, base-images), and cloud provider SSH keys.
+
+When adding new services that store data, use `getDataPath()` from `data-dir.ts` and export a cache reset function.
+
 ### Key tech choices
 
 - Tailwind CSS v4 (beta) for styling

@@ -4,13 +4,12 @@
  */
 
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
 import { existsSync } from 'fs';
-import { PROJECT_ROOT } from '../lib/paths.js';
+import { dirname } from 'path';
+import { getDataPath } from './data-dir.js';
 
-const DATA_DIR = join(PROJECT_ROOT, 'data');
-const MCP_REGISTRY_FILE = join(DATA_DIR, 'mcp-registry.json');
-const MCP_FAVORITES_FILE = join(DATA_DIR, 'mcp-favorites.json');
+async function getMcpRegistryFile() { return getDataPath('mcp-registry.json'); }
+async function getMcpFavoritesFile() { return getDataPath('mcp-favorites.json'); }
 
 const REGISTRY_BASE_URL = 'https://registry.modelcontextprotocol.io';
 
@@ -52,8 +51,9 @@ export interface MCPRegistryStore {
 
 async function loadStore(): Promise<MCPRegistryStore> {
   try {
-    if (existsSync(MCP_REGISTRY_FILE)) {
-      const data = await readFile(MCP_REGISTRY_FILE, 'utf-8');
+    const registryFile = await getMcpRegistryFile();
+    if (existsSync(registryFile)) {
+      const data = await readFile(registryFile, 'utf-8');
       return JSON.parse(data);
     }
   } catch (error) {
@@ -63,8 +63,9 @@ async function loadStore(): Promise<MCPRegistryStore> {
 }
 
 async function saveStore(store: MCPRegistryStore): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(MCP_REGISTRY_FILE, JSON.stringify(store, null, 2));
+  const registryFile = await getMcpRegistryFile();
+  await mkdir(dirname(registryFile), { recursive: true });
+  await writeFile(registryFile, JSON.stringify(store, null, 2));
 }
 
 /**
@@ -316,8 +317,9 @@ interface FavoritesStore {
 
 async function loadFavorites(): Promise<FavoritesStore> {
   try {
-    if (existsSync(MCP_FAVORITES_FILE)) {
-      const data = await readFile(MCP_FAVORITES_FILE, 'utf-8');
+    const favoritesFile = await getMcpFavoritesFile();
+    if (existsSync(favoritesFile)) {
+      const data = await readFile(favoritesFile, 'utf-8');
       return JSON.parse(data);
     }
   } catch (error) {
@@ -327,8 +329,9 @@ async function loadFavorites(): Promise<FavoritesStore> {
 }
 
 async function saveFavorites(store: FavoritesStore): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(MCP_FAVORITES_FILE, JSON.stringify(store, null, 2));
+  const favoritesFile = await getMcpFavoritesFile();
+  await mkdir(dirname(favoritesFile), { recursive: true });
+  await writeFile(favoritesFile, JSON.stringify(store, null, 2));
 }
 
 export async function getFavorites(): Promise<string[]> {
@@ -449,7 +452,7 @@ export async function fetchReadme(serverName: string): Promise<string | null> {
 
 // ============ Manual Servers ============
 
-const MCP_MANUAL_FILE = join(DATA_DIR, 'mcp-manual.json');
+async function getMcpManualFile() { return getDataPath('mcp-manual.json'); }
 
 interface ManualServersStore {
   servers: MCPServer[];
@@ -457,8 +460,9 @@ interface ManualServersStore {
 
 async function loadManualServers(): Promise<ManualServersStore> {
   try {
-    if (existsSync(MCP_MANUAL_FILE)) {
-      const data = await readFile(MCP_MANUAL_FILE, 'utf-8');
+    const manualFile = await getMcpManualFile();
+    if (existsSync(manualFile)) {
+      const data = await readFile(manualFile, 'utf-8');
       return JSON.parse(data);
     }
   } catch (error) {
@@ -468,8 +472,9 @@ async function loadManualServers(): Promise<ManualServersStore> {
 }
 
 async function saveManualServers(store: ManualServersStore): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(MCP_MANUAL_FILE, JSON.stringify(store, null, 2));
+  const manualFile = await getMcpManualFile();
+  await mkdir(dirname(manualFile), { recursive: true });
+  await writeFile(manualFile, JSON.stringify(store, null, 2));
 }
 
 /**

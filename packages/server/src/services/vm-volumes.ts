@@ -537,3 +537,11 @@ export async function initializeVmVolumeService(dataDir?: string): Promise<VmVol
   await service.initialize();
   return service;
 }
+
+/**
+ * Reset the VM volume service singleton so it gets re-created
+ * with the new data directory on next access.
+ */
+export function resetVmVolumeService(): void {
+  vmVolumeService = null;
+}

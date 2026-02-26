@@ -478,11 +478,25 @@ export interface AppConfig {
   tmuxStatusBar?: boolean; // Show/hide tmux status bar at bottom of terminal (default: false)
 }
 
+export interface DataDirScanResult {
+  path: string;
+  quickFiles: number;
+  notes: number;
+  agentConfigs: number;
+  templates: number;
+  dockerfiles: number;
+  terminalSessions: number;
+  sshKeysExist: boolean;
+  isEmpty: boolean;
+}
+
+export type UpdateConfigResponse = AppConfig & { _dataDirScan?: DataDirScanResult };
+
 export async function getConfig(): Promise<AppConfig> {
   return fetchAPI('/config');
 }
 
-export async function updateConfig(updates: Partial<AppConfig>): Promise<AppConfig> {
+export async function updateConfig(updates: Partial<AppConfig>): Promise<UpdateConfigResponse> {
   return fetchAPI('/config', {
     method: 'PATCH',
     body: JSON.stringify(updates),
