@@ -224,6 +224,13 @@ if [ -n "$docker_volume" ] && [ -b "/dev/${docker_volume}" ]; then
     mkdir -p /var/lib/docker
     /bin/mount -t ext4 -o noatime "/dev/${docker_volume}" /var/lib/docker
 
+    # Also put containerd's data on the ext4 volume.
+    # containerd uses overlayfs snapshotter at /var/lib/containerd, which fails
+    # if /var/lib/containerd is on the guest's overlayfs root (overlay-on-overlay).
+    mkdir -p /var/lib/docker/containerd /var/lib/containerd
+    /bin/mount --bind /var/lib/docker/containerd /var/lib/containerd
+    echo "[overlay-init] Bind-mounted /var/lib/containerd on Docker volume"
+
     # Write Docker daemon config for overlay2 (dedicated volume supports it natively)
     # This overrides the default vfs config that exists as a fallback in the image
     mkdir -p /etc/docker
