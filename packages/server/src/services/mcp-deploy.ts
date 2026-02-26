@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import type {
   MCPDeployment,
   MCPDeploymentStatus,
@@ -250,7 +250,7 @@ export async function deploy(
       if (updatedSandbox?.terminalType === 'docker-exec' && updatedSandbox.backendMeta?.type === 'docker') {
         const containerId = (updatedSandbox.backendMeta as { containerId: string }).containerId;
         try {
-          execSync(`docker exec ${containerId} sh -c "${cmd.replace(/"/g, '\\"')}"`, {
+          execFileSync('docker', ['exec', containerId, 'sh', '-c', cmd], {
             timeout: 300000,
             stdio: 'pipe',
           });
@@ -285,14 +285,13 @@ export async function deploy(
       const containerId = (updatedSandbox.backendMeta as { containerId: string }).containerId;
       // Start in background for stdio transport
       const bgSuffix = transport === 'stdio' ? '' : ' &';
-      const envStr = Object.entries(deployment.env)
-        .map(([k, v]) => `-e ${k}="${v}"`)
-        .join(' ');
+      const dockerArgs = ['exec', '-d'];
+      for (const [k, v] of Object.entries(deployment.env)) {
+        dockerArgs.push('-e', `${k}=${v}`);
+      }
+      dockerArgs.push(containerId, 'sh', '-c', `${fullCommand}${bgSuffix}`);
       try {
-        execSync(
-          `docker exec -d ${envStr ? envStr + ' ' : ''}${containerId} sh -c "${fullCommand.replace(/"/g, '\\"')}${bgSuffix}"`,
-          { timeout: 30000, stdio: 'pipe' }
-        );
+        execFileSync('docker', dockerArgs, { timeout: 30000, stdio: 'pipe' });
       } catch (err) {
         log(`Start command output: ${err instanceof Error ? err.message : 'Unknown'}`, 'warn');
       }
@@ -419,10 +418,7 @@ export async function restartDeployment(id: string): Promise<MCPDeployment> {
     if (sandbox?.terminalType === 'docker-exec' && sandbox.backendMeta?.type === 'docker') {
       const containerId = (sandbox.backendMeta as { containerId: string }).containerId;
       try {
-        execSync(
-          `docker exec -d ${containerId} sh -c "${fullCommand.replace(/"/g, '\\"')}"`,
-          { timeout: 30000, stdio: 'pipe' }
-        );
+        execFileSync('docker', ['exec', '-d', containerId, 'sh', '-c', fullCommand], { timeout: 30000, stdio: 'pipe' });
       } catch {
         // Process may already be running
       }
@@ -503,7 +499,7 @@ export async function discoverLocalServers(): Promise<MCPLocalServer[]> {
           // Try to check if process is running
           let status: 'running' | 'stopped' | 'unknown' = 'unknown';
           try {
-            const result = execSync(`pgrep -f "${serverConfig.command}"`, { stdio: 'pipe' }).toString().trim();
+            const result = execFileSync('pgrep', ['-f', serverConfig.command], { stdio: 'pipe' }).toString().trim();
             status = result ? 'running' : 'stopped';
           } catch {
             status = 'unknown';

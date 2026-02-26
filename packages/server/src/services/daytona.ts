@@ -7,7 +7,7 @@
 
 import { getConfig } from './config.js';
 import type { VmInfo, VmStatus } from '../types/vm.js';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 // Daytona sandbox states from API
 export type DaytonaSandboxState =
@@ -788,10 +788,10 @@ export class DaytonaService {
 
     // Step 2: Login to registry
     try {
-      execSync(
-        `echo "${access.secret}" | docker login ${access.registryUrl} -u ${access.username} --password-stdin`,
-        { stdio: 'pipe' }
-      );
+      execFileSync('docker', ['login', access.registryUrl, '-u', access.username, '--password-stdin'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        input: access.secret,
+      });
       console.log('[DaytonaService] Docker login successful');
     } catch (err) {
       throw new Error(`Failed to login to Daytona registry: ${err}`);
@@ -804,16 +804,16 @@ export class DaytonaService {
 
     try {
       console.log(`[DaytonaService] Tagging ${localImage} as ${remoteImage}`);
-      execSync(`docker tag ${localImage} ${remoteImage}`, { stdio: 'pipe' });
+      execFileSync('docker', ['tag', localImage, remoteImage], { stdio: 'pipe' });
 
       console.log(`[DaytonaService] Pushing ${remoteImage}`);
-      execSync(`docker push ${remoteImage}`, { stdio: 'inherit' });
+      execFileSync('docker', ['push', remoteImage], { stdio: 'inherit' });
     } catch (err) {
       throw new Error(`Failed to push image to Daytona registry: ${err}`);
     } finally {
       // Logout from registry
       try {
-        execSync(`docker logout ${access.registryUrl}`, { stdio: 'pipe' });
+        execFileSync('docker', ['logout', access.registryUrl], { stdio: 'pipe' });
       } catch {
         // Ignore logout errors
       }
@@ -876,10 +876,10 @@ export class DaytonaService {
     // Step 2: Login to registry
     onProgress('Logging into registry...', 'info');
     try {
-      execSync(
-        `echo "${access.secret}" | docker login ${access.registryUrl} -u ${access.username} --password-stdin`,
-        { stdio: 'pipe' }
-      );
+      execFileSync('docker', ['login', access.registryUrl, '-u', access.username, '--password-stdin'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        input: access.secret,
+      });
       onProgress('Docker login successful', 'info');
     } catch (err) {
       onProgress(`Failed to login: ${err}`, 'error');
@@ -892,7 +892,7 @@ export class DaytonaService {
 
     try {
       onProgress(`Tagging ${localImage} as ${remoteImage}`, 'info');
-      execSync(`docker tag ${localImage} ${remoteImage}`, { stdio: 'pipe' });
+      execFileSync('docker', ['tag', localImage, remoteImage], { stdio: 'pipe' });
 
       onProgress(`Pushing ${remoteImage}...`, 'info');
 
@@ -940,7 +940,7 @@ export class DaytonaService {
     } finally {
       // Logout from registry
       try {
-        execSync(`docker logout ${access.registryUrl}`, { stdio: 'pipe' });
+        execFileSync('docker', ['logout', access.registryUrl], { stdio: 'pipe' });
       } catch {
         // Ignore logout errors
       }

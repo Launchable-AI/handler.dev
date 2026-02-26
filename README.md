@@ -75,8 +75,8 @@ The UI presents a single "Sandboxes" view where you can filter by backend, manag
 
 ```bash
 # Clone the repository
-git clone https://github.com/anthropics/handler.git
-cd handler
+git clone https://github.com/Launchable-AI/handler.dev.git
+cd handler.dev
 
 # Install dependencies
 pnpm install

@@ -7,7 +7,7 @@
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { getConfig, setConfig } from './config.js';
 import { PROJECT_ROOT } from '../lib/paths.js';
 
@@ -388,10 +388,9 @@ export class DigitalOceanService {
     if (!existsSync(DO_SSH_KEY_PATH)) {
       console.log('[DigitalOceanService] Generating SSH keypair');
       await mkdir(SSH_KEYS_DIR, { recursive: true });
-      execSync(
-        `ssh-keygen -t ed25519 -f "${DO_SSH_KEY_PATH}" -N "" -C "handler-digitalocean"`,
-        { stdio: 'pipe' },
-      );
+      execFileSync('ssh-keygen', ['-t', 'ed25519', '-f', DO_SSH_KEY_PATH, '-N', '', '-C', 'handler-digitalocean'], {
+        stdio: 'pipe',
+      });
     }
 
     // Read the public key

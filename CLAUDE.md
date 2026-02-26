@@ -164,7 +164,6 @@ The server is hardened against malicious agents inside sandboxes attempting to e
 Key files:
 - `packages/server/src/lib/safe-exec.ts` — Shell-free command execution utilities
 - `packages/server/src/lib/validation.ts` — Input validation functions
-- `SECURITY_HARDENING_PLAN.md` — Full threat model, exploit examples, and implementation plan
 
 When adding new `execSync` calls that handle user input, always use `execFileSync` with an argument array instead. When adding new API endpoints that accept IDs or paths, apply the validators from `validation.ts`.
 

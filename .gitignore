@@ -42,3 +42,7 @@ working_scripts/
 
 # Claude Code local settings
 .claude/
+
+# Development docs (local only)
+external_docs/
+agentic_development_docs/

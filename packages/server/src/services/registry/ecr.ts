@@ -4,7 +4,7 @@
  * Uses AWS SDK to get auth tokens and auto-creates repos if missing.
  */
 
-import { execSync, spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import type { ContainerRegistry, RegistryPushResult, ProgressCallback, RegistryType } from './index.js';
 
 export class EcrRegistry implements ContainerRegistry {
@@ -31,22 +31,26 @@ export class EcrRegistry implements ContainerRegistry {
     const env = this.getEnv();
 
     // Get account ID and registry URL
-    const callerIdentity = execSync('aws sts get-caller-identity --output json', { env, stdio: ['pipe', 'pipe', 'pipe'] });
-    const identity = JSON.parse(callerIdentity.toString());
+    const callerIdentity = execFileSync('aws', ['sts', 'get-caller-identity', '--output', 'json'], {
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+    });
+    const identity = JSON.parse(callerIdentity);
     this.accountId = identity.Account;
     this.registryUrl = `${this.accountId}.dkr.ecr.${this.region}.amazonaws.com`;
 
     // Get auth token and login
-    const tokenOutput = execSync(
-      `aws ecr get-login-password --region ${this.region}`,
-      { env, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    const password = tokenOutput.toString().trim();
+    const password = (execFileSync('aws', ['ecr', 'get-login-password', '--region', this.region], {
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+    }) as string).trim();
 
-    execSync(
-      `echo "${password}" | docker login --username AWS --password-stdin ${this.registryUrl}`,
-      { stdio: 'pipe' }
-    );
+    execFileSync('docker', ['login', '--username', 'AWS', '--password-stdin', this.registryUrl], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      input: password,
+    });
   }
 
   getRemoteImageTag(_localImage: string, imageName: string): string {
@@ -67,20 +71,20 @@ export class EcrRegistry implements ContainerRegistry {
     // Auto-create repository if it doesn't exist
     onProgress(`Ensuring ECR repository "${cleanRepoName}" exists...`, 'info');
     try {
-      execSync(
-        `aws ecr describe-repositories --repository-names ${cleanRepoName} --region ${this.region}`,
-        { env: this.getEnv(), stdio: 'pipe' }
-      );
+      execFileSync('aws', ['ecr', 'describe-repositories', '--repository-names', cleanRepoName, '--region', this.region], {
+        env: this.getEnv(),
+        stdio: 'pipe',
+      });
     } catch {
       onProgress(`Creating ECR repository "${cleanRepoName}"...`, 'info');
-      execSync(
-        `aws ecr create-repository --repository-name ${cleanRepoName} --region ${this.region}`,
-        { env: this.getEnv(), stdio: 'pipe' }
-      );
+      execFileSync('aws', ['ecr', 'create-repository', '--repository-name', cleanRepoName, '--region', this.region], {
+        env: this.getEnv(),
+        stdio: 'pipe',
+      });
     }
 
     onProgress(`Tagging ${localImage} as ${remoteImage}`, 'info');
-    execSync(`docker tag ${localImage} ${remoteImage}`, { stdio: 'pipe' });
+    execFileSync('docker', ['tag', localImage, remoteImage], { stdio: 'pipe' });
 
     onProgress(`Pushing ${remoteImage}...`, 'info');
     await this.dockerPush(remoteImage, onProgress);
@@ -97,7 +101,7 @@ export class EcrRegistry implements ContainerRegistry {
 
   async logout(): Promise<void> {
     try {
-      execSync(`docker logout ${this.registryUrl}`, { stdio: 'pipe' });
+      execFileSync('docker', ['logout', this.registryUrl], { stdio: 'pipe' });
     } catch {
       // Ignore
     }

@@ -4,7 +4,7 @@
  * Uses GCP service account JSON key for docker login.
  */
 
-import { execSync, spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import type { ContainerRegistry, RegistryPushResult, ProgressCallback, RegistryType } from './index.js';
 
 export class GcrRegistry implements ContainerRegistry {
@@ -22,11 +22,10 @@ export class GcrRegistry implements ContainerRegistry {
 
   async login(): Promise<void> {
     // Use the JSON key as the docker password with _json_key as username
-    const key = this.keyFileJson.replace(/'/g, "'\\''");
-    execSync(
-      `echo '${key}' | docker login -u _json_key --password-stdin https://${this.hostname}`,
-      { stdio: 'pipe' }
-    );
+    execFileSync('docker', ['login', '-u', '_json_key', '--password-stdin', `https://${this.hostname}`], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      input: this.keyFileJson,
+    });
   }
 
   getRemoteImageTag(_localImage: string, imageName: string): string {
@@ -44,7 +43,7 @@ export class GcrRegistry implements ContainerRegistry {
     const remoteImage = this.getRemoteImageTag(localImage, imageName);
 
     onProgress(`Tagging ${localImage} as ${remoteImage}`, 'info');
-    execSync(`docker tag ${localImage} ${remoteImage}`, { stdio: 'pipe' });
+    execFileSync('docker', ['tag', localImage, remoteImage], { stdio: 'pipe' });
 
     onProgress(`Pushing ${remoteImage}...`, 'info');
     await this.dockerPush(remoteImage, onProgress);
@@ -61,7 +60,7 @@ export class GcrRegistry implements ContainerRegistry {
 
   async logout(): Promise<void> {
     try {
-      execSync(`docker logout https://${this.hostname}`, { stdio: 'pipe' });
+      execFileSync('docker', ['logout', `https://${this.hostname}`], { stdio: 'pipe' });
     } catch {
       // Ignore
     }
