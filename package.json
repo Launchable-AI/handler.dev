@@ -16,7 +16,10 @@
     "dev:server": "pnpm --filter server run dev",
     "dev:web": "pnpm --filter web run dev --host 0.0.0.0",
     "build": "pnpm --parallel run build",
-    "lint": "pnpm --parallel run lint"
+    "lint": "pnpm --parallel run lint",
+    "test": "pnpm --parallel run test",
+    "test:watch": "pnpm --parallel run test:watch",
+    "test:coverage": "pnpm --parallel run test:coverage"
   },
   "engines": {
     "node": ">=22.0.0"
