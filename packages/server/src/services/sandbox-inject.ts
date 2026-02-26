@@ -14,11 +14,13 @@ import { getFirecrackerService, initializeFirecrackerService } from './firecrack
 import { getDaytonaService, initializeDaytonaService } from './daytona.js';
 import { getAwsService, initializeAwsService } from './aws.js';
 
-/** Common SSH options */
+/** Common SSH options — match the opts used by vm-terminal, firecracker, etc. */
 const SSH_OPTS = [
   '-o', 'StrictHostKeyChecking=no',
   '-o', 'UserKnownHostsFile=/dev/null',
   '-o', 'IdentitiesOnly=yes',
+  '-o', 'ConnectTimeout=5',
+  '-o', 'BatchMode=yes',
 ];
 
 export interface FileToInject {
@@ -66,6 +68,78 @@ function expandTilde(filePath: string, backend: string): string {
 }
 
 /**
+ * Inject files into an SSH-accessible sandbox via a single tar pipe.
+ * All files are packed into a tar archive and extracted in one SSH session,
+ * avoiding the per-file SSH handshake overhead of separate mkdir + scp calls.
+ *
+ * Two workarounds for VM shell init (prompt.sh):
+ * 1. The remote command is prefixed with `trap "" TERM; kill 0 2>/dev/null;`
+ *    to kill the background Claude status poller that prompt.sh spawns, which
+ *    otherwise holds stdout open and prevents the SSH session from ever closing.
+ * 2. Tar lists individual file paths (not '.') so parent directory entries like
+ *    ./ and ./home/ are not included — avoids "Cannot change mode" errors when
+ *    tar tries to set permissions on system dirs the SSH user doesn't own.
+ */
+function injectViaTar(params: {
+  keyPath?: string;
+  keyContent?: string;
+  user: string;
+  ip: string;
+  port?: string;
+  files: Array<{ destPath: string; filename: string; content: string }>;
+}): number {
+  const { user, ip, port, files } = params;
+  if (files.length === 0) return 0;
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-tar-'));
+  try {
+    // Write SSH key to temp file if provided as content (Daytona, AWS)
+    let keyPath = params.keyPath || '';
+    if (params.keyContent) {
+      keyPath = path.join(tempDir, 'ssh_key');
+      fs.writeFileSync(keyPath, params.keyContent, { mode: 0o600 });
+    }
+
+    // Build payload directory mirroring destination paths
+    const payloadDir = path.join(tempDir, 'payload');
+    const relativePaths: string[] = [];
+    for (const file of files) {
+      const dir = path.join(payloadDir, file.destPath);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, file.filename), file.content);
+      // Track relative path for tar (e.g. "home/agent/config.sh")
+      // path.join strips the leading / so we get a clean relative path
+      relativePaths.push(path.join(file.destPath, file.filename).replace(/^\//, ''));
+    }
+
+    // Create tar archive listing only the files — not '.' which would include
+    // parent dir entries that cause permission errors on extraction
+    const tarData = execFileSync('tar', ['cf', '-', '-C', payloadDir, ...relativePaths], {
+      maxBuffer: 50 * 1024 * 1024,
+    });
+
+    // Extract via single SSH connection.
+    // The trap/kill prefix terminates the background status poller spawned by
+    // the VM's shell init (prompt.sh) so the SSH session can close cleanly.
+    const sshArgs = ['-T', '-i', keyPath, ...SSH_OPTS];
+    if (port) sshArgs.push('-p', port);
+    sshArgs.push(
+      `${user}@${ip}`,
+      'trap "" TERM; kill 0 2>/dev/null; tar xf - -C / --no-same-owner',
+    );
+
+    execFileSync('ssh', sshArgs, {
+      input: tarData,
+      timeout: 30000,
+    });
+
+    return files.length;
+  } finally {
+    fs.rmSync(tempDir, { recursive: true });
+  }
+}
+
+/**
  * Inject files into a running sandbox. Returns the number of files injected.
  */
 export async function injectFilesIntoSandbox(
@@ -84,16 +158,20 @@ export async function injectFilesIntoSandbox(
     return 0;
   }
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-inject-'));
-  let injectedCount = 0;
+  // Expand tildes for all files upfront
+  const expanded = files.map(f => ({
+    ...f,
+    destPath: expandTilde(f.destPath, sandbox.backend),
+  }));
 
-  try {
-    for (const rawFile of files) {
-      const file = { ...rawFile, destPath: expandTilde(rawFile.destPath, sandbox.backend) };
-      const tempFilePath = path.join(tempDir, file.filename);
-      fs.writeFileSync(tempFilePath, file.content);
+  if (sandbox.backend === 'docker') {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-inject-'));
+    let injectedCount = 0;
+    try {
+      for (const file of expanded) {
+        const tempFilePath = path.join(tempDir, file.filename);
+        fs.writeFileSync(tempFilePath, file.content);
 
-      if (sandbox.backend === 'docker') {
         const dockerMeta = sandbox.backendMeta as { type: 'docker'; containerId: string } | undefined;
         const containerId = dockerMeta?.containerId || sandbox.id.replace('docker-', '');
 
@@ -108,59 +186,57 @@ export async function injectFilesIntoSandbox(
         } catch { /* ignore */ }
 
         injectedCount++;
-      } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
-        const vmService = sandbox.backend === 'cloud-hypervisor'
-          ? service.getHypervisorService()
-          : service.getFirecrackerService();
-        const keyPath = vmService?.getSshKeyPath?.() || '';
-
-        if (keyPath && sandbox.guestIp) {
-          try {
-            execFileSync('ssh', ['-i', keyPath, ...SSH_OPTS, `agent@${sandbox.guestIp}`, 'mkdir', '-p', file.destPath], { stdio: 'pipe', timeout: 10000 });
-          } catch { /* ignore */ }
-
-          execFileSync('scp', ['-i', keyPath, ...SSH_OPTS, tempFilePath, `agent@${sandbox.guestIp}:${file.destPath}/${file.filename}`], { stdio: 'pipe', timeout: 30000 });
-          injectedCount++;
-        }
-      } else if (sandbox.backend === 'daytona') {
-        const daytonaMeta = sandbox.backendMeta as { type: 'daytona'; sshKey?: string } | undefined;
-        if (sandbox.guestIp && daytonaMeta?.sshKey) {
-          const tempKeyPath = path.join(tempDir, 'daytona_key');
-          fs.writeFileSync(tempKeyPath, daytonaMeta.sshKey, { mode: 0o600 });
-
-          const port = String(sandbox.sshPort || 22);
-          try {
-            execFileSync('ssh', ['-i', tempKeyPath, '-p', port, ...SSH_OPTS, `dev@${sandbox.guestIp}`, 'mkdir', '-p', file.destPath], { stdio: 'pipe', timeout: 10000 });
-          } catch { /* ignore */ }
-
-          execFileSync('scp', ['-i', tempKeyPath, '-P', port, ...SSH_OPTS, tempFilePath, `dev@${sandbox.guestIp}:${file.destPath}/${file.filename}`], { stdio: 'pipe', timeout: 30000 });
-          injectedCount++;
-        }
-      } else if (sandbox.backend === 'aws') {
-        if (sandbox.guestIp) {
-          try {
-            const awsService = getAwsService();
-            const sshPrivateKey = await awsService.getSshPrivateKey();
-            if (sshPrivateKey) {
-              const tempKeyPath = path.join(tempDir, 'aws_key');
-              fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
-
-              try {
-                execFileSync('ssh', ['-i', tempKeyPath, ...SSH_OPTS, `ubuntu@${sandbox.guestIp}`, 'mkdir', '-p', file.destPath], { stdio: 'pipe', timeout: 10000 });
-              } catch { /* ignore */ }
-
-              execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, tempFilePath, `ubuntu@${sandbox.guestIp}:${file.destPath}/${file.filename}`], { stdio: 'pipe', timeout: 30000 });
-              injectedCount++;
-            }
-          } catch { /* ignore */ }
-        }
       }
+      return injectedCount;
+    } finally {
+      fs.rmSync(tempDir, { recursive: true });
     }
-
-    return injectedCount;
-  } finally {
-    fs.rmSync(tempDir, { recursive: true });
   }
+
+  if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+    const vmService = sandbox.backend === 'cloud-hypervisor'
+      ? service.getHypervisorService()
+      : service.getFirecrackerService();
+    const keyPath = vmService?.getSshKeyPath?.() || '';
+    if (keyPath && sandbox.guestIp) {
+      return injectViaTar({ keyPath, user: 'agent', ip: sandbox.guestIp, files: expanded });
+    }
+    return 0;
+  }
+
+  if (sandbox.backend === 'daytona') {
+    const daytonaMeta = sandbox.backendMeta as { type: 'daytona'; sshKey?: string } | undefined;
+    if (sandbox.guestIp && daytonaMeta?.sshKey) {
+      return injectViaTar({
+        keyContent: daytonaMeta.sshKey,
+        user: 'dev',
+        ip: sandbox.guestIp,
+        port: String(sandbox.sshPort || 22),
+        files: expanded,
+      });
+    }
+    return 0;
+  }
+
+  if (sandbox.backend === 'aws') {
+    if (sandbox.guestIp) {
+      try {
+        const awsService = getAwsService();
+        const sshPrivateKey = await awsService.getSshPrivateKey();
+        if (sshPrivateKey) {
+          return injectViaTar({
+            keyContent: sshPrivateKey,
+            user: 'ubuntu',
+            ip: sandbox.guestIp,
+            files: expanded,
+          });
+        }
+      } catch { /* ignore */ }
+    }
+    return 0;
+  }
+
+  return 0;
 }
 
 /**

@@ -173,17 +173,20 @@ interface CopyToSandboxDialogProps {
 function CopyToSandboxDialog({ file, onClose }: CopyToSandboxDialogProps) {
   const { data: sandboxData, isLoading } = useSandboxes({ status: ['running'] });
   const copyMutation = useCopyQuickFileToSandbox();
+  const [copyingToId, setCopyingToId] = useState<string | null>(null);
   const [copiedTo, setCopiedTo] = useState<string | null>(null);
 
   const sandboxes = sandboxData?.sandboxes || [];
 
   const handleCopy = async (sandboxId: string) => {
+    setCopyingToId(sandboxId);
     try {
       await copyMutation.mutateAsync({ fileId: file.id, sandboxId });
+      setCopyingToId(null);
       setCopiedTo(sandboxId);
       setTimeout(() => setCopiedTo(null), 2000);
     } catch {
-      // Error is handled by mutation state
+      setCopyingToId(null);
     }
   };
 
@@ -223,28 +226,41 @@ function CopyToSandboxDialog({ file, onClose }: CopyToSandboxDialogProps) {
             </div>
           ) : (
             <div className="space-y-1">
-              {sandboxes.map(sandbox => (
-                <button
-                  key={sandbox.id}
-                  onClick={() => handleCopy(sandbox.id)}
-                  disabled={copyMutation.isPending}
-                  className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-[hsl(var(--bg-elevated))] transition-colors border border-transparent hover:border-[hsl(var(--border))] disabled:opacity-50"
-                >
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-[hsl(var(--text-primary))] truncate">
-                      {sandbox.name}
-                    </p>
-                    <p className="text-[10px] text-[hsl(var(--text-muted))]">
-                      {sandbox.backend} · {sandbox.image}
-                    </p>
-                  </div>
-                  {copiedTo === sandbox.id ? (
-                    <span className="text-[10px] text-[hsl(var(--green))] shrink-0 ml-2">Copied!</span>
-                  ) : (
-                    <Send className="h-3 w-3 text-[hsl(var(--text-muted))] shrink-0 ml-2" />
-                  )}
-                </button>
-              ))}
+              {sandboxes.map(sandbox => {
+                const isCopying = copyingToId === sandbox.id;
+                const isCopied = copiedTo === sandbox.id;
+                return (
+                  <button
+                    key={sandbox.id}
+                    onClick={() => handleCopy(sandbox.id)}
+                    disabled={copyingToId !== null}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-left transition-colors border ${
+                      isCopying
+                        ? 'border-[hsl(var(--cyan)/0.3)] bg-[hsl(var(--cyan)/0.05)]'
+                        : 'border-transparent hover:bg-[hsl(var(--bg-elevated))] hover:border-[hsl(var(--border))]'
+                    } disabled:cursor-not-allowed ${copyingToId !== null && !isCopying ? 'opacity-50' : ''}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-[hsl(var(--text-primary))] truncate">
+                        {sandbox.name}
+                      </p>
+                      <p className="text-[10px] text-[hsl(var(--text-muted))]">
+                        {sandbox.backend} · {sandbox.image}
+                      </p>
+                    </div>
+                    {isCopying ? (
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <Loader2 className="h-3 w-3 animate-spin text-[hsl(var(--cyan))]" />
+                        <span className="text-[10px] text-[hsl(var(--cyan))]">Copying...</span>
+                      </div>
+                    ) : isCopied ? (
+                      <span className="text-[10px] text-[hsl(var(--green))] shrink-0 ml-2">Copied!</span>
+                    ) : (
+                      <Send className="h-3 w-3 text-[hsl(var(--text-muted))] shrink-0 ml-2" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
 
