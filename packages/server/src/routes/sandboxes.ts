@@ -26,6 +26,7 @@ import { detectAgentsInDocker, detectAgentsViaSsh } from '../services/agent-dete
 import type { SandboxBackend, SandboxStatus } from '../types/sandbox.js';
 import { execFileSync } from 'child_process';
 import { validateSandboxId, validatePath, validateFilename } from '../lib/validation.js';
+import { injectViaTar } from '../services/sandbox-inject.js';
 
 const sandboxes = new Hono();
 
@@ -35,6 +36,7 @@ const SSH_OPTS = [
   '-o', 'UserKnownHostsFile=/dev/null',
   '-o', 'IdentitiesOnly=yes',
   '-o', 'ConnectTimeout=5',
+  '-o', 'BatchMode=yes',
 ];
 
 // Lazy initialization state
@@ -910,7 +912,7 @@ sandboxes.post('/:id/upload', async (c) => {
 
       return c.json({ success: true, path: `${destPath}/${filename}` });
     } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
-      // VM: use SCP
+      // VM: upload via tar pipe (single SSH connection)
       const vmService = sandbox.backend === 'cloud-hypervisor'
         ? service.getHypervisorService()
         : service.getFirecrackerService();
@@ -923,51 +925,21 @@ sandboxes.post('/:id/upload', async (c) => {
         return c.json({ error: 'VM does not have an IP address' }, 400);
       }
 
-      const fs = await import('fs');
-      const path = await import('path');
-      const os = await import('os');
-
-      // Get SSH key path from the service
       const keyPath = vmService.getSshKeyPath();
 
-      if (!fs.existsSync(keyPath)) {
-        return c.json({ error: 'SSH key not found' }, 500);
-      }
-
-      // Write file to temp location (ensure parent dirs exist for nested paths)
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
-      const tempPath = path.join(tempDir, filename);
-      fs.mkdirSync(path.dirname(tempPath), { recursive: true });
-      fs.writeFileSync(tempPath, buffer);
-
-      try {
-        // Ensure destination directory exists via SSH (including subdirs from filename)
-        const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
-        try {
-          execFileSync('ssh', ['-i', keyPath, ...SSH_OPTS, `agent@${sandbox.guestIp}`, 'mkdir', '-p', fullDestDir], { stdio: 'pipe', timeout: 60000 });
-        } catch {
-          // Ignore if already exists
-        }
-
-        // Upload via SCP
-        execFileSync('scp', ['-i', keyPath, ...SSH_OPTS, tempPath, `agent@${sandbox.guestIp}:${destPath}/${filename}`], { stdio: 'pipe', timeout: 300000 });
-      } finally {
-        // Cleanup temp files
-        fs.unlinkSync(tempPath);
-        fs.rmSync(tempDir, { recursive: true });
-      }
+      injectViaTar({
+        keyPath,
+        user: 'agent',
+        ip: sandbox.guestIp,
+        files: [{ destPath, filename, content: buffer }],
+      });
 
       return c.json({ success: true, path: `${destPath}/${filename}` });
     } else if (sandbox.backend === 'daytona') {
-      // Daytona: upload via SSH if we have connection info
+      // Daytona: upload via tar pipe
       if (!sandbox.guestIp) {
         return c.json({ error: 'Daytona workspace does not have SSH access configured' }, 400);
       }
-
-      // Similar to VM upload
-      const fs = await import('fs');
-      const path = await import('path');
-      const os = await import('os');
 
       const daytonaMeta = sandbox.backendMeta as { type: 'daytona'; sshKey?: string; sshPort?: number } | undefined;
 
@@ -975,45 +947,20 @@ sandboxes.post('/:id/upload', async (c) => {
         return c.json({ error: 'SSH key not available for this Daytona workspace' }, 400);
       }
 
-      // Write SSH key and file to temp locations (ensure parent dirs exist for nested paths)
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
-      const tempKeyPath = path.join(tempDir, 'key');
-      const tempFilePath = path.join(tempDir, filename);
-
-      fs.writeFileSync(tempKeyPath, daytonaMeta.sshKey, { mode: 0o600 });
-      fs.mkdirSync(path.dirname(tempFilePath), { recursive: true });
-      fs.writeFileSync(tempFilePath, buffer);
-
-      try {
-        const port = String(daytonaMeta.sshPort || 22);
-
-        // Ensure destination directory exists (including subdirs from filename)
-        const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
-        try {
-          execFileSync('ssh', ['-i', tempKeyPath, '-p', port, ...SSH_OPTS, `dev@${sandbox.guestIp}`, 'mkdir', '-p', fullDestDir], { stdio: 'pipe', timeout: 60000 });
-        } catch {
-          // Ignore if already exists
-        }
-
-        // Upload via SCP
-        execFileSync('scp', ['-i', tempKeyPath, '-P', port, ...SSH_OPTS, tempFilePath, `dev@${sandbox.guestIp}:${destPath}/${filename}`], { stdio: 'pipe', timeout: 300000 });
-      } finally {
-        // Cleanup temp files
-        fs.unlinkSync(tempKeyPath);
-        fs.unlinkSync(tempFilePath);
-        fs.rmSync(tempDir, { recursive: true });
-      }
+      injectViaTar({
+        keyContent: daytonaMeta.sshKey,
+        user: 'dev',
+        ip: sandbox.guestIp,
+        port: String(daytonaMeta.sshPort || 22),
+        files: [{ destPath, filename, content: buffer }],
+      });
 
       return c.json({ success: true, path: `${destPath}/${filename}` });
     } else if (sandbox.backend === 'aws') {
-      // AWS: upload via SSH using stored private key
+      // AWS: upload via tar pipe
       if (!sandbox.guestIp) {
         return c.json({ error: 'AWS instance does not have a public IP address' }, 400);
       }
-
-      const fs = await import('fs');
-      const path = await import('path');
-      const os = await import('os');
 
       const awsService = service.getAwsService();
       if (!awsService) {
@@ -1025,42 +972,18 @@ sandboxes.post('/:id/upload', async (c) => {
         return c.json({ error: 'SSH key not available for AWS instances' }, 400);
       }
 
-      // Write SSH key and file to temp locations
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
-      const tempKeyPath = path.join(tempDir, 'key');
-      const tempFilePath = path.join(tempDir, filename);
-
-      fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
-      fs.mkdirSync(path.dirname(tempFilePath), { recursive: true });
-      fs.writeFileSync(tempFilePath, buffer);
-
-      try {
-        // Ensure destination directory exists
-        const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
-        try {
-          execFileSync('ssh', ['-i', tempKeyPath, ...SSH_OPTS, `ubuntu@${sandbox.guestIp}`, 'mkdir', '-p', fullDestDir], { stdio: 'pipe', timeout: 60000 });
-        } catch {
-          // Ignore if already exists
-        }
-
-        // Upload via SCP
-        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, tempFilePath, `ubuntu@${sandbox.guestIp}:${destPath}/${filename}`], { stdio: 'pipe', timeout: 300000 });
-      } finally {
-        // Cleanup temp files
-        fs.unlinkSync(tempKeyPath);
-        fs.unlinkSync(tempFilePath);
-        fs.rmSync(tempDir, { recursive: true });
-      }
+      injectViaTar({
+        keyContent: sshPrivateKey,
+        user: 'ubuntu',
+        ip: sandbox.guestIp,
+        files: [{ destPath, filename, content: buffer }],
+      });
 
       return c.json({ success: true, path: `${destPath}/${filename}` });
     } else if (sandbox.backend === 'azure' || sandbox.backend === 'gcp' || sandbox.backend === 'digitalocean' || sandbox.backend === 'linode') {
       if (!sandbox.guestIp) {
         return c.json({ error: 'Instance does not have a public IP address' }, 400);
       }
-
-      const fs = await import('fs');
-      const path = await import('path');
-      const os = await import('os');
 
       const backendService = sandbox.backend === 'azure' ? service.getAzureService()
         : sandbox.backend === 'gcp' ? service.getGcpService()
@@ -1077,26 +1000,13 @@ sandboxes.post('/:id/upload', async (c) => {
       }
 
       const sshUser = sandbox.sshUser || 'root';
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-upload-'));
-      const tempKeyPath = path.join(tempDir, 'key');
-      const tempFilePath = path.join(tempDir, filename);
 
-      fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
-      fs.mkdirSync(path.dirname(tempFilePath), { recursive: true });
-      fs.writeFileSync(tempFilePath, buffer);
-
-      try {
-        const fullDestDir = path.posix.dirname(`${destPath}/${filename}`);
-        try {
-          execFileSync('ssh', ['-i', tempKeyPath, ...SSH_OPTS, `${sshUser}@${sandbox.guestIp}`, 'mkdir', '-p', fullDestDir], { stdio: 'pipe', timeout: 60000 });
-        } catch { /* ignore */ }
-
-        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, tempFilePath, `${sshUser}@${sandbox.guestIp}:${destPath}/${filename}`], { stdio: 'pipe', timeout: 300000 });
-      } finally {
-        fs.unlinkSync(tempKeyPath);
-        fs.unlinkSync(tempFilePath);
-        fs.rmSync(tempDir, { recursive: true });
-      }
+      injectViaTar({
+        keyContent: sshPrivateKey,
+        user: sshUser,
+        ip: sandbox.guestIp,
+        files: [{ destPath, filename, content: buffer }],
+      });
 
       return c.json({ success: true, path: `${destPath}/${filename}` });
     }

@@ -80,13 +80,13 @@ function expandTilde(filePath: string, backend: string): string {
  *    ./ and ./home/ are not included — avoids "Cannot change mode" errors when
  *    tar tries to set permissions on system dirs the SSH user doesn't own.
  */
-function injectViaTar(params: {
+export function injectViaTar(params: {
   keyPath?: string;
   keyContent?: string;
   user: string;
   ip: string;
   port?: string;
-  files: Array<{ destPath: string; filename: string; content: string }>;
+  files: Array<{ destPath: string; filename: string; content: string | Buffer }>;
 }): number {
   const { user, ip, port, files } = params;
   if (files.length === 0) return 0;
