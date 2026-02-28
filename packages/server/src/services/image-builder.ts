@@ -49,7 +49,7 @@ export interface ImageInspection extends ImageDetail {
   filesystemInfo?: string;
 }
 
-export type OperationType = 'prepare' | 'kernel-build' | 'upload' | 'download';
+export type OperationType = 'prepare' | 'kernel-build' | 'upload' | 'download' | 'duplicate';
 
 export interface OperationState {
   id: string;
@@ -218,7 +218,7 @@ export async function inspectImage(name: string): Promise<ImageInspection> {
  */
 export function runOperation(
   type: OperationType,
-  args: { imageName?: string; kernelVersion?: string; uploadConfig?: { awsProfile?: string; s3Bucket?: string; s3Region?: string } },
+  args: { imageName?: string; destName?: string; kernelVersion?: string; uploadConfig?: { awsProfile?: string; s3Bucket?: string; s3Region?: string } },
   onOutput: (line: string) => void,
   onDone: () => void,
   onError: (error: string) => void,
@@ -249,6 +249,101 @@ export function runOperation(
       scriptPath = path.join(PROJECT_ROOT, 'scripts', 'user', 'download-image.sh');
       scriptArgs = ['--image', args.imageName];
       break;
+    case 'duplicate': {
+      if (!args.imageName) throw new Error('imageName required for duplicate');
+      if (!args.destName) throw new Error('destName required for duplicate');
+
+      const srcDir = path.join(BASE_IMAGES_DIR, args.imageName);
+      const destDir = path.join(BASE_IMAGES_DIR, args.destName);
+
+      if (!fs.existsSync(path.join(srcDir, 'rootfs.ext4')) || !fs.existsSync(path.join(srcDir, 'vmlinux'))) {
+        throw new Error(`Source image '${args.imageName}' must have rootfs.ext4 and vmlinux`);
+      }
+      if (fs.existsSync(destDir)) {
+        throw new Error(`Destination image '${args.destName}' already exists`);
+      }
+
+      // Inline bash script for copy with progress reporting
+      const script = `
+set -e
+SRC="${srcDir}"
+DEST="${destDir}"
+
+echo "Duplicating ${args.imageName} -> ${args.destName}"
+mkdir -p "$DEST"
+
+echo "Copying vmlinux..."
+cp --reflink=auto "$SRC/vmlinux" "$DEST/vmlinux"
+echo "  vmlinux: $(du -h "$DEST/vmlinux" | cut -f1)"
+
+if [ -f "$SRC/vmlinux-fc" ]; then
+  echo "Copying vmlinux-fc (custom Firecracker kernel)..."
+  cp --reflink=auto "$SRC/vmlinux-fc" "$DEST/vmlinux-fc"
+  echo "  vmlinux-fc: $(du -h "$DEST/vmlinux-fc" | cut -f1)"
+fi
+
+echo "Copying rootfs.ext4 (this may take a moment)..."
+cp --reflink=auto --sparse=always "$SRC/rootfs.ext4" "$DEST/rootfs.ext4"
+echo "  rootfs.ext4: $(du -h "$DEST/rootfs.ext4" | cut -f1)"
+
+echo ""
+echo "Done! Files in $DEST:"
+ls -lh "$DEST/"
+`;
+
+      const child = spawn('bash', ['-c', script], {
+        cwd: PROJECT_ROOT,
+        env: { ...process.env, BASE_IMAGES_DIR },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      const op: OperationState = {
+        id,
+        type,
+        imageName: args.imageName,
+        startedAt: new Date().toISOString(),
+        process: child,
+      };
+      activeOperations.set(id, op);
+
+      let stdoutBuf = '';
+      let stderrBuf = '';
+
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdoutBuf += chunk.toString();
+        const lines = stdoutBuf.split('\n');
+        stdoutBuf = lines.pop() || '';
+        for (const line of lines) onOutput(line);
+      });
+
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderrBuf += chunk.toString();
+        const lines = stderrBuf.split('\n');
+        stderrBuf = lines.pop() || '';
+        for (const line of lines) onOutput(`[stderr] ${line}`);
+      });
+
+      child.on('close', (code) => {
+        activeOperations.delete(id);
+        if (stdoutBuf) onOutput(stdoutBuf);
+        if (stderrBuf) onOutput(`[stderr] ${stderrBuf}`);
+        if (code === 0) {
+          onDone();
+        } else {
+          // Clean up partial copy on failure
+          try { fs.rmSync(destDir, { recursive: true, force: true }); } catch {}
+          onError(`Process exited with code ${code}`);
+        }
+      });
+
+      child.on('error', (err) => {
+        activeOperations.delete(id);
+        try { fs.rmSync(destDir, { recursive: true, force: true }); } catch {}
+        onError(err.message);
+      });
+
+      return id;
+    }
     default:
       throw new Error(`Unknown operation type: ${type}`);
   }
@@ -374,4 +469,90 @@ export function listOperations(): Array<{ id: string; type: OperationType; image
   return Array.from(activeOperations.values()).map(({ id, type, imageName, startedAt }) => ({
     id, type, imageName, startedAt,
   }));
+}
+
+// ============================================================================
+// Global Manifest Management
+// ============================================================================
+
+const MANIFEST_PATH = path.join(PROJECT_ROOT, 'scripts', 'dev', 'global-manifest.json');
+
+export interface ManifestImage {
+  name: string;
+  description: string;
+  type: string;
+  path: string;
+  default?: boolean;
+}
+
+export interface GlobalManifest {
+  version: string;
+  description: string;
+  images: ManifestImage[];
+}
+
+export function readGlobalManifest(): GlobalManifest {
+  try {
+    const content = fs.readFileSync(MANIFEST_PATH, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return { version: '1.0', description: 'Available Handler VM images', images: [] };
+  }
+}
+
+function writeGlobalManifest(manifest: GlobalManifest): void {
+  fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n');
+}
+
+export function addImageToManifest(name: string, description: string, isDefault?: boolean): GlobalManifest {
+  const manifest = readGlobalManifest();
+
+  // Remove existing entry with same name if present
+  manifest.images = manifest.images.filter(img => img.name !== name);
+
+  // If setting as default, clear default from others
+  if (isDefault) {
+    for (const img of manifest.images) {
+      delete img.default;
+    }
+  }
+
+  manifest.images.push({
+    name,
+    description,
+    type: 'firecracker',
+    path: `images/${name}/firecracker/`,
+    ...(isDefault ? { default: true } : {}),
+  });
+
+  writeGlobalManifest(manifest);
+  return manifest;
+}
+
+export function removeImageFromManifest(name: string): GlobalManifest {
+  const manifest = readGlobalManifest();
+  manifest.images = manifest.images.filter(img => img.name !== name);
+  writeGlobalManifest(manifest);
+  return manifest;
+}
+
+export function setManifestDefault(name: string): GlobalManifest {
+  const manifest = readGlobalManifest();
+  let found = false;
+
+  for (const img of manifest.images) {
+    if (img.name === name) {
+      img.default = true;
+      found = true;
+    } else {
+      delete img.default;
+    }
+  }
+
+  if (!found) {
+    throw new Error(`Image '${name}' not found in manifest`);
+  }
+
+  writeGlobalManifest(manifest);
+  return manifest;
 }

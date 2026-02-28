@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { HardDrive, Play, Terminal, Upload, Download, Loader2, X, Wrench, ChevronDown, ChevronRight, Layers, Copy, Check, PanelRight, PanelBottom, GripVertical, GripHorizontal, Info, Trash2, AlertTriangle } from 'lucide-react';
+import { HardDrive, Play, Terminal, Upload, Download, Loader2, X, Wrench, ChevronDown, ChevronRight, Layers, Copy, Check, PanelRight, PanelBottom, GripVertical, GripHorizontal, Info, Trash2, AlertTriangle, CopyPlus, BookOpen, Star } from 'lucide-react';
 import { useBuilderImages } from '../hooks/useImageBuilder';
 import { useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/client';
-import type { ImageBuilderDetail } from '../api/client';
+import type { ImageBuilderDetail, GlobalManifest } from '../api/client';
 import { TerminalInstance } from './Terminal/TerminalInstance';
 
 function formatSize(bytes: number | null): string {
@@ -102,7 +102,20 @@ function ProcessGuide() {
 
             {/* Step 4 */}
             <div className="flex gap-3">
-              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))] flex items-center justify-center text-[10px] font-bold mt-0.5">4</div>
+              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--purple)/0.15)] text-[hsl(var(--purple))] flex items-center justify-center text-[10px] font-bold mt-0.5">4</div>
+              <div>
+                <div className="font-medium text-[hsl(var(--text-primary))] mb-0.5">Duplicate and customize</div>
+                <p className="text-[hsl(var(--text-muted))]">
+                  The <strong className="text-[hsl(var(--text-secondary))]">Duplicate</strong> button creates a full copy of a base image
+                  with a new name. Mount it, shell in to install tools (e.g. Claude Code, Neovim), then upload as an
+                  independent distributable image.
+                </p>
+              </div>
+            </div>
+
+            {/* Step 5 */}
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))] flex items-center justify-center text-[10px] font-bold mt-0.5">5</div>
               <div>
                 <div className="font-medium text-[hsl(var(--text-primary))] mb-0.5">Inspect and customize</div>
                 <p className="text-[hsl(var(--text-muted))]">
@@ -113,9 +126,9 @@ function ProcessGuide() {
               </div>
             </div>
 
-            {/* Step 5 */}
+            {/* Step 6 */}
             <div className="flex gap-3">
-              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))] flex items-center justify-center text-[10px] font-bold mt-0.5">5</div>
+              <div className="flex-shrink-0 w-5 h-5 rounded-full bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))] flex items-center justify-center text-[10px] font-bold mt-0.5">6</div>
               <div>
                 <div className="font-medium text-[hsl(var(--text-primary))] mb-0.5">Upload to S3</div>
                 <p className="text-[hsl(var(--text-muted))]">
@@ -372,12 +385,170 @@ function DeleteConfirmDialog({
   );
 }
 
+function DuplicateDialog({
+  image,
+  existingNames,
+  onConfirm,
+  onCancel,
+}: {
+  image: ImageBuilderDetail;
+  existingNames: string[];
+  onConfirm: (newName: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(`${image.name}-copy`);
+  const nameValid = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name);
+  const nameConflict = existingNames.includes(name);
+  const canSubmit = nameValid && !nameConflict && name.length > 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
+      <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-4">
+          <CopyPlus className="h-4 w-4 text-[hsl(var(--cyan))]" />
+          <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">
+            Duplicate {image.name}
+          </h3>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))] mb-1">
+              New Image Name
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter' && canSubmit) onConfirm(name); }}
+              className={`w-full px-2 py-1.5 text-xs bg-[hsl(var(--bg-base))] border text-[hsl(var(--text-primary))] focus:outline-none ${
+                !nameValid && name.length > 0
+                  ? 'border-[hsl(var(--red)/0.5)] focus:border-[hsl(var(--red)/0.7)]'
+                  : nameConflict
+                    ? 'border-[hsl(var(--amber)/0.5)] focus:border-[hsl(var(--amber)/0.7)]'
+                    : 'border-[hsl(var(--border))] focus:border-[hsl(var(--cyan)/0.5)]'
+              }`}
+            />
+            {!nameValid && name.length > 0 && (
+              <p className="text-[10px] text-[hsl(var(--red))] mt-1">
+                Name must start with alphanumeric and contain only letters, numbers, dots, hyphens, underscores
+              </p>
+            )}
+            {nameConflict && (
+              <p className="text-[10px] text-[hsl(var(--amber))] mt-1">
+                An image with this name already exists
+              </p>
+            )}
+          </div>
+
+          <div className="bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] p-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))] mb-1.5">Estimated size</div>
+            <div className="text-xs text-[hsl(var(--text-secondary))]">
+              ~{formatSize(image.rootfsSizeBytes)} rootfs + {formatSize(image.kernelSizeBytes)} kernel
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-[10px] font-medium text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(name)}
+            disabled={!canSubmit}
+            className="px-3 py-1.5 text-[10px] font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors disabled:opacity-40"
+          >
+            Duplicate
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManifestAddForm({
+  imageName,
+  onConfirm,
+  onCancel,
+}: {
+  imageName: string;
+  onConfirm: (description: string, isDefault: boolean) => void;
+  onCancel: () => void;
+}) {
+  const [description, setDescription] = useState(`${imageName} Firecracker image`);
+  const [isDefault, setIsDefault] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
+      <div className="bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-4">
+          <BookOpen className="h-4 w-4 text-[hsl(var(--green))]" />
+          <h3 className="text-sm font-medium text-[hsl(var(--text-primary))]">
+            Add {imageName} to manifest
+          </h3>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))] mb-1">
+              Description
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') onConfirm(description, isDefault); }}
+              className="w-full px-2 py-1.5 text-xs bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] focus:outline-none focus:border-[hsl(var(--cyan)/0.5)]"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isDefault}
+              onChange={e => setIsDefault(e.target.checked)}
+              className="accent-[hsl(var(--amber))]"
+            />
+            <span className="text-xs text-[hsl(var(--text-secondary))]">Set as default image</span>
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-[10px] font-medium text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(description, isDefault)}
+            disabled={!description.trim()}
+            className="px-3 py-1.5 text-[10px] font-medium text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] border border-[hsl(var(--green)/0.3)] transition-colors disabled:opacity-40"
+          >
+            Add to Manifest
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ImageCard({
   image,
   onShell,
   onOperation,
   onUploadClick,
   onDeleteClick,
+  onDuplicateClick,
+  manifestEntry,
+  onManifestAdd,
+  onManifestRemove,
+  onManifestSetDefault,
   activeOperation,
 }: {
   image: ImageBuilderDetail;
@@ -385,6 +556,11 @@ function ImageCard({
   onOperation: (type: 'prepare' | 'download', name: string) => void;
   onUploadClick: (image: ImageBuilderDetail) => void;
   onDeleteClick: (image: ImageBuilderDetail) => void;
+  onDuplicateClick: (image: ImageBuilderDetail) => void;
+  manifestEntry: { description: string; default?: boolean } | null;
+  onManifestAdd: (name: string) => void;
+  onManifestRemove: (name: string) => void;
+  onManifestSetDefault: (name: string) => void;
   activeOperation: string | null;
 }) {
   const isBusy = activeOperation !== null;
@@ -409,6 +585,20 @@ function ImageCard({
               </span>
             </div>
           )}
+          {/* Manifest badges */}
+          <div className="flex items-center gap-1.5 mt-1">
+            {manifestEntry && (
+              <span className="px-1.5 py-0.5 text-[9px] uppercase tracking-wider bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]">
+                In Manifest
+              </span>
+            )}
+            {manifestEntry?.default && (
+              <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] uppercase tracking-wider bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]">
+                <Star className="h-2.5 w-2.5" />
+                Default
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -518,6 +708,15 @@ function ImageCard({
           Upload
         </button>
         <button
+          onClick={() => onDuplicateClick(image)}
+          disabled={isBusy || !(image.hasRootfs && image.hasKernel)}
+          className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] transition-colors disabled:opacity-40"
+          title={image.hasRootfs && image.hasKernel ? 'Create a full copy with a new name' : 'Requires rootfs.ext4 and vmlinux'}
+        >
+          {activeOperation === 'duplicate' ? <Loader2 className="h-3 w-3 animate-spin" /> : <CopyPlus className="h-3 w-3" />}
+          Duplicate
+        </button>
+        <button
           onClick={() => onOperation('download', image.name)}
           disabled={isBusy}
           className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[hsl(var(--purple))] hover:bg-[hsl(var(--purple)/0.1)] border border-[hsl(var(--purple)/0.3)] transition-colors disabled:opacity-40"
@@ -535,6 +734,40 @@ function ImageCard({
           <Trash2 className="h-3 w-3" />
           Delete
         </button>
+      </div>
+
+      {/* Manifest controls */}
+      <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-[hsl(var(--border))]">
+        {!manifestEntry && hasFs && (
+          <button
+            onClick={() => onManifestAdd(image.name)}
+            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--green))] hover:bg-[hsl(var(--green)/0.1)] transition-colors"
+            title="Add image to the global distribution manifest"
+          >
+            <BookOpen className="h-2.5 w-2.5" />
+            Add to Manifest
+          </button>
+        )}
+        {manifestEntry && !manifestEntry.default && (
+          <button
+            onClick={() => onManifestSetDefault(image.name)}
+            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--amber))] hover:bg-[hsl(var(--amber)/0.1)] transition-colors"
+            title="Set as the default image for new installations"
+          >
+            <Star className="h-2.5 w-2.5" />
+            Set as Default
+          </button>
+        )}
+        {manifestEntry && (
+          <button
+            onClick={() => onManifestRemove(image.name)}
+            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] transition-colors"
+            title="Remove from manifest"
+          >
+            <X className="h-2.5 w-2.5" />
+            Remove from Manifest
+          </button>
+        )}
       </div>
     </div>
   );
@@ -567,6 +800,22 @@ export function ImageBuilder() {
 
   // Delete dialog state
   const [deleteDialogImage, setDeleteDialogImage] = useState<ImageBuilderDetail | null>(null);
+
+  // Duplicate dialog state
+  const [duplicateDialogImage, setDuplicateDialogImage] = useState<ImageBuilderDetail | null>(null);
+
+  // Manifest state
+  const [manifest, setManifest] = useState<GlobalManifest | null>(null);
+  const [manifestAddImage, setManifestAddImage] = useState<string | null>(null);
+
+  // Load manifest on mount
+  useEffect(() => {
+    api.getGlobalManifest().then(setManifest).catch(() => {});
+  }, []);
+
+  const refetchManifest = useCallback(() => {
+    api.getGlobalManifest().then(setManifest).catch(() => {});
+  }, []);
 
   const setShellPosition = useCallback((pos: ShellPosition) => {
     setShellPositionState(pos);
@@ -625,7 +874,8 @@ export function ImageBuilder() {
       return next;
     });
     queryClient.invalidateQueries({ queryKey: ['builder-images'] });
-  }, [queryClient]);
+    refetchManifest();
+  }, [queryClient, refetchManifest]);
 
   const onOperationError = useCallback((name: string, error: string) => {
     setLogs(prev => [...prev, { line: `ERROR: ${error}`, timestamp: Date.now() }]);
@@ -752,6 +1002,67 @@ export function ImageBuilder() {
     }
   }, [deleteDialogImage, queryClient]);
 
+  const handleDuplicateClick = useCallback((image: ImageBuilderDetail) => {
+    setDuplicateDialogImage(image);
+  }, []);
+
+  const handleDuplicateConfirm = useCallback((newName: string) => {
+    const image = duplicateDialogImage;
+    if (!image) return;
+    setDuplicateDialogImage(null);
+
+    if (cancelRef.current) {
+      cancelRef.current();
+    }
+
+    const cancel = api.duplicateImage(
+      image.name,
+      newName,
+      (line) => {
+        setLogs(prev => [...prev, { line, timestamp: Date.now() }]);
+        scrollToBottom();
+      },
+      () => onOperationDone(image.name),
+      (error) => onOperationError(image.name, error),
+    );
+
+    startOperation('duplicate', image.name, cancel);
+  }, [duplicateDialogImage, scrollToBottom, startOperation, onOperationDone, onOperationError]);
+
+  const handleManifestAdd = useCallback((name: string) => {
+    setManifestAddImage(name);
+  }, []);
+
+  const handleManifestAddConfirm = useCallback(async (description: string, isDefault: boolean) => {
+    const name = manifestAddImage;
+    if (!name) return;
+    setManifestAddImage(null);
+    try {
+      const updated = await api.addToManifest(name, description, isDefault);
+      setManifest(updated);
+    } catch (error) {
+      console.error('Failed to add to manifest:', error);
+    }
+  }, [manifestAddImage]);
+
+  const handleManifestRemove = useCallback(async (name: string) => {
+    try {
+      const updated = await api.removeFromManifest(name);
+      setManifest(updated);
+    } catch (error) {
+      console.error('Failed to remove from manifest:', error);
+    }
+  }, []);
+
+  const handleManifestSetDefault = useCallback(async (name: string) => {
+    try {
+      const updated = await api.setManifestDefault(name);
+      setManifest(updated);
+    } catch (error) {
+      console.error('Failed to set manifest default:', error);
+    }
+  }, []);
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -778,6 +1089,25 @@ export function ImageBuilder() {
           isLayer={deleteDialogImage.isLayer}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteDialogImage(null)}
+        />
+      )}
+
+      {/* Duplicate dialog */}
+      {duplicateDialogImage && (
+        <DuplicateDialog
+          image={duplicateDialogImage}
+          existingNames={images?.map(i => i.name) || []}
+          onConfirm={handleDuplicateConfirm}
+          onCancel={() => setDuplicateDialogImage(null)}
+        />
+      )}
+
+      {/* Manifest add dialog */}
+      {manifestAddImage && (
+        <ManifestAddForm
+          imageName={manifestAddImage}
+          onConfirm={handleManifestAddConfirm}
+          onCancel={() => setManifestAddImage(null)}
         />
       )}
 
@@ -819,17 +1149,25 @@ export function ImageBuilder() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {images.map(image => (
-                <ImageCard
-                  key={image.name}
-                  image={image}
-                  onShell={handleShell}
-                  onOperation={handleOperation}
-                  onUploadClick={handleUploadClick}
-                  onDeleteClick={handleDeleteClick}
-                  activeOperation={activeOperations[image.name] || null}
-                />
-              ))}
+              {images.map(image => {
+                const entry = manifest?.images.find(m => m.name === image.name);
+                return (
+                  <ImageCard
+                    key={image.name}
+                    image={image}
+                    onShell={handleShell}
+                    onOperation={handleOperation}
+                    onUploadClick={handleUploadClick}
+                    onDeleteClick={handleDeleteClick}
+                    onDuplicateClick={handleDuplicateClick}
+                    manifestEntry={entry ? { description: entry.description, default: entry.default } : null}
+                    onManifestAdd={handleManifestAdd}
+                    onManifestRemove={handleManifestRemove}
+                    onManifestSetDefault={handleManifestSetDefault}
+                    activeOperation={activeOperations[image.name] || null}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

@@ -14,6 +14,7 @@ import * as os from 'os';
 import * as net from 'net';
 import * as crypto from 'crypto';
 import * as http from 'http';
+import { getConfig } from './config.js';
 import {
   FirecrackerConfig,
   DEFAULT_FIRECRACKER_CONFIG,
@@ -443,7 +444,9 @@ export class FirecrackerService extends EventEmitter {
     }
 
     // Get resource configuration
-    const baseImage = config.baseImage || this.config.defaultBaseImage;
+    const appConfig = await getConfig();
+    const defaultImage = appConfig.defaultFirecrackerImage || this.config.defaultBaseImage;
+    const baseImage = config.baseImage || defaultImage;
     const vcpus = config.vcpus || this.config.defaultVcpus;
     const memoryMb = config.memoryMb || this.config.defaultMemoryMb;
     const diskGb = config.diskGb || this.config.defaultDiskGb;

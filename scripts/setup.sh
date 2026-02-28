@@ -297,10 +297,21 @@ if [ "$SKIP_IMAGE" = false ] && { [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$
     fi
 
     # Download Firecracker image if selected
+    # The download script auto-resolves the default image from the global manifest
     if [ "$INSTALL_FIRECRACKER" = true ]; then
-        if [ -f "$DATA_DIR/base-images/ubuntu-24.04/rootfs.ext4" ] && [ -f "$DATA_DIR/base-images/ubuntu-24.04/vmlinux" ]; then
-            log "Firecracker image already exists"
-        else
+        # Check if any Firecracker image already exists (rootfs.ext4 + vmlinux in any base-images subdir)
+        FC_IMAGE_EXISTS=false
+        if [ -d "$DATA_DIR/base-images" ]; then
+            for imgdir in "$DATA_DIR/base-images"/*/; do
+                if [ -f "${imgdir}rootfs.ext4" ] && [ -f "${imgdir}vmlinux" ]; then
+                    FC_IMAGE_EXISTS=true
+                    log "Firecracker image already exists: $(basename "$imgdir")"
+                    break
+                fi
+            done
+        fi
+
+        if [ "$FC_IMAGE_EXISTS" = false ]; then
             log "Downloading Firecracker image..."
             sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/user/download-image.sh"
         fi
