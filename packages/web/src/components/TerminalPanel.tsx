@@ -938,6 +938,18 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
     }
   }, [terminalIsDark]);
 
+  // Listen for prompt theme changes from settings
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const theme = (e as CustomEvent<{ theme: string }>).detail.theme;
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'set-prompt-theme', theme }));
+      }
+    };
+    window.addEventListener('handler-prompt-theme', handler);
+    return () => window.removeEventListener('handler-prompt-theme', handler);
+  }, []);
+
   // Listen for terminal theme mode changes from settings
   useEffect(() => {
     const handler = (e: Event) => {
