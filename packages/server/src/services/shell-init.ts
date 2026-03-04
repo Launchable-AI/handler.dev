@@ -245,10 +245,15 @@ export async function injectShellInit(process: ChildProcess, delayMs = 200): Pro
 /**
  * Inject a prompt theme into a running terminal session (for live-switching).
  * Clears the current line first with Ctrl+U, then writes the PS1 definition.
+ * Also updates ~/.config/handler/prompt.sh so new shells (SSH, tmux panes) inherit the change.
  */
 export function injectPromptTheme(process: ChildProcess, theme: ShellPromptTheme): void {
   if (process.killed || !process.stdin?.writable) return;
   const themeScript = getPromptThemeScript(theme);
   // \x15 = Ctrl+U to clear the current input line
   process.stdin.write(`\x15${themeScript}\n`);
+
+  // Update the persisted prompt.sh so new shells (SSH logins, tmux panes) get the new theme
+  const escapedInit = `${SHELL_INIT_SCRIPT}; ${themeScript}`.replace(/'/g, "'\\''");
+  process.stdin.write(`printf '%s\\n' '${escapedInit}' > ~/.config/handler/prompt.sh 2>/dev/null\n`);
 }
