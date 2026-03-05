@@ -1125,6 +1125,9 @@ export class FirecrackerService extends EventEmitter {
     console.log(`[FirecrackerService] VM ${vmId} SSH port open after ${Math.round((Date.now() - startTime) / 1000)}s (${attempts} attempts)`);
 
     // Phase 2: Wait for SSH auth to succeed (port is open, now verify SSH works)
+    // Note: The VM's .bashrc may start a background status-monitor loop that inherits
+    // the SSH session's file descriptors, preventing clean exit. We check stdout for
+    // "ready" even if the process is killed by timeout, since auth succeeded if we got it.
     let sshAttempts = 0;
     while (true) {
       sshAttempts++;
@@ -1139,9 +1142,16 @@ export class FirecrackerService extends EventEmitter {
           `agent@${host}`,
           '-p', port!.toString(),
           'echo ready',
-        ], { stdio: 'pipe', timeout: 8000 });
+        ], { stdio: 'pipe', timeout: 5000 });
         return; // SSH is ready
       } catch (err: unknown) {
+        // Check if stdout contains "ready" — the command succeeded even though
+        // the SSH process didn't exit cleanly (background shell processes keep FDs open)
+        const stdout = (err as { stdout?: Buffer })?.stdout?.toString?.()?.trim() || '';
+        if (stdout.includes('ready')) {
+          return; // SSH auth succeeded
+        }
+
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         if (sshAttempts <= 3 || sshAttempts % 10 === 0) {
           // Log the actual SSH error so we can diagnose auth failures
