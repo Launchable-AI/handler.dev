@@ -23,6 +23,7 @@ import { getLinodeService, initializeLinodeService } from '../services/linode.js
 import * as dockerService from '../services/docker.js';
 import * as containerBuilder from '../services/container-builder.js';
 import { detectAgentsInDocker, detectAgentsViaSsh } from '../services/agent-detect.js';
+import { getDockerMetrics, getVmMetricsViaSsh, getCloudMetricsViaSsh } from '../services/guest-metrics.js';
 import type { SandboxBackend, SandboxStatus } from '../types/sandbox.js';
 import { execFileSync } from 'child_process';
 import { validateSandboxId, validatePath, validateFilename } from '../lib/validation.js';
@@ -1575,6 +1576,83 @@ sandboxes.get('/:id/files/download', async (c) => {
     console.error('[SandboxRoutes] Download error:', error);
     const message = error instanceof Error ? error.message : 'Failed to download file';
     return c.json({ error: message }, 500);
+  }
+});
+
+// ============ Guest Metrics ============
+
+sandboxes.get('/:id/metrics', async (c) => {
+  try {
+    const id = c.req.param('id');
+    if (!validateSandboxId(id)) {
+      return c.json({ error: 'Invalid sandbox ID' }, 400);
+    }
+
+    const service = await ensureSandboxServiceInitialized();
+    const sandbox = await service.get(id);
+
+    if (!sandbox) {
+      return c.json({ error: 'Sandbox not found' }, 404);
+    }
+
+    if (sandbox.status !== 'running') {
+      return c.json({ metrics: null });
+    }
+
+    if (sandbox.backend === 'docker') {
+      const containerId = id.startsWith('docker-') ? id.slice(7) : id;
+      const metrics = await getDockerMetrics(containerId, id);
+      return c.json({ metrics });
+    } else if (sandbox.backend === 'firecracker') {
+      if (!sandbox.guestIp) {
+        return c.json({ metrics: null });
+      }
+      const fcService = getFirecrackerService();
+      const keyPath = fcService ? fcService.getSshKeyPath() : '';
+      if (!keyPath) {
+        return c.json({ metrics: null });
+      }
+      const metrics = await getVmMetricsViaSsh(sandbox.guestIp, 22, 'agent', keyPath, id);
+      return c.json({ metrics });
+    } else if (sandbox.backend === 'cloud-hypervisor') {
+      if (!sandbox.guestIp) {
+        return c.json({ metrics: null });
+      }
+      const chService = getCloudHypervisorService();
+      const keyPath = chService ? chService.getSshKeyPath() : '';
+      if (!keyPath) {
+        return c.json({ metrics: null });
+      }
+      const metrics = await getVmMetricsViaSsh(sandbox.guestIp, 22, 'agent', keyPath, id);
+      return c.json({ metrics });
+    } else if (['aws', 'azure', 'gcp', 'digitalocean', 'linode'].includes(sandbox.backend)) {
+      if (!sandbox.guestIp) {
+        return c.json({ metrics: null });
+      }
+      const backendServices: Record<string, () => any> = {
+        aws: () => getAwsService(),
+        azure: () => getAzureService(),
+        gcp: () => getGcpService(),
+        digitalocean: () => getDigitalOceanService(),
+        linode: () => getLinodeService(),
+      };
+      const backendService = backendServices[sandbox.backend]?.();
+      if (!backendService) {
+        return c.json({ metrics: null });
+      }
+      const sshPrivateKey = await backendService.getSshPrivateKey();
+      if (!sshPrivateKey) {
+        return c.json({ metrics: null });
+      }
+      const sshUser = sandbox.sshUser || 'root';
+      const metrics = await getCloudMetricsViaSsh(sandbox.guestIp, 22, sshUser, sshPrivateKey, id);
+      return c.json({ metrics });
+    }
+
+    return c.json({ metrics: null });
+  } catch (error) {
+    console.error('[SandboxRoutes] Metrics error:', error);
+    return c.json({ metrics: null });
   }
 });
 

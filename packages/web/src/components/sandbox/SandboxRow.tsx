@@ -29,7 +29,7 @@ import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { AgentBadges } from './AgentBadges';
 import { StatusIndicator, isTransitioning } from './StatusIndicator';
-import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox } from '../../hooks/useSandboxes';
+import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox, useSandboxMetrics } from '../../hooks/useSandboxes';
 import { useVmSnapshots, useDeleteVmSnapshot, useRollbackVmToSnapshot, useCreateVm } from '../../hooks/useContainers';
 import { useConfirm } from '../ConfirmModal';
 import { useTerminalPanel } from '../TerminalPanel';
@@ -120,6 +120,9 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
   const isRunning = sandbox.status === 'running';
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'archived';
   const isTransition = isTransitioning(sandbox.status);
+
+  // Guest metrics
+  const { data: metrics } = useSandboxMetrics(sandbox.id, isRunning);
 
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
 
@@ -450,12 +453,14 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
             <span className="flex items-center gap-1">
               <Cpu className="h-3 w-3" />
               {sandbox.vcpus}
+              {metrics && <span className={`ml-0.5 font-medium ${metrics.cpuUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--cyan))]'}`}>{metrics.cpuUsage}%</span>}
             </span>
             <span className="flex items-center gap-1">
               <MemoryStick className="h-3 w-3" />
               {sandbox.memoryMb >= 1024
                 ? `${(sandbox.memoryMb / 1024).toFixed(0)}GB`
                 : `${sandbox.memoryMb}MB`}
+              {metrics && <span className={`ml-0.5 font-medium ${metrics.memoryUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--green))]'}`}>{metrics.memoryUsage}%</span>}
             </span>
           </div>
         </td>

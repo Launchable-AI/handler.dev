@@ -440,6 +440,19 @@ export function useSandboxAgents(sandboxId: string, enabled = true) {
 }
 
 /**
+ * Fetch guest metrics (CPU, memory, disk) from inside a sandbox
+ */
+export function useSandboxMetrics(sandboxId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['sandbox-metrics', sandboxId],
+    queryFn: () => api.getSandboxMetrics(sandboxId),
+    enabled: enabled && !!sandboxId,
+    staleTime: 2_000,
+    refetchInterval: enabled ? 5_000 : false,
+  });
+}
+
+/**
  * Fetch sandbox logs
  */
 export function useSandboxLogs(id: string, enabled: boolean = true) {
