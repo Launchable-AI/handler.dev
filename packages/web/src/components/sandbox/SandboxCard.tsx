@@ -40,7 +40,7 @@ import { VolumeFileBrowser } from '../VolumeFileBrowser';
 import { BackendBadge } from './BackendBadge';
 import { AgentBadges } from './AgentBadges';
 import { isTransitioning } from './StatusIndicator';
-import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox, useUpdateSandboxResources } from '../../hooks/useSandboxes';
+import { useStartSandbox, useStopSandbox, useDeleteSandbox, useRenameSandbox, useUpdateSandboxResources, useSandboxMetrics } from '../../hooks/useSandboxes';
 import { useVmSnapshots, useDeleteVmSnapshot, useRollbackVmToSnapshot, useCreateVm } from '../../hooks/useContainers';
 import { useConfirm } from '../ConfirmModal';
 import { useTerminalPanel } from '../TerminalPanel';
@@ -306,6 +306,9 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
   const canReconfigure = isVm || isDocker;
+
+  // Guest metrics (CPU/memory/disk usage from inside the sandbox)
+  const { data: metrics } = useSandboxMetrics(sandbox.id, isRunning);
 
   // Snapshot hooks (only fetch for VMs)
   const { data: snapshots, isLoading: snapshotsLoading } = useVmSnapshots(isVm ? sandbox.id : '');
@@ -913,17 +916,20 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
           <span className="flex items-center gap-1" title="vCPUs">
             <Cpu className="h-3 w-3" />
             {sandbox.vcpus} vCPU{sandbox.vcpus !== 1 ? 's' : ''}
+            {metrics && <span className={`ml-0.5 font-medium ${metrics.cpuUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--cyan))]'}`}>{metrics.cpuUsage}%</span>}
           </span>
           <span className="flex items-center gap-1" title="Memory">
             <MemoryStick className="h-3 w-3" />
             {sandbox.memoryMb >= 1024
               ? `${(sandbox.memoryMb / 1024).toFixed(sandbox.memoryMb % 1024 === 0 ? 0 : 1)} GB`
               : `${sandbox.memoryMb} MB`}
+            {metrics && <span className={`ml-0.5 font-medium ${metrics.memoryUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--green))]'}`}>{metrics.memoryUsage}%</span>}
           </span>
           {sandbox.diskGb > 0 && (
             <span className="flex items-center gap-1" title="Disk">
               <HardDrive className="h-3 w-3" />
               {sandbox.diskGb} GB
+              {metrics && <span className={`ml-0.5 font-medium ${metrics.diskUsage > 90 ? 'text-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--purple))]'}`}>{metrics.diskUsage}%</span>}
             </span>
           )}
           {sandbox.guestIp && (

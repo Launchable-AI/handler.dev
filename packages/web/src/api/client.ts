@@ -3880,6 +3880,23 @@ export async function detectSandboxAgents(id: string): Promise<AgentInfo[]> {
   return result.agents;
 }
 
+// ============ Guest Metrics ============
+
+export interface GuestMetrics {
+  cpuUsage: number;
+  memoryUsed: number;
+  memoryTotal: number;
+  memoryUsage: number;
+  diskUsed: number;
+  diskTotal: number;
+  diskUsage: number;
+}
+
+export async function getSandboxMetrics(id: string): Promise<GuestMetrics | null> {
+  const result = await fetchAPI<{ metrics: GuestMetrics | null }>(`/sandboxes/${encodeURIComponent(id)}/metrics`);
+  return result.metrics;
+}
+
 // ============ Image Builder (dev-mode only) ============
 
 export interface ImageBuilderDetail {

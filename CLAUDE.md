@@ -244,6 +244,21 @@ Detects AI coding agents (Claude Code, Codex, Gemini CLI, OpenCode) installed/ru
 - Badges displayed in `SandboxCard`, `SandboxCardCompact`, and `SandboxRow`
 - The detection script uses `_dp=$$` + `grep -v` to exclude the script's own shell process from `pgrep` results (prevents false positives where all agents appear "running" because the detection script's command line contains all agent names). SSH detection passes the script directly as the remote command (no `sh -c` wrapper) since SSH already runs it through the user's shell.
 
+### Guest Metrics
+
+Real-time CPU, memory, and disk usage from inside running sandboxes. Metrics are polled from guests (SSH for VMs, dockerode stats API for Docker) and displayed inline in sandbox resource specs.
+
+- **Collection**: VMs use a single SSH call batching `/proc/stat` (twice with 100ms delay for CPU delta), `/proc/meminfo`, and `df -B1 /`. Docker uses `container.stats({ stream: false })` for CPU/memory and `docker exec df` for disk.
+- **Caching**: 2s server-side in-memory cache per sandbox (same pattern as `agent-detect.ts`)
+- **Polling**: 5s frontend interval via React Query `useSandboxMetrics()` hook
+- **Display**: Colored usage `%` appended to static vCPU/Memory/Disk values in SandboxCard, SandboxCardCompact, and SandboxRow. Color thresholds: CPU/memory >80% red, >50% amber; disk >90% red, >70% amber.
+
+Key files:
+- `packages/server/src/services/guest-metrics.ts` — Metrics collection service with Docker, VM SSH, and cloud SSH functions
+- `packages/server/src/routes/sandboxes.ts` — `GET /api/sandboxes/:id/metrics` endpoint
+- `packages/web/src/api/client.ts` — `getSandboxMetrics()`, `GuestMetrics` type
+- `packages/web/src/hooks/useSandboxes.ts` — `useSandboxMetrics()` hook (5s polling, enabled only when running)
+
 ### Image Builder (dev-only)
 
 A UI tool for managing the VM image building pipeline, gated by `environment=development`. Brings the shell-script-based workflow (download, prepare, build kernel, upload) into the web UI with real-time SSE output streaming and the ability to shell into image filesystems via loop-mount + chroot.
