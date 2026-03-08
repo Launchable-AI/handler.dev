@@ -88,6 +88,8 @@ export class NetworkPool extends EventEmitter {
     const helperStatus = await this.tapHelper.checkStatus();
     if (helperStatus.installed && helperStatus.hasCapability && helperStatus.bridgeExists) {
       this.mode = 'helper';
+      // Scan bridge ARP table for IPs used by other Handler instances
+      this.tapHelper.scanBridgeForUsedIps();
       console.log('[NetworkPool] Using helper mode (on-demand TAP creation)');
       return this.mode;
     }

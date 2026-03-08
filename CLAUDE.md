@@ -173,7 +173,7 @@ Key files:
 Firecracker VM images include Docker CE pre-installed. Docker uses a **dedicated ext4 block device** for `/var/lib/docker` so overlay2 works natively (avoiding nested overlayfs issues):
 
 - **Custom kernel** (`scripts/dev/build-fc-kernel.sh`): Builds a Linux kernel with full Docker support (iptables, nf_tables, netfilter, overlay2, namespaces, cgroups) compiled as built-ins (`=y`), since Firecracker boots with `nomodule`
-- **Boot args**: `acpi=off` is required — Firecracker's ACPI tables cause ACPI region initialization to fail, which breaks IRQ allocation for all virtio devices. `acpi=off` falls back to the legacy 8259 PIC which works correctly. This has no downside since Firecracker doesn't use ACPI for anything (device discovery is via virtio-mmio cmdline params, VM lifecycle is managed by the Firecracker API)
+- **ACPI boot** (Firecracker >= v1.8): Firecracker provides proper ACPI tables — MADT for multi-vCPU discovery, DSDT for virtio-mmio device enumeration. Do NOT use `acpi=off` in boot args as it disables both vCPU and device discovery. The legacy mechanisms (MPTable, `virtio_mmio.device=` cmdline params) are deprecated
 - **Dedicated Docker volume**: Each VM gets a separate ext4 block device mounted at `/var/lib/docker` by `overlay-init` at boot. This lets Docker use overlay2 directly on ext4 instead of nesting overlayfs-on-overlayfs
 - **containerd bind mount**: `/var/lib/containerd` is bind-mounted onto `/var/lib/docker/containerd` (on the ext4 volume). Without this, containerd's overlayfs snapshotter fails because `/var/lib/containerd` would be on the guest's overlayfs root (overlay-on-overlay is not supported)
 - **Boot-time config**: `guest-init/overlay-init` parses the `docker_volume=vdX` kernel boot arg, mounts the device via `/rom/dev/` (since `/dev` after pivot_root is the overlay's static `/dev`, not devtmpfs), and writes `/etc/docker/daemon.json` with `{"storage-driver":"overlay2"}`
@@ -186,7 +186,7 @@ Key files:
 - `scripts/dev/build-fc-kernel.sh` — Custom kernel builder (Firecracker CI config + Docker fragment)
 - `scripts/dev/prepare-fc-image.sh` — Image preparation (installs Docker CE, tmux, etc.)
 - `guest-init/overlay-init` — In-guest init that sets up overlayfs, Docker volume, containerd bind mount, and SSH
-- `packages/server/src/services/firecracker.ts` — VM creation with Docker volume allocation and `acpi=off` boot arg
+- `packages/server/src/services/firecracker.ts` — VM creation with Docker volume allocation and ACPI-based boot
 
 ### Security Hardening
 

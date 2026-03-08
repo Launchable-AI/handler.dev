@@ -544,8 +544,23 @@ export class FirecrackerService extends EventEmitter {
     console.log(`[FirecrackerService] Starting VM ${id} (${vm.name})`);
 
     const vmDir = path.join(this.config.dataDir, id);
-    const apiSocket = path.join(vmDir, 'api.sock');
     const logFile = path.join(vmDir, 'firecracker.log');
+
+    // Unix domain sockets have a 108-char path limit (SUN_LEN).
+    // When the data dir path is long (e.g. worktrees, deeply nested installs),
+    // use a short /tmp path for the socket and symlink it back.
+    const idealSocketPath = path.join(vmDir, 'api.sock');
+    let apiSocket: string;
+    if (idealSocketPath.length >= 104) {
+      const tmpSocketDir = path.join(os.tmpdir(), `handler-fc-${id}`);
+      if (!fs.existsSync(tmpSocketDir)) {
+        fs.mkdirSync(tmpSocketDir, { recursive: true });
+      }
+      apiSocket = path.join(tmpSocketDir, 'api.sock');
+      console.log(`[FirecrackerService] Socket path too long (${idealSocketPath.length} chars), using ${apiSocket}`);
+    } else {
+      apiSocket = idealSocketPath;
+    }
 
     try {
       // Kill ALL Firecracker processes for this VM — by saved PID and by scanning /proc.
@@ -783,12 +798,11 @@ export class FirecrackerService extends EventEmitter {
 
     try {
       // Wait for API socket to be ready
-      await this.waitForApiSocket(apiSocket, 10000);
+      await this.waitForApiSocket(apiSocket, 10000, path.join(vmDir, 'firecracker.log'));
       console.log(`[FirecrackerService] API socket ready in ${Date.now() - startTime}ms`);
 
       // Get kernel path - prefer Firecracker-optimized kernel (vmlinux-fc)
-      // The FC kernel has CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=n which prevents
-      // conflicts with Firecracker's direct device setup
+      // The FC kernel is built with ACPI-based device discovery (no cmdline devices)
       // For layered images, the kernel is symlinked to the root base image
       const layerChain = this.getImageLayerChain(vm.baseImage);
       const rootImageName = layerChain[0];
@@ -823,7 +837,7 @@ export class FirecrackerService extends EventEmitter {
       // - overlay_root=vdX: Specifies which device is the writable overlay
       // - parent_layers=vdb,vdc: Specifies intermediate layer devices (if any)
       // - root=/dev/vda ro: Mount base rootfs read-only
-      let bootArgs = `console=ttyS0 reboot=k panic=1 acpi=off root=/dev/vda ro init=/sbin/overlay-init overlay_root=${overlayDevice}`;
+      let bootArgs = `console=ttyS0 reboot=k panic=1 nomodule swiotlb=noforce root=/dev/vda ro init=/sbin/overlay-init overlay_root=${overlayDevice}`;
 
       // Add docker_volume device to boot args (dedicated ext4 for /var/lib/docker)
       // This avoids nested overlayfs: Docker's overlay2 operates on ext4 directly
@@ -995,7 +1009,7 @@ export class FirecrackerService extends EventEmitter {
   /**
    * Wait for API socket to become available
    */
-  private waitForApiSocket(socketPath: string, timeoutMs: number): Promise<void> {
+  private waitForApiSocket(socketPath: string, timeoutMs: number, logFile?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
 
@@ -1006,7 +1020,18 @@ export class FirecrackerService extends EventEmitter {
         }
 
         if (Date.now() - startTime > timeoutMs) {
-          reject(new Error('Timeout waiting for API socket'));
+          // Check the Firecracker log for a specific error to give a better message
+          let detail = '';
+          if (logFile && fs.existsSync(logFile)) {
+            const log = fs.readFileSync(logFile, 'utf-8');
+            if (log.includes('SUN_LEN')) {
+              detail = `: API socket path too long (${socketPath.length} chars, max 108). Move your Handler install to a shorter path`;
+            } else if (log.includes('RunWithApiError')) {
+              const match = log.match(/RunWithApiError error: (.+)/);
+              detail = match ? `: ${match[1]}` : '';
+            }
+          }
+          reject(new Error(`Timeout waiting for API socket${detail}`));
           return;
         }
 

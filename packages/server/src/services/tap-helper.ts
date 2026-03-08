@@ -104,6 +104,31 @@ export class TapHelper {
   }
 
   /**
+   * Scan the bridge ARP table for IPs already in use on the subnet.
+   * This catches VMs from other Handler instances sharing the same bridge.
+   */
+  scanBridgeForUsedIps(): void {
+    try {
+      const output = execFileSync('ip', ['neigh', 'show', 'dev', this.bridgeName], {
+        timeout: 3000,
+        encoding: 'utf-8',
+      });
+      for (const line of output.split('\n')) {
+        const match = line.match(/^(\d+\.\d+\.\d+\.\d+)\s/);
+        if (match && match[1].startsWith(this.subnetPrefix + '.')) {
+          const suffix = parseInt(match[1].split('.')[3], 10);
+          if (suffix >= 2 && suffix <= 254 && !this.usedIpSuffixes.has(suffix)) {
+            this.usedIpSuffixes.add(suffix);
+            console.log(`[TapHelper] Found existing IP ${match[1]} on bridge ${this.bridgeName}`);
+          }
+        }
+      }
+    } catch {
+      // Non-fatal — bridge may not exist yet or ip command may fail
+    }
+  }
+
+  /**
    * Get the next available IP address
    */
   private getNextIp(): { ip: string; suffix: number } {

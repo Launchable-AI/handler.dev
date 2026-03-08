@@ -346,11 +346,20 @@ CONFIG_SECCOMP=y
 CONFIG_SECCOMP_FILTER=y
 CONFIG_KEYS=y
 
-# --- Virtio MMIO cmdline device discovery ---
-# Firecracker <= v1.10 registers virtio-mmio devices via kernel cmdline
-# parameters (virtio_mmio.device=...). Without this, no block/net devices
-# appear and the kernel panics on root mount.
-# Can be removed after upgrading to Firecracker >= v1.14 (ACPI discovery).
+# --- PCI support (required for ACPI initialization) ---
+# Firecracker doesn't expose PCI devices, but CONFIG_PCI is required because
+# Firecracker unconditionally generates an MCFG ACPI table. Without CONFIG_PCI,
+# the kernel has no handler for PCI config space ACPI operation regions, causing
+# "AE_BAD_PARAMETER During Region initialization" which breaks DSDT processing
+# and cascades into virtio IRQ allocation failures (error -22).
+# See: https://github.com/firecracker-microvm/firecracker/blob/main/docs/kernel-policy.md
+CONFIG_PCI=y
+CONFIG_PCI_MMCONFIG=y
+
+# --- ACPI-based device and CPU discovery (Firecracker >= v1.8) ---
+# Firecracker v1.8+ provides proper ACPI tables (MADT for vCPU discovery,
+# DSDT for virtio-mmio device discovery). Boot WITHOUT acpi=off.
+# CMDLINE_DEVICES kept as fallback for legacy compatibility.
 CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y
 
 # --- Misc (Docker runtime) ---
