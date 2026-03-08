@@ -1773,7 +1773,7 @@ ethernets:
     fs.writeFileSync(tmpFile, content);
 
     try {
-      const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -P ${port} "${tmpFile}" ${user}@${host}:"${destPath}/${fileName}"`;
+      const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 -o BatchMode=yes -P ${port} "${tmpFile}" ${user}@${host}:"${destPath}/${fileName}"`;
       execSync(scpCmd, { timeout: 60000 });
     } finally {
       fs.unlinkSync(tmpFile);
@@ -1801,8 +1801,8 @@ ethernets:
     const tmpFile = path.join(os.tmpdir(), `vm-download-${Date.now()}`);
 
     try {
-      const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -P ${port} ${user}@${host}:"${filePath}" "${tmpFile}"`;
-      execSync(scpCmd, { timeout: 60000 });
+      const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 -o BatchMode=yes -P ${port} ${user}@${host}:"${filePath}" "${tmpFile}"`;
+      execSync(scpCmd, { timeout: 30000 });
 
       return fs.readFileSync(tmpFile);
     } finally {
