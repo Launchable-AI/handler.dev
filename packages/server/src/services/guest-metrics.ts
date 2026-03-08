@@ -32,6 +32,11 @@ const SSH_OPTS = [
   '-o', 'UserKnownHostsFile=/dev/null',
   '-o', 'IdentitiesOnly=yes',
   '-o', 'ConnectTimeout=3',
+  // Reuse a single TCP connection for repeated metrics polls (avoids full SSH handshake every 5s).
+  // ControlPersist keeps the master connection alive for 60s after the last use.
+  '-o', 'ControlMaster=auto',
+  '-o', 'ControlPath=/tmp/handler-metrics-%r@%h:%p',
+  '-o', 'ControlPersist=60',
 ];
 
 // Batched command: read /proc/stat twice with 100ms delay for CPU delta, then meminfo and disk.

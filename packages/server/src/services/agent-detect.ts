@@ -80,6 +80,9 @@ const SSH_OPTS = [
   '-o', 'UserKnownHostsFile=/dev/null',
   '-o', 'IdentitiesOnly=yes',
   '-o', 'ConnectTimeout=5',
+  '-o', 'ControlMaster=auto',
+  '-o', 'ControlPath=/tmp/handler-agent-%r@%h:%p',
+  '-o', 'ControlPersist=60',
 ];
 
 export async function detectAgentsViaSsh(

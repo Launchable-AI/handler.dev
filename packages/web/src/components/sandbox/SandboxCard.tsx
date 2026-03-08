@@ -32,6 +32,8 @@ import {
   Network,
   Clock,
   Settings,
+  Activity,
+  Bot,
 } from 'lucide-react';
 import type { Sandbox, DockerMeta, VmMeta, VmSnapshotInfo } from '../../api/client';
 import { downloadSandboxSshKey, createVmSnapshot, uploadFileToSandbox, uploadDirectoryToSandbox, getSandboxSshCommand } from '../../api/client';
@@ -283,6 +285,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
 
   // File browser state
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [showMetricsPopover, setShowMetricsPopover] = useState(false);
   const fileBrowserRef = useRef<HTMLDivElement>(null);
 
   // Daytona SSH command state (fetched on demand)
@@ -671,6 +674,13 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const formatBytesLong = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
+
   const getVolumeId = (volumeName: string): string => {
     // For Docker volumes, use the volume name directly with vol-docker- prefix
     // For VM volumes, use the volume ID with vol-vm- prefix
@@ -697,7 +707,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     <>
       <div
         ref={cardRef}
-        className={`border bg-[hsl(var(--bg-surface))] overflow-hidden transition-all duration-500 flex flex-col ${
+        className={`border bg-[hsl(var(--bg-surface))] transition-all duration-500 flex flex-col ${
           highlight
             ? 'border-[hsl(var(--cyan))] ring-2 ring-[hsl(var(--cyan)/0.3)] animate-pulse'
             : 'border-[hsl(var(--border))]'
@@ -1142,6 +1152,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
               {isRunning && (
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">
+                    <Bot className="h-3 w-3" />
                     <span>Agents</span>
                   </div>
                   <AgentBadges sandboxId={sandbox.id} isRunning={isRunning} />
@@ -1150,12 +1161,20 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
 
               {/* Guest Metrics Bars */}
               {metrics && (
-                <div className="space-y-1.5 min-w-[100px]">
+                <div
+                  className="relative space-y-1.5 min-w-[100px] cursor-pointer"
+                  onMouseEnter={() => setShowMetricsPopover(true)}
+                  onMouseLeave={() => setShowMetricsPopover(false)}
+                >
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[hsl(var(--text-muted))]">
+                    <Activity className="h-3 w-3" />
+                    <span>Usage</span>
+                  </div>
                   <div className="space-y-1.5">
                     {/* CPU */}
                     <div className="flex items-center gap-1.5">
                       <Cpu className="h-3 w-3 text-[hsl(var(--text-muted))] shrink-0" />
-                      <div className="flex-1 h-2 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden" title={`CPU ${metrics.cpuUsage}%`}>
+                      <div className="flex-1 h-2 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden">
                         <div
                           className={`h-full transition-all duration-500 rounded-sm ${metrics.cpuUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--cyan))]'}`}
                           style={{ width: `${metrics.cpuUsage}%` }}
@@ -1166,7 +1185,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                     {/* Memory */}
                     <div className="flex items-center gap-1.5">
                       <MemoryStick className="h-3 w-3 text-[hsl(var(--text-muted))] shrink-0" />
-                      <div className="flex-1 h-2 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden" title={`Memory ${metrics.memoryUsage}%`}>
+                      <div className="flex-1 h-2 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden">
                         <div
                           className={`h-full transition-all duration-500 rounded-sm ${metrics.memoryUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--green))]'}`}
                           style={{ width: `${metrics.memoryUsage}%` }}
@@ -1177,7 +1196,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                     {/* Disk */}
                     <div className="flex items-center gap-1.5">
                       <HardDrive className="h-3 w-3 text-[hsl(var(--text-muted))] shrink-0" />
-                      <div className="flex-1 h-2 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden" title={`Disk ${metrics.diskUsage}%`}>
+                      <div className="flex-1 h-2 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden">
                         <div
                           className={`h-full transition-all duration-500 rounded-sm ${metrics.diskUsage > 90 ? 'bg-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--purple))]'}`}
                           style={{ width: `${metrics.diskUsage}%` }}
@@ -1186,6 +1205,73 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
                       <span className={`text-[9px] tabular-nums w-7 text-right shrink-0 ${metrics.diskUsage > 90 ? 'text-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--text-muted))]'}`}>{metrics.diskUsage}%</span>
                     </div>
                   </div>
+
+                  {/* Metrics Detail Popover */}
+                  {showMetricsPopover && (
+                    <div className="absolute left-0 top-full mt-1 z-50 w-64 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-xl animate-in fade-in slide-in-from-top-1 duration-150">
+                      <div className="px-3 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))]">
+                        <div className="flex items-center gap-1.5">
+                          <Activity className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
+                          <span className="text-[11px] font-medium text-[hsl(var(--text-primary))]">Guest Usage</span>
+                        </div>
+                      </div>
+                      <div className="p-3 space-y-3">
+                        {/* CPU Detail */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Cpu className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
+                              <span className="text-[11px] font-medium text-[hsl(var(--text-primary))]">CPU</span>
+                            </div>
+                            <span className={`text-[11px] font-mono ${metrics.cpuUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--cyan))]'}`}>{metrics.cpuUsage}%</span>
+                          </div>
+                          <div className="h-2 bg-[hsl(var(--bg-base))] overflow-hidden rounded-sm mb-1.5">
+                            <div className={`h-full transition-all rounded-sm ${metrics.cpuUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--cyan))]'}`} style={{ width: `${metrics.cpuUsage}%` }} />
+                          </div>
+                          <div className="text-[10px] text-[hsl(var(--text-muted))]">
+                            {sandbox.vcpus} vCPU{sandbox.vcpus !== 1 ? 's' : ''} allocated
+                          </div>
+                        </div>
+                        {/* Memory Detail */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <MemoryStick className="h-3.5 w-3.5 text-[hsl(var(--green))]" />
+                              <span className="text-[11px] font-medium text-[hsl(var(--text-primary))]">Memory</span>
+                            </div>
+                            <span className={`text-[11px] font-mono ${metrics.memoryUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--green))]'}`}>{metrics.memoryUsage}%</span>
+                          </div>
+                          <div className="h-2 bg-[hsl(var(--bg-base))] overflow-hidden rounded-sm mb-1.5">
+                            <div className={`h-full transition-all rounded-sm ${metrics.memoryUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--green))]'}`} style={{ width: `${metrics.memoryUsage}%` }} />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-[hsl(var(--text-muted))]">
+                            <span>Used: {formatBytesLong(metrics.memoryUsed)}</span>
+                            <span>Total: {formatBytesLong(metrics.memoryTotal)}</span>
+                          </div>
+                        </div>
+                        {/* Disk Detail */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <HardDrive className="h-3.5 w-3.5 text-[hsl(var(--purple))]" />
+                              <span className="text-[11px] font-medium text-[hsl(var(--text-primary))]">Disk</span>
+                            </div>
+                            <span className={`text-[11px] font-mono ${metrics.diskUsage > 90 ? 'text-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--purple))]'}`}>{metrics.diskUsage}%</span>
+                          </div>
+                          <div className="h-2 bg-[hsl(var(--bg-base))] overflow-hidden rounded-sm mb-1.5">
+                            <div className={`h-full transition-all rounded-sm ${metrics.diskUsage > 90 ? 'bg-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--purple))]'}`} style={{ width: `${metrics.diskUsage}%` }} />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-[hsl(var(--text-muted))]">
+                            <span>Used: {formatBytesLong(metrics.diskUsed)}</span>
+                            <span>Total: {formatBytesLong(metrics.diskTotal)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-3 py-1.5 border-t border-[hsl(var(--border))] bg-[hsl(var(--bg-base))]">
+                        <div className="text-[9px] text-[hsl(var(--text-muted))] text-center">Refreshes every 5s</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
