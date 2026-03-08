@@ -6,7 +6,8 @@
       "name": "ubuntu-24.04",
       "description": "Ubuntu 24.04 LTS with Docker CE and tmux",
       "type": "firecracker",
-      "path": "images/ubuntu-24.04/firecracker/"
+      "path": "images/ubuntu-24.04/firecracker/",
+      "default": true
     }
   ]
 }
