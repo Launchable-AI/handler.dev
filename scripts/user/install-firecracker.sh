@@ -6,7 +6,7 @@ set -e
 
 # Configuration
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
-FC_VERSION="${FC_VERSION:-v1.10.1}"
+FC_VERSION="${FC_VERSION:-v1.14.1}"
 ARCH=$(uname -m)
 
 # Map architecture names
