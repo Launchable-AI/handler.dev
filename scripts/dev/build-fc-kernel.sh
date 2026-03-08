@@ -362,6 +362,14 @@ CONFIG_PCI_MMCONFIG=y
 # CMDLINE_DEVICES kept as fallback for legacy compatibility.
 CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y
 
+# --- zram (compressed in-memory swap) ---
+# Enables compressed swap in RAM for memory overcommit without disk I/O.
+# Coding agents have highly compressible memory (text, code, ASTs) with
+# typical 3:1+ ratios, so a 2GB VM can effectively use ~4-5GB before OOM.
+# Critical for bin-packing many agent VMs on a single host.
+CONFIG_ZRAM=y
+CONFIG_ZSMALLOC=y
+
 # --- Misc (Docker runtime) ---
 CONFIG_AUTOFS4_FS=y
 CONFIG_FHANDLE=y

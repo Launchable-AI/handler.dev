@@ -242,5 +242,39 @@ elif [ -n "$docker_volume" ]; then
     echo "[overlay-init] WARNING: Docker volume /dev/${docker_volume} not found"
 fi
 
+# Set up zram swap (compressed in-memory swap, sized to total RAM)
+# zram compresses pages in RAM (~3:1 for code/text), letting a 2GB VM
+# effectively use ~4-5GB before OOM. Requires CONFIG_ZRAM=y in kernel.
+# After pivot_root, /sys and /proc aren't mounted in the new root yet —
+# mount them temporarily, configure zram, then unmount so systemd can
+# mount them cleanly.
+/bin/mount -t sysfs sysfs /sys
+/bin/mount -t proc proc /proc
+if [ -e /sys/block/zram0 ]; then
+    mem_kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+    mem_bytes=$((mem_kb * 1024))
+    echo lzo > /sys/block/zram0/comp_algorithm
+    echo "$mem_bytes" > /sys/block/zram0/disksize
+    # Create device node (static /dev after pivot_root has no zram0)
+    if [ ! -b /dev/zram0 ]; then
+        major=$(awk '$2 == "zram" { print $1 }' /proc/devices 2>/dev/null)
+        if [ -n "$major" ]; then
+            mknod /dev/zram0 b "$major" 0
+        fi
+    fi
+    if [ -b /dev/zram0 ]; then
+        mkswap /dev/zram0 >/dev/null 2>&1
+        swapon /dev/zram0
+        mem_mb=$((mem_kb / 1024))
+        echo "[overlay-init] zram swap enabled: ${mem_mb}MB (lzo compression)"
+    else
+        echo "[overlay-init] WARNING: zram0 block device not available"
+    fi
+else
+    echo "[overlay-init] WARNING: /sys/block/zram0 not found (CONFIG_ZRAM not enabled in kernel)"
+fi
+/bin/umount /proc
+/bin/umount /sys
+
 # Now exec real init (we're already in the new root after pivot_root)
 exec /sbin/init "$@"
