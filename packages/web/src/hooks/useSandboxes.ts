@@ -443,13 +443,17 @@ export function useSandboxAgents(sandboxId: string, enabled = true) {
  * Fetch guest metrics (CPU, memory, disk) from inside a sandbox
  */
 export function useSandboxMetrics(sandboxId: string, enabled = true) {
-  return useQuery({
+  const query = useQuery({
     queryKey: ['sandbox-metrics', sandboxId],
     queryFn: () => api.getSandboxMetrics(sandboxId),
     enabled: enabled && !!sandboxId,
     staleTime: 2_000,
     refetchInterval: enabled ? 5_000 : false,
   });
+
+  // Return undefined when disabled (e.g. paused/stopped) so components
+  // don't render stale cached metrics from the last running state.
+  return { ...query, data: enabled ? query.data : undefined };
 }
 
 /**
