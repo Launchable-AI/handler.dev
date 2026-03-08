@@ -197,8 +197,9 @@ const SHELL_INIT_SCRIPT = [
   `__handler_prompt() { local b cs; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); cs=$(__handler_claude_status); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; }`,
   // Append to PROMPT_COMMAND (preserve existing value if any)
   `PROMPT_COMMAND="__handler_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`,
-  // Background watcher: emit OSC on Claude status changes (every 2s), independent of prompt
-  `(__cs_prev=""; while true; do cs=$(__handler_claude_status); if [ "$cs" != "$__cs_prev" ]; then __cs_prev="$cs"; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; fi; sleep 2; done &) 2>/dev/null`,
+  // Background watcher: emit OSC on Claude status changes (every 2s), independent of prompt.
+  // Redirects stdout/stderr to /dev/tty so non-interactive SSH sessions (metrics, agent-detect) aren't blocked by inherited FDs.
+  `(if [ -t 1 ] || [ -e /dev/tty ]; then __cs_prev=""; while true; do cs=$(__handler_claude_status); if [ "$cs" != "$__cs_prev" ]; then __cs_prev="$cs"; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; fi; sleep 2; done >/dev/tty 2>/dev/null; fi &) 2>/dev/null`,
   // tmux wrapper: emits state markers so the Handler badge tracks manual attach/detach
   `__handler_tmux_wrap() { case "\${1:-}" in a*|new*|"") echo __HANDLER_TMUX_ACTIVE__; command tmux "$@"; echo __HANDLER_TMUX_DETACHED__; return ;; esac; command tmux "$@"; }`,
   `alias tmux='__handler_tmux_wrap'`,

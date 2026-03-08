@@ -5,7 +5,7 @@
  */
 
 import Docker from 'dockerode';
-import { execFileSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { execInContainer } from './docker.js';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -34,8 +34,17 @@ const SSH_OPTS = [
   '-o', 'ConnectTimeout=3',
 ];
 
-// Batched command: read /proc/stat twice with 100ms delay for CPU delta, then meminfo and disk
-const METRICS_SCRIPT = 'cat /proc/stat; sleep 0.1; cat /proc/stat; echo "---MEMINFO---"; cat /proc/meminfo; echo "---DISK---"; df -B1 /';
+// Batched command: read /proc/stat twice with 100ms delay for CPU delta, then meminfo and disk.
+// Ends with 'kill 0' to terminate any background processes started by .bashrc (e.g. the Handler
+// status watcher) that would otherwise keep the SSH session open via inherited FDs.
+// We use spawnSync (not execFileSync) since kill 0 causes a non-zero exit code.
+const METRICS_SCRIPT = 'cat /proc/stat; sleep 0.1; cat /proc/stat; echo "---MEMINFO---"; cat /proc/meminfo; echo "---DISK---"; df -B1 /; kill 0 2>/dev/null';
+
+/** Strip ANSI/OSC escape sequences (e.g. OSC 7337 from shell init) */
+function stripEscapeSequences(s: string): string {
+  // OSC sequences: ESC ] ... BEL/ST, plus CSI sequences: ESC [ ... final byte
+  return s.replace(/\x1b\][^\x07]*\x07/g, '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+}
 
 function parseCpuLine(line: string): number[] {
   // cpu  user nice system idle iowait irq softirq steal
@@ -211,7 +220,7 @@ export async function getVmMetricsViaSsh(
 
   try {
     const portArgs = port !== 22 ? ['-p', String(port)] : [];
-    const output = execFileSync('ssh', [
+    const result = spawnSync('ssh', [
       '-i', keyPath,
       ...portArgs,
       ...SSH_OPTS,
@@ -219,11 +228,18 @@ export async function getVmMetricsViaSsh(
       METRICS_SCRIPT,
     ], { encoding: 'utf-8', timeout: 5000 });
 
+    const raw = result.stdout || '';
+    if (!raw.includes('---MEMINFO---')) {
+      throw new Error(result.stderr || 'No metrics output');
+    }
+
+    const output = stripEscapeSequences(raw);
     const metrics = parseMetricsOutput(output);
     cache.set(sandboxId, { metrics, timestamp: Date.now() });
     return metrics;
-  } catch {
-    throw new Error('Failed to collect VM metrics via SSH');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to collect VM metrics via SSH: ${detail}`);
   }
 }
 
@@ -243,7 +259,7 @@ export async function getCloudMetricsViaSsh(
 
   try {
     const portArgs = port !== 22 ? ['-p', String(port)] : [];
-    const output = execFileSync('ssh', [
+    const result = spawnSync('ssh', [
       '-i', tempKeyPath,
       ...portArgs,
       ...SSH_OPTS,
@@ -251,6 +267,12 @@ export async function getCloudMetricsViaSsh(
       METRICS_SCRIPT,
     ], { encoding: 'utf-8', timeout: 5000 });
 
+    const raw = result.stdout || '';
+    if (!raw.includes('---MEMINFO---')) {
+      throw new Error(result.stderr || 'No metrics output');
+    }
+
+    const output = stripEscapeSequences(raw);
     const metrics = parseMetricsOutput(output);
     cache.set(sandboxId, { metrics, timestamp: Date.now() });
     return metrics;

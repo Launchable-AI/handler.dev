@@ -453,16 +453,36 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
             <span className="flex items-center gap-1">
               <Cpu className="h-3 w-3" />
               {sandbox.vcpus}
-              {metrics && <span className={`ml-0.5 font-medium ${metrics.cpuUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--cyan))]'}`}>{metrics.cpuUsage}%</span>}
             </span>
             <span className="flex items-center gap-1">
               <MemoryStick className="h-3 w-3" />
               {sandbox.memoryMb >= 1024
                 ? `${(sandbox.memoryMb / 1024).toFixed(0)}GB`
                 : `${sandbox.memoryMb}MB`}
-              {metrics && <span className={`ml-0.5 font-medium ${metrics.memoryUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--green))]'}`}>{metrics.memoryUsage}%</span>}
             </span>
           </div>
+          {metrics && (
+            <div className="mt-1 space-y-0.5 max-w-[120px]">
+              <div className="flex items-center gap-1">
+                <div className="flex-1 h-1.5 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden" title={`CPU ${metrics.cpuUsage}%`}>
+                  <div className={`h-full rounded-sm ${metrics.cpuUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--cyan))]'}`} style={{ width: `${metrics.cpuUsage}%` }} />
+                </div>
+                <span className="text-[8px] tabular-nums w-6 text-right">{metrics.cpuUsage}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="flex-1 h-1.5 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden" title={`Memory ${metrics.memoryUsage}%`}>
+                  <div className={`h-full rounded-sm ${metrics.memoryUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--green))]'}`} style={{ width: `${metrics.memoryUsage}%` }} />
+                </div>
+                <span className="text-[8px] tabular-nums w-6 text-right">{metrics.memoryUsage}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="flex-1 h-1.5 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden" title={`Disk ${metrics.diskUsage}%`}>
+                  <div className={`h-full rounded-sm ${metrics.diskUsage > 90 ? 'bg-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--purple))]'}`} style={{ width: `${metrics.diskUsage}%` }} />
+                </div>
+                <span className="text-[8px] tabular-nums w-6 text-right">{metrics.diskUsage}%</span>
+              </div>
+            </div>
+          )}
         </td>
       )}
 
