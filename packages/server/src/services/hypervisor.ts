@@ -891,6 +891,24 @@ export class CloudHypervisorService extends EventEmitter {
   }
 
   /**
+   * Clean stale SSH multiplexing control sockets for a given host:port.
+   */
+  private cleanSshControlSockets(host: string, port: number): void {
+    const socketPatterns = [
+      `/tmp/handler-metrics-agent@${host}:${port}`,
+      `/tmp/handler-agent-agent@${host}:${port}`,
+    ];
+    for (const sock of socketPatterns) {
+      try {
+        if (fs.existsSync(sock)) {
+          fs.unlinkSync(sock);
+          console.log(`[HypervisorService] Removed stale SSH control socket: ${sock}`);
+        }
+      } catch {}
+    }
+  }
+
+  /**
    * Wait for SSH to be reachable
    */
   private async waitForSshReady(vmId: string, timeoutMs: number = 120000): Promise<void> {
@@ -903,6 +921,11 @@ export class CloudHypervisorService extends EventEmitter {
 
     const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
     const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+
+    // Clean stale SSH multiplexing sockets from previous VMs that had this IP
+    if (host) {
+      this.cleanSshControlSockets(host, port!);
+    }
 
     return new Promise((resolve, reject) => {
       const check = async () => {
@@ -939,6 +962,11 @@ export class CloudHypervisorService extends EventEmitter {
 
     const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
     const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+
+    // Clean stale SSH multiplexing sockets from previous VMs that had this IP
+    if (host) {
+      this.cleanSshControlSockets(host, port!);
+    }
 
     return new Promise((resolve, reject) => {
       const check = async () => {
@@ -1367,6 +1395,11 @@ ethernets:
           // Process may already be dead
         }
       }
+    }
+
+    // Clean SSH control sockets before releasing the IP (prevents stale socket reuse)
+    if (vm.networkConfig.guestIp) {
+      this.cleanSshControlSockets(vm.networkConfig.guestIp, 22);
     }
 
     // Release TAP device so it can be reused by other VMs

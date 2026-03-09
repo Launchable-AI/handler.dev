@@ -304,6 +304,8 @@ export interface FirecrackerVmState {
   stoppedAt?: string;
   /** Error message if status is 'error' */
   error?: string;
+  /** Boot progress message (transient, not persisted) */
+  statusMessage?: string;
 }
 
 /**

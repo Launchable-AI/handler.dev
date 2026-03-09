@@ -211,6 +211,19 @@ if [ -d /home/agent/.ssh ] && [ -f /home/agent/.ssh/authorized_keys ]; then
         chmod 440 /etc/sudoers.d/agent
     fi
 
+    # Disable reverse DNS lookups in sshd to eliminate banner exchange delays
+    if [ -f /etc/ssh/sshd_config ] && ! grep -q "^UseDNS no" /etc/ssh/sshd_config; then
+        echo "UseDNS no" >> /etc/ssh/sshd_config
+    fi
+
+    # Mask systemd-networkd-wait-online — it blocks network-online.target for 60+ seconds
+    # because the network is configured via kernel ip= parameter, not systemd-networkd.
+    # This delay can cascade to services that depend on network-online.target.
+    if [ ! -L /etc/systemd/system/systemd-networkd-wait-online.service ]; then
+        ln -sf /dev/null /etc/systemd/system/systemd-networkd-wait-online.service
+        echo "[overlay-init] Masked systemd-networkd-wait-online (kernel ip= provides network)"
+    fi
+
     echo "[overlay-init] Agent user setup complete"
 else
     echo "[overlay-init] No SSH keys found at /home/agent/.ssh/authorized_keys"

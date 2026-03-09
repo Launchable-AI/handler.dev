@@ -33,6 +33,8 @@ export interface Sandbox {
   status: SandboxStatus;
   /** Error message if status is 'error' */
   error?: string;
+  /** Progress message during startup/boot */
+  statusMessage?: string;
 
   // Resources
   /** Number of virtual CPUs */

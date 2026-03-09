@@ -783,6 +783,13 @@ export class FirecrackerService extends EventEmitter {
    * - Overlay ext4 mounted as second drive (writable, per-VM)
    * - Guest uses /sbin/overlay-init to set up overlayfs at boot
    */
+  /** Update the VM's transient status message (visible via API polling during boot) */
+  private setStatusMessage(vm: FirecrackerVmState, message: string): void {
+    vm.statusMessage = message;
+    // Fire-and-forget save so the next poll picks it up
+    this.saveVmState(vm).catch(() => {});
+  }
+
   private async configureAndStartVm(
     id: string,
     vmDir: string,
@@ -798,6 +805,7 @@ export class FirecrackerService extends EventEmitter {
 
     try {
       // Wait for API socket to be ready
+      this.setStatusMessage(vm, 'Waiting for Firecracker process...');
       await this.waitForApiSocket(apiSocket, 10000, path.join(vmDir, 'firecracker.log'));
       console.log(`[FirecrackerService] API socket ready in ${Date.now() - startTime}ms`);
 
@@ -967,32 +975,38 @@ export class FirecrackerService extends EventEmitter {
       }
 
       // 9. Start the VM
+      this.setStatusMessage(vm, 'Configuring VM...');
       console.log(`[FirecrackerService] VM ${id} API configured in ${Date.now() - startTime}ms, sending InstanceStart`);
       await this.sendApiRequest(apiSocket, 'PUT', '/actions', {
         action_type: 'InstanceStart',
       });
 
       vm.status = 'booting';
+      vm.statusMessage = 'Booting kernel...';
       await this.saveVmState(vm);
       this.emit('vm:booting', vm);
       console.log(`[FirecrackerService] VM ${id} is booting (InstanceStart sent at ${Date.now() - startTime}ms)`);
 
       // Wait for SSH to be reachable
       console.log(`[FirecrackerService] VM ${id} waiting for SSH at ${vm.networkConfig.guestIp || '127.0.0.1'}:${vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort}`);
+      this.setStatusMessage(vm, 'Waiting for SSH...');
       await this.waitForSshReady(id);
       console.log(`[FirecrackerService] VM ${id} SSH ready in ${Date.now() - startTime}ms`);
 
       // Configure hostname in /etc/hosts to avoid sudo warnings
+      this.setStatusMessage(vm, 'Configuring guest...');
       await this.configureHostname(id);
       console.log(`[FirecrackerService] VM ${id} post-boot config done in ${Date.now() - startTime}ms`);
 
       // Mount attached volumes inside the guest
       if (vm.volumes && vm.volumes.length > 0) {
+        this.setStatusMessage(vm, 'Mounting volumes...');
         await this.mountVolumesInGuest(id);
         console.log(`[FirecrackerService] VM ${id} volumes mounted in ${Date.now() - startTime}ms`);
       }
 
       vm.status = 'running';
+      vm.statusMessage = undefined;
       await this.saveVmState(vm);
       this.emit('vm:started', vm);
       console.log(`[FirecrackerService] VM ${id} is running in ${Date.now() - startTime}ms`);
@@ -1001,6 +1015,7 @@ export class FirecrackerService extends EventEmitter {
       console.error(`[FirecrackerService] VM ${id} failed to start:`, error);
       vm.status = 'error';
       vm.error = `Failed to start: ${error}`;
+      vm.statusMessage = undefined;
       await this.saveVmState(vm);
       this.emit('vm:error', { vm, error });
     }
@@ -1113,9 +1128,28 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
+   * Clean stale SSH multiplexing control sockets for a given host:port.
+   * Prevents reuse of dead connections when TAP IPs are recycled between VMs.
+   */
+  private cleanSshControlSockets(host: string, port: number): void {
+    const socketPatterns = [
+      `/tmp/handler-metrics-agent@${host}:${port}`,
+      `/tmp/handler-agent-agent@${host}:${port}`,
+    ];
+    for (const sock of socketPatterns) {
+      try {
+        if (fs.existsSync(sock)) {
+          fs.unlinkSync(sock);
+          console.log(`[FirecrackerService] Removed stale SSH control socket: ${sock}`);
+        }
+      } catch {}
+    }
+  }
+
+  /**
    * Wait for SSH to be reachable
    */
-  private async waitForSshReady(vmId: string, timeoutMs: number = 15000): Promise<void> {
+  private async waitForSshReady(vmId: string, timeoutMs: number = 60000): Promise<void> {
     const startTime = Date.now();
     const sshKeyPath = this.getSshKeyPath();
     const vm = this.vms.get(vmId);
@@ -1125,6 +1159,22 @@ export class FirecrackerService extends EventEmitter {
 
     const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
     const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+    const tag = `[FirecrackerService] VM ${vmId}`;
+
+    // Clean stale SSH multiplexing sockets from previous VMs that had this IP
+    if (host) {
+      this.cleanSshControlSockets(host, port!);
+    }
+
+    console.log(`${tag} SSH key: ${sshKeyPath} (exists: ${fs.existsSync(sshKeyPath)})`);
+
+    // Diagnostic: check network reachability
+    try {
+      execFileSync('ping', ['-c', '1', '-W', '1', host!], { stdio: 'pipe', timeout: 3000 });
+      console.log(`${tag} ping ${host} OK`);
+    } catch {
+      console.warn(`${tag} ping ${host} FAILED — network may not be up yet`);
+    }
 
     // Phase 1: Wait for TCP port to accept connections (fast — no SSH overhead)
     let portOpen = false;
@@ -1134,63 +1184,105 @@ export class FirecrackerService extends EventEmitter {
       if (Date.now() - startTime > timeoutMs) {
         throw new Error(`Timeout waiting for SSH port ${port} on ${host} (${attempts} attempts over ${Math.round((Date.now() - startTime) / 1000)}s)`);
       }
+      if (attempts > 1) {
+        this.setStatusMessage(vm, `Waiting for SSH port... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+      }
       portOpen = await new Promise<boolean>(resolve => {
         const sock = net.createConnection({ host: host!, port, timeout: 2000 });
         sock.on('connect', () => { sock.destroy(); resolve(true); });
-        sock.on('error', () => { sock.destroy(); resolve(false); });
-        sock.on('timeout', () => { sock.destroy(); resolve(false); });
+        sock.on('error', (e) => { sock.destroy(); if (attempts % 5 === 0) console.log(`${tag} TCP connect attempt ${attempts}: ${e.message}`); resolve(false); });
+        sock.on('timeout', () => { sock.destroy(); if (attempts % 5 === 0) console.log(`${tag} TCP connect attempt ${attempts}: timeout`); resolve(false); });
       });
       if (!portOpen) {
-        if (attempts % 5 === 0) {
-          console.log(`[FirecrackerService] VM ${vmId} SSH port not open yet (attempt ${attempts}, ${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
-        }
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
-    console.log(`[FirecrackerService] VM ${vmId} SSH port open after ${Math.round((Date.now() - startTime) / 1000)}s (${attempts} attempts)`);
+    const phase1Elapsed = Math.round((Date.now() - startTime) / 1000);
+    console.log(`${tag} SSH port ${port} open after ${phase1Elapsed}s (${attempts} TCP attempts)`);
 
     // Phase 2: Wait for SSH auth to succeed (port is open, now verify SSH works)
-    // Note: The VM's .bashrc may start a background status-monitor loop that inherits
-    // the SSH session's file descriptors, preventing clean exit. We check stdout for
-    // "ready" even if the process is killed by timeout, since auth succeeded if we got it.
+    // Uses verbose SSH (-v) to capture handshake details in stderr for diagnostics.
     let sshAttempts = 0;
     while (true) {
       sshAttempts++;
+      this.setStatusMessage(vm, `SSH handshake attempt ${sshAttempts}... (${Math.round((Date.now() - startTime) / 1000)}s)`);
+      const attemptStart = Date.now();
       try {
         execFileSync('ssh', [
+          '-v',
           '-i', sshKeyPath,
           '-o', 'StrictHostKeyChecking=no',
           '-o', 'UserKnownHostsFile=/dev/null',
-          '-o', 'ConnectTimeout=3',
+          '-o', 'ConnectTimeout=10',
           '-o', 'IdentitiesOnly=yes',
           '-o', 'BatchMode=yes',
           `agent@${host}`,
           '-p', port!.toString(),
           'echo ready',
-        ], { stdio: 'pipe', timeout: 5000 });
-        return; // SSH is ready
+        ], { stdio: 'pipe', timeout: 15000 });
+        console.log(`${tag} SSH ready after ${Math.round((Date.now() - startTime) / 1000)}s (attempt ${sshAttempts})`);
+        return;
       } catch (err: unknown) {
-        // Check if stdout contains "ready" — the command succeeded even though
-        // the SSH process didn't exit cleanly (background shell processes keep FDs open)
         const stdout = (err as { stdout?: Buffer })?.stdout?.toString?.()?.trim() || '';
         if (stdout.includes('ready')) {
-          return; // SSH auth succeeded
+          console.log(`${tag} SSH ready (stdout) after ${Math.round((Date.now() - startTime) / 1000)}s (attempt ${sshAttempts})`);
+          return;
         }
 
+        const attemptDuration = Math.round((Date.now() - attemptStart) / 1000);
         const elapsed = Math.round((Date.now() - startTime) / 1000);
-        if (sshAttempts <= 3 || sshAttempts % 10 === 0) {
-          // Log the actual SSH error so we can diagnose auth failures
-          const stderr = (err as { stderr?: Buffer })?.stderr?.toString?.()?.trim() || '';
-          console.warn(`[FirecrackerService] VM ${vmId} SSH attempt ${sshAttempts} failed (${elapsed}s): ${stderr || (err as Error)?.message || 'unknown error'}`);
-          if (sshAttempts === 1) {
-            console.log(`[FirecrackerService] VM ${vmId} SSH key: ${sshKeyPath} (exists: ${fs.existsSync(sshKeyPath)})`);
+        const stderr = (err as { stderr?: Buffer })?.stderr?.toString?.()?.trim() || '';
+        const errCode = (err as { status?: number })?.status;
+        const signal = (err as { signal?: string })?.signal;
+
+        // Extract the key SSH debug lines (last stage reached, errors)
+        const stderrLines = stderr.split('\n');
+        const lastDebugLine = stderrLines.filter(l => l.startsWith('debug1:')).pop() || '';
+        const errorLines = stderrLines.filter(l =>
+          !l.startsWith('debug1:') && !l.startsWith('debug2:') && !l.startsWith('debug3:') &&
+          !l.startsWith('Warning:') && l.trim() !== ''
+        );
+
+        console.warn(`${tag} SSH attempt ${sshAttempts} failed after ${attemptDuration}s (total ${elapsed}s): exit=${errCode} signal=${signal}`);
+        console.warn(`${tag}   last stage: ${lastDebugLine}`);
+        if (errorLines.length > 0) {
+          console.warn(`${tag}   errors: ${errorLines.join(' | ')}`);
+        }
+
+        // On the last attempt before timeout, dump full verbose output
+        if (Date.now() - startTime + 15000 > timeoutMs) {
+          console.warn(`${tag} FULL SSH DIAGNOSTIC (attempt ${sshAttempts}):`);
+          for (const line of stderrLines.slice(-30)) {
+            console.warn(`${tag}   ${line}`);
+          }
+          if (stdout) {
+            console.warn(`${tag}   stdout: ${stdout}`);
+          }
+
+          // Also run network diagnostics
+          try {
+            const pingResult = execFileSync('ping', ['-c', '1', '-W', '2', host!], { stdio: 'pipe', timeout: 4000 }).toString().trim();
+            console.warn(`${tag}   ping: ${pingResult.split('\n').pop()}`);
+          } catch {
+            console.warn(`${tag}   ping: FAILED`);
+          }
+          try {
+            const arpResult = execFileSync('ip', ['neigh', 'show', host!], { stdio: 'pipe', timeout: 2000 }).toString().trim();
+            console.warn(`${tag}   arp: ${arpResult || 'no entry'}`);
+          } catch {
+            console.warn(`${tag}   arp: lookup failed`);
           }
         }
+
         if (Date.now() - startTime > timeoutMs) {
-          const stderr = (err as { stderr?: Buffer })?.stderr?.toString?.()?.trim() || '';
-          throw new Error(`Timeout waiting for SSH on ${host}:${port} after ${elapsed}s (${sshAttempts} attempts). Last error: ${stderr}`);
+          throw new Error(
+            `Timeout waiting for SSH on ${host}:${port} after ${elapsed}s (${sshAttempts} attempts, TCP open at ${phase1Elapsed}s). ` +
+            `Last attempt took ${attemptDuration}s, exit=${errCode}, signal=${signal}. ` +
+            `Last stage: ${lastDebugLine}. ` +
+            `Errors: ${errorLines.join(' | ') || 'none'}`
+          );
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
   }
@@ -1322,6 +1414,11 @@ export class FirecrackerService extends EventEmitter {
           this.killProcessGroup(pid);
         }
       }
+    }
+
+    // Clean SSH control sockets before releasing the IP (prevents stale socket reuse)
+    if (vm.networkConfig.guestIp) {
+      this.cleanSshControlSockets(vm.networkConfig.guestIp, 22);
     }
 
     // Release TAP device so it can be reused by other VMs
@@ -2401,6 +2498,7 @@ export class FirecrackerService extends EventEmitter {
       createdAt: vm.createdAt,
       startedAt: vm.startedAt,
       error: vm.error,
+      statusMessage: vm.statusMessage,
     };
   }
 

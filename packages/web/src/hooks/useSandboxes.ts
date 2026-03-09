@@ -20,7 +20,14 @@ export function useSandboxes(filter?: SandboxListFilter) {
   return useQuery({
     queryKey: ['sandboxes', filter],
     queryFn: () => api.listSandboxes(filter),
-    refetchInterval: isMutatingSandboxes > 0 ? false : 5000,
+    refetchInterval: (query) => {
+      if (isMutatingSandboxes > 0) return false;
+      // Poll faster when sandboxes are booting so status messages update promptly
+      const hasBooting = query.state.data?.sandboxes?.some(
+        (s) => s.status === 'starting' || s.status === 'creating' || s.status === 'building'
+      );
+      return hasBooting ? 2000 : 5000;
+    },
   });
 }
 

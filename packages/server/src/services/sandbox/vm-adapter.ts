@@ -80,6 +80,7 @@ function vmToSandbox(vm: VmInfo, hypervisorType: HypervisorType): Sandbox {
     backend: hypervisorType === 'daytona' ? 'daytona' : hypervisorType,
     status: mapVmStatus(vm.status),
     error: vm.error,
+    statusMessage: vm.statusMessage,
 
     // Resources
     vcpus: vm.vcpus,

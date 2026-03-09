@@ -135,6 +135,8 @@ export interface VmInfo {
 
   // Error
   error?: string;
+  /** Boot progress message (shown during startup) */
+  statusMessage?: string;
 }
 
 export interface SnapshotInfo {
