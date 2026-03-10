@@ -18,7 +18,7 @@ import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
 import { GitLogPanel } from './GitLogPanel';
 import { MinimizedNodesSidebar, type MinimizedNodeInfo } from './MinimizedNodesSidebar';
-import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween } from 'lucide-react';
+import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween, LayoutGrid, Columns3, Rows3 } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
 
 const nodeTypes = {
@@ -37,7 +37,7 @@ interface CanvasViewProps {
 function CanvasViewInner({ className = '' }: CanvasViewProps) {
   const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar, restoreNode } = useCanvas();
   const { data: sandboxData } = useSandboxes();
-  const { setCenter } = useReactFlow();
+  const { setCenter, fitView } = useReactFlow();
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [activeGitPanel, setActiveGitPanel] = useState<{ nodeId: string; sandboxId: string; cwd?: string } | null>(null);
@@ -225,6 +225,39 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     );
   };
 
+  const arrangeNodes = useCallback((layout: 'grid' | 'vertical' | 'horizontal') => {
+    const minimizedSet = new Set(state.minimizedNodeIds);
+    const visible = visibleWorktreeNodes.filter(n => !minimizedSet.has(n.id));
+    if (visible.length < 2) return;
+
+    const gap = 40;
+
+    if (layout === 'grid') {
+      const cols = Math.ceil(Math.sqrt(visible.length));
+      visible.forEach((node, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const w = node.size?.width || 500;
+        const h = node.size?.height || 350;
+        updatePosition(node.id, { x: col * (w + gap), y: row * (h + gap) });
+      });
+    } else if (layout === 'vertical') {
+      let y = 0;
+      for (const node of visible) {
+        updatePosition(node.id, { x: 0, y });
+        y += (node.size?.height || 350) + gap;
+      }
+    } else {
+      let x = 0;
+      for (const node of visible) {
+        updatePosition(node.id, { x, y: 0 });
+        x += (node.size?.width || 500) + gap;
+      }
+    }
+
+    setTimeout(() => fitView({ duration: 300 }), 50);
+  }, [visibleWorktreeNodes, state.minimizedNodeIds, updatePosition, fitView]);
+
   const statusDotColor: Record<WorktreeNode['status'], string> = {
     creating: 'bg-[hsl(var(--amber))]',
     ready: 'bg-[hsl(var(--green))]',
@@ -350,6 +383,33 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
               <AlignVerticalSpaceAround className="h-3.5 w-3.5" />
             )}
           </button>
+
+          {/* Layout arrange buttons */}
+          {visibleWorktreeNodes.filter(n => !state.minimizedNodeIds.includes(n.id)).length >= 2 && (
+            <div className="flex items-center bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] rounded shadow-lg overflow-hidden">
+              <button
+                onClick={() => arrangeNodes('grid')}
+                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] transition-colors"
+                title="Arrange as grid"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => arrangeNodes('vertical')}
+                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] transition-colors border-l border-[hsl(var(--border))]"
+                title="Arrange as column"
+              >
+                <Rows3 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => arrangeNodes('horizontal')}
+                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] transition-colors border-l border-[hsl(var(--border))]"
+                title="Arrange as row"
+              >
+                <Columns3 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Add sandbox to canvas button */}
           <div className="relative">
