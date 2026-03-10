@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as net from 'net';
 import { testConnection } from './services/docker.js';
 import { getCloudHypervisorService } from './services/hypervisor.js';
+import { getFirecrackerService } from './services/firecracker.js';
 
 const execAsync = promisify(exec);
 
@@ -396,12 +397,15 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
             break;
 
           case 'start-vm':
-            // Start a new VM terminal session
+            // Start a new VM terminal session (Cloud-Hypervisor or Firecracker)
             if (msg.vmId && msg.vmIp) {
               validateSandboxId(msg.vmId);
               validateIpAddress(msg.vmIp);
-              const hypervisor = getCloudHypervisorService();
-              const dataDir = hypervisor.getDataDir();
+              // Use the correct service based on VM ID prefix
+              const vmService = msg.vmId.startsWith('fc-')
+                ? getFirecrackerService()
+                : getCloudHypervisorService();
+              const dataDir = vmService.getDataDir();
               sessionId = createVmTerminalSession(
                 ws,
                 msg.vmId,

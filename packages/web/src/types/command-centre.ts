@@ -44,6 +44,10 @@ export interface WorktreeNode {
   ports: Array<{ container: number; host: number }>;
   position: { x: number; y: number }; // canvas position
   size: { width: number; height: number }; // canvas node size
+  /** Backend type — determines terminal connection method (SSH for VMs, docker exec for Docker) */
+  backendType?: 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
+  /** Guest IP for VM/cloud backends (required for SSH terminal connections) */
+  ip?: string;
 }
 
 // Workspace for organizing canvas nodes

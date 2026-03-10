@@ -502,7 +502,12 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         {termReady && (
           <div ref={termWrapperRef} className="h-full">
             <TerminalInstance
-              target={{ type: 'container', id: data.sandboxId, ...(data.worktreePath && !isRoot ? { workdir: data.worktreePath } : {}) }}
+              target={{
+                type: data.backendType && data.backendType !== 'docker' ? 'vm' : 'container',
+                id: data.sandboxId,
+                ...(data.ip ? { ip: data.ip } : {}),
+                ...(data.worktreePath && !isRoot ? { workdir: data.worktreePath } : {}),
+              }}
               onStateChange={handleTerminalStateChange}
               onShellState={handleShellState}
               onUrlsDetected={handleUrlsDetected}

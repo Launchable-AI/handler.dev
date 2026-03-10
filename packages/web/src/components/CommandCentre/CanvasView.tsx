@@ -13,7 +13,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useCanvas } from '../../context/CanvasContext';
-import { useContainers } from '../../hooks/useContainers';
+import { useSandboxes } from '../../hooks/useSandboxes';
 import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
 import { GitLogPanel } from './GitLogPanel';
@@ -36,7 +36,7 @@ interface CanvasViewProps {
 // Inner component that has access to useReactFlow
 function CanvasViewInner({ className = '' }: CanvasViewProps) {
   const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar, restoreNode } = useCanvas();
-  const { data: containers } = useContainers();
+  const { data: sandboxData } = useSandboxes();
   const { setCenter } = useReactFlow();
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -68,20 +68,22 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     }
   }, [nodes]);
 
-  const runningContainers = useMemo(
-    () => containers?.filter(c => c.state === 'running') || [],
-    [containers]
+  const sandboxes = sandboxData?.sandboxes;
+
+  const runningSandboxes = useMemo(
+    () => sandboxes?.filter(s => s.status === 'running') || [],
+    [sandboxes]
   );
 
-  const availableContainers = useMemo(() => {
+  const availableSandboxes = useMemo(() => {
     const activeNodeIds = new Set(activeWorkspace?.nodeIds || []);
     const onCanvas = new Set(
       state.worktreeNodes
         .filter(n => activeNodeIds.has(n.id))
         .map(n => n.sandboxId)
     );
-    return runningContainers.filter(c => !onCanvas.has(c.id));
-  }, [runningContainers, state.worktreeNodes, activeWorkspace]);
+    return runningSandboxes.filter(s => !onCanvas.has(s.id));
+  }, [runningSandboxes, state.worktreeNodes, activeWorkspace]);
 
   // Visible worktree nodes for the panel list
   const visibleWorktreeNodes = useMemo(() => {
@@ -194,11 +196,11 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     dragDeltaRef.current = { dx: 0, dy: 0 };
   }, [updatePosition, getDescendantIds, state.worktreeNodes]);
 
-  const handleAddToCanvas = (container: { id: string; name: string }) => {
-    const nodeId = `wt-${container.id}-${Date.now()}`;
+  const handleAddToCanvas = (sandbox: { id: string; name: string; backend: string; guestIp?: string }) => {
+    const nodeId = `wt-${sandbox.id}-${Date.now()}`;
     const newNode: WorktreeNode = {
       id: nodeId,
-      sandboxId: container.id,
+      sandboxId: sandbox.id,
       branch: 'main',
       worktreePath: '/workspace',
       parentNodeId: null,
@@ -206,6 +208,8 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       ports: [],
       position: { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 },
       size: { width: 500, height: 350 },
+      backendType: sandbox.backend as WorktreeNode['backendType'],
+      ip: sandbox.guestIp,
     };
     addNode(newNode);
     setShowAddMenu(false);
@@ -361,30 +365,31 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowAddMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg rounded max-h-[300px] overflow-y-auto">
-                  {availableContainers.length === 0 ? (
+                  {availableSandboxes.length === 0 ? (
                     <div className="px-4 py-3 text-xs text-[hsl(var(--text-muted))]">
-                      {!containers
-                        ? 'Loading containers...'
-                        : containers.length === 0
-                        ? 'No containers found from API.'
-                        : runningContainers.length === 0
-                        ? `${containers.length} container(s) found but none running (states: ${containers.map(c => c.state).join(', ')})`
-                        : `${runningContainers.length} running but all already on canvas.`}
+                      {!sandboxes
+                        ? 'Loading sandboxes...'
+                        : sandboxes.length === 0
+                        ? 'No sandboxes found.'
+                        : runningSandboxes.length === 0
+                        ? `${sandboxes.length} sandbox(es) found but none running.`
+                        : `${runningSandboxes.length} running but all already on canvas.`}
                     </div>
                   ) : (
-                    availableContainers.map(container => (
+                    availableSandboxes.map(sandbox => (
                       <button
-                        key={container.id}
-                        onClick={() => handleAddToCanvas(container)}
+                        key={sandbox.id}
+                        onClick={() => handleAddToCanvas(sandbox)}
                         className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[hsl(var(--bg-elevated))] transition-colors"
                       >
                         <GitBranch className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-[hsl(var(--text-primary))] truncate">
-                            {container.name}
+                            {sandbox.name}
                           </div>
                           <div className="text-[10px] text-[hsl(var(--text-muted))] truncate">
-                            {container.image}
+                            {sandbox.image}
+                            <span className="ml-1 opacity-60">{sandbox.backend}</span>
                           </div>
                         </div>
                       </button>
@@ -414,7 +419,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
                 No sandboxes on canvas
               </div>
               <div className="text-xs text-[hsl(var(--text-muted))] opacity-60">
-                Add a running container to get started, then fork worktrees from it
+                Add a running sandbox to get started, then fork worktrees from it
               </div>
             </div>
           </div>
