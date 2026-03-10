@@ -26,6 +26,7 @@ export function useCreateQuickFile() {
       destPath: string;
       content: string;
       isDefault?: boolean;
+      isSensitive?: boolean;
     }) => api.createQuickFile(input),
     onSuccess: (newFile) => {
       queryClient.setQueryData<{ files: QuickFile[] }>(
@@ -55,6 +56,7 @@ export function useUpdateQuickFile() {
         destPath?: string;
         content?: string;
         isDefault?: boolean;
+        isSensitive?: boolean;
       };
     }) => api.updateQuickFile(id, updates),
     onSuccess: (updatedFile) => {

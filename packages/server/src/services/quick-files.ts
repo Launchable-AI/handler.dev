@@ -9,6 +9,7 @@ export interface QuickFile {
   destPath: string;
   content: string;
   isDefault: boolean;
+  isSensitive?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +74,7 @@ export async function createQuickFile(input: {
   destPath: string;
   content: string;
   isDefault?: boolean;
+  isSensitive?: boolean;
 }): Promise<QuickFile> {
   const data = await loadData();
   const now = new Date().toISOString();
@@ -84,6 +86,7 @@ export async function createQuickFile(input: {
     destPath: input.destPath,
     content: input.content,
     isDefault: input.isDefault ?? false,
+    ...(input.isSensitive && { isSensitive: true }),
     createdAt: now,
     updatedAt: now,
   };
@@ -99,6 +102,7 @@ export async function updateQuickFile(id: string, input: {
   destPath?: string;
   content?: string;
   isDefault?: boolean;
+  isSensitive?: boolean;
 }): Promise<QuickFile | null> {
   const data = await loadData();
   const index = data.files.findIndex(f => f.id === id);
@@ -115,6 +119,7 @@ export async function updateQuickFile(id: string, input: {
     ...(input.destPath !== undefined && { destPath: input.destPath }),
     ...(input.content !== undefined && { content: input.content }),
     ...(input.isDefault !== undefined && { isDefault: input.isDefault }),
+    ...(input.isSensitive !== undefined && { isSensitive: input.isSensitive }),
     updatedAt: new Date().toISOString(),
   };
 

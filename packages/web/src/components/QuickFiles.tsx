@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { Plus, X, Loader2, Trash2, Edit3, Send, Star, FileText } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Plus, X, Loader2, Trash2, Edit3, Send, Star, FileText, Upload, EyeOff, Eye } from 'lucide-react';
 import { useQuickFiles, useCreateQuickFile, useUpdateQuickFile, useDeleteQuickFile, useCopyQuickFileToSandbox } from '../hooks/useQuickFiles';
 import { useSandboxes } from '../hooks/useSandboxes';
 import type { QuickFile } from '../api/client';
 
 interface QuickFileModalProps {
   file?: QuickFile | null;
+  initialData?: { name: string; destPath: string; content: string } | null;
   onClose: () => void;
   onSave: (data: {
     name: string;
@@ -13,14 +14,16 @@ interface QuickFileModalProps {
     destPath: string;
     content: string;
     isDefault: boolean;
+    isSensitive: boolean;
   }) => Promise<void>;
 }
 
-function QuickFileModal({ file, onClose, onSave }: QuickFileModalProps) {
-  const [name, setName] = useState(file?.name || '');
-  const [destPath, setDestPath] = useState(file?.destPath || '');
-  const [content, setContent] = useState(file?.content || '');
+function QuickFileModal({ file, initialData, onClose, onSave }: QuickFileModalProps) {
+  const [name, setName] = useState(initialData?.name || file?.name || '');
+  const [destPath, setDestPath] = useState(initialData?.destPath || file?.destPath || '');
+  const [content, setContent] = useState(initialData?.content || file?.content || '');
   const [isDefault, setIsDefault] = useState(file?.isDefault || false);
+  const [isSensitive, setIsSensitive] = useState(file?.isSensitive || false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +46,7 @@ function QuickFileModal({ file, onClose, onSave }: QuickFileModalProps) {
         destPath: destPath.trim(),
         content,
         isDefault,
+        isSensitive,
       });
       onClose();
     } catch (err) {
@@ -90,11 +94,11 @@ function QuickFileModal({ file, onClose, onSave }: QuickFileModalProps) {
                 type="text"
                 value={destPath}
                 onChange={(e) => setDestPath(e.target.value)}
-                placeholder="e.g., /root/.bashrc or /home/dev/AGENT.md"
+                placeholder="e.g., /home/agent/.bashrc"
                 className="w-full px-3 py-2 text-xs font-mono bg-[hsl(var(--input-bg))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder:text-[hsl(var(--text-muted))] focus:border-[hsl(var(--cyan))] focus:outline-none"
               />
               <p className="text-[10px] text-[hsl(var(--text-muted))]">
-                Full path inside the sandbox where this file will be placed
+                Full path inside the sandbox (use /home/agent/ for VMs, ~ expands per backend)
               </p>
             </div>
 
@@ -111,7 +115,7 @@ function QuickFileModal({ file, onClose, onSave }: QuickFileModalProps) {
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setIsDefault(!isDefault)}
@@ -124,8 +128,20 @@ function QuickFileModal({ file, onClose, onSave }: QuickFileModalProps) {
                 <Star className={`h-3 w-3 ${isDefault ? 'fill-current' : ''}`} />
                 Default
               </button>
+              <button
+                type="button"
+                onClick={() => setIsSensitive(!isSensitive)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border transition-colors ${
+                  isSensitive
+                    ? 'bg-[hsl(var(--red)/0.15)] border-[hsl(var(--red)/0.4)] text-[hsl(var(--red))]'
+                    : 'bg-transparent border-[hsl(var(--border))] text-[hsl(var(--text-muted))] hover:border-[hsl(var(--red)/0.4)] hover:text-[hsl(var(--red))]'
+                }`}
+              >
+                {isSensitive ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                Sensitive
+              </button>
               <span className="text-[10px] text-[hsl(var(--text-muted))]">
-                Default files are automatically copied into new sandboxes
+                Default files are auto-injected; sensitive files have hidden previews
               </span>
             </div>
 
@@ -161,6 +177,48 @@ function QuickFileModal({ file, onClose, onSave }: QuickFileModalProps) {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function FileCardContent({ file }: { file: QuickFile }) {
+  const [revealed, setRevealed] = useState(false);
+
+  return (
+    <div className="p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <code className="text-[10px] font-mono text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] px-1.5 py-0.5">
+          {file.destPath}
+        </code>
+      </div>
+      {file.isSensitive && !revealed ? (
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-[hsl(var(--text-muted))] italic">
+            Content hidden (sensitive)
+          </span>
+          <button
+            onClick={() => setRevealed(true)}
+            className="text-[10px] text-[hsl(var(--cyan))] hover:text-[hsl(var(--cyan)/0.8)]"
+          >
+            Reveal
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          {file.isSensitive && revealed && (
+            <button
+              onClick={() => setRevealed(false)}
+              className="absolute top-0 right-0 flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-[hsl(var(--red))] bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.3)] hover:bg-[hsl(var(--red)/0.2)]"
+            >
+              <EyeOff className="h-2.5 w-2.5" />
+              Hide
+            </button>
+          )}
+          <pre className="text-[11px] font-mono text-[hsl(var(--text-secondary))] whitespace-pre-wrap break-all max-h-32 overflow-auto">
+            {file.content}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -292,7 +350,9 @@ export function QuickFiles() {
 
   const [showModal, setShowModal] = useState(false);
   const [editingFile, setEditingFile] = useState<QuickFile | null>(null);
+  const [uploadInitialData, setUploadInitialData] = useState<{ name: string; destPath: string; content: string } | null>(null);
   const [copyingFile, setCopyingFile] = useState<QuickFile | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const files = data?.files || [];
 
@@ -302,6 +362,7 @@ export function QuickFiles() {
     destPath: string;
     content: string;
     isDefault: boolean;
+    isSensitive: boolean;
   }) => {
     await createMutation.mutateAsync(data);
   };
@@ -312,6 +373,7 @@ export function QuickFiles() {
     destPath: string;
     content: string;
     isDefault: boolean;
+    isSensitive: boolean;
   }) => {
     if (!editingFile) return;
     await updateMutation.mutateAsync({ id: editingFile.id, updates: data });
@@ -323,17 +385,41 @@ export function QuickFiles() {
 
   const openCreateModal = () => {
     setEditingFile(null);
+    setUploadInitialData(null);
     setShowModal(true);
   };
 
   const openEditModal = (file: QuickFile) => {
     setEditingFile(file);
+    setUploadInitialData(null);
     setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setEditingFile(null);
+    setUploadInitialData(null);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = reader.result as string;
+      setEditingFile(null);
+      setUploadInitialData({
+        name: file.name,
+        destPath: `/home/agent/${file.name}`,
+        content,
+      });
+      setShowModal(true);
+    };
+    reader.readAsText(file);
+
+    // Reset input so the same file can be re-selected
+    e.target.value = '';
   };
 
   return (
@@ -349,13 +435,28 @@ export function QuickFiles() {
               Reusable files that can be copied into sandboxes. Default files are auto-injected on creation.
             </p>
           </div>
-          <button
-            onClick={openCreateModal}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
-          >
-            <Plus className="h-3 w-3" />
-            New
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))]"
+            >
+              <Upload className="h-3 w-3" />
+              Upload
+            </button>
+            <button
+              onClick={openCreateModal}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"
+            >
+              <Plus className="h-3 w-3" />
+              New
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+          </div>
         </div>
 
         {/* File Cards */}
@@ -404,6 +505,12 @@ export function QuickFiles() {
                           Default
                         </span>
                       )}
+                      {file.isSensitive && (
+                        <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] uppercase tracking-wider bg-[hsl(var(--red)/0.2)] text-[hsl(var(--red))] shrink-0">
+                          <EyeOff className="h-2 w-2" />
+                          Sensitive
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       <button
@@ -429,16 +536,7 @@ export function QuickFiles() {
                       </button>
                     </div>
                   </div>
-                  <div className="p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <code className="text-[10px] font-mono text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] px-1.5 py-0.5">
-                        {file.destPath}
-                      </code>
-                    </div>
-                    <pre className="text-[11px] font-mono text-[hsl(var(--text-secondary))] whitespace-pre-wrap break-all max-h-32 overflow-auto">
-                      {file.content}
-                    </pre>
-                  </div>
+                  <FileCardContent file={file} />
                 </div>
               ))}
             </div>
@@ -450,6 +548,7 @@ export function QuickFiles() {
       {showModal && (
         <QuickFileModal
           file={editingFile}
+          initialData={uploadInitialData}
           onClose={closeModal}
           onSave={editingFile ? handleUpdate : handleCreate}
         />

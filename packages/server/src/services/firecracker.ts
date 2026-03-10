@@ -784,8 +784,9 @@ export class FirecrackerService extends EventEmitter {
       const desiredBytes = desiredSize * 1024 * 1024 * 1024;
       if (desiredBytes > currentBytes) {
         console.log(`[FirecrackerService] Expanding overlay from ${(currentBytes / 1024 / 1024 / 1024).toFixed(0)}GB to ${desiredSize}GB for VM ${vm.id}`);
-        execSync(`truncate -s ${desiredSize}G "${overlayPath}"`, { stdio: 'pipe' });
-        execSync(`resize2fs "${overlayPath}"`, { stdio: 'pipe' });
+        execFileSync('truncate', ['-s', `${desiredSize}G`, overlayPath], { stdio: 'pipe' });
+        execFileSync('e2fsck', ['-f', '-y', overlayPath], { stdio: 'pipe' });
+        execFileSync('resize2fs', [overlayPath], { stdio: 'pipe' });
       }
     }
 
@@ -804,8 +805,9 @@ export class FirecrackerService extends EventEmitter {
       const desiredBytes = dockerVolumeSize * 1024 * 1024 * 1024;
       if (desiredBytes > currentBytes) {
         console.log(`[FirecrackerService] Expanding Docker volume from ${(currentBytes / 1024 / 1024 / 1024).toFixed(0)}GB to ${dockerVolumeSize}GB for VM ${vm.id}`);
-        execSync(`truncate -s ${dockerVolumeSize}G "${dockerVolumePath}"`, { stdio: 'pipe' });
-        execSync(`resize2fs "${dockerVolumePath}"`, { stdio: 'pipe' });
+        execFileSync('truncate', ['-s', `${dockerVolumeSize}G`, dockerVolumePath], { stdio: 'pipe' });
+        execFileSync('e2fsck', ['-f', '-y', dockerVolumePath], { stdio: 'pipe' });
+        execFileSync('resize2fs', [dockerVolumePath], { stdio: 'pipe' });
       }
     }
 

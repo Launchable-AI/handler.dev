@@ -14,6 +14,7 @@ const CreateQuickFileSchema = z.object({
   destPath: z.string().min(1),
   content: z.string(),
   isDefault: z.boolean().optional(),
+  isSensitive: z.boolean().optional(),
 });
 
 const UpdateQuickFileSchema = z.object({
@@ -22,6 +23,7 @@ const UpdateQuickFileSchema = z.object({
   destPath: z.string().min(1).optional(),
   content: z.string().optional(),
   isDefault: z.boolean().optional(),
+  isSensitive: z.boolean().optional(),
 });
 
 /**

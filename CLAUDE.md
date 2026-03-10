@@ -306,6 +306,21 @@ Key files:
 - `scripts/dev/upload-fc-image.sh` — Upload script with layer image detection and S3 config env vars
 - `scripts/dev/global-manifest.json` — Global image manifest with `default` field support
 
+### Quick Files
+
+Reusable files that can be copied into sandboxes. Default files are auto-injected on sandbox creation.
+
+- **Sensitive flag**: `isSensitive?: boolean` on `QuickFile` — hides content preview in the UI with a "Reveal" toggle. Used for SSH keys, tokens, etc.
+- **Upload from system**: The "Upload" button reads a local file via `FileReader.readAsText()` and opens the create modal pre-filled with the file's name, content, and a default destination path of `/home/agent/{filename}`.
+- **Destination paths**: VMs use `/home/agent/` as the home directory (placeholder: `/home/agent/.bashrc`). Docker containers typically use `/root/`.
+
+Key files:
+- `packages/server/src/services/quick-files.ts` — CRUD service with `isSensitive` field
+- `packages/server/src/routes/quick-files.ts` — Routes with zod validation, copy-to-sandbox endpoints
+- `packages/web/src/components/QuickFiles.tsx` — UI with create/edit modal, sensitive content masking, file upload
+- `packages/web/src/hooks/useQuickFiles.ts` — React Query hooks
+- `packages/web/src/api/client.ts` — `QuickFile` type, `createQuickFile()`, `updateQuickFile()` client functions
+
 ### Dynamic Data Directory
 
 The data directory is configurable via Settings > General > Data Directory. When changed, all services dynamically resolve paths using `getDataPath()` from `packages/server/src/services/data-dir.ts` instead of the static `DATA_DIR` constant.

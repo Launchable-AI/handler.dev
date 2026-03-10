@@ -1152,6 +1152,7 @@ export interface QuickFile {
   destPath: string;
   content: string;
   isDefault: boolean;
+  isSensitive?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1166,6 +1167,7 @@ export async function createQuickFile(input: {
   destPath: string;
   content: string;
   isDefault?: boolean;
+  isSensitive?: boolean;
 }): Promise<QuickFile> {
   return fetchAPI('/quick-files', {
     method: 'POST',
@@ -1179,6 +1181,7 @@ export async function updateQuickFile(id: string, input: {
   destPath?: string;
   content?: string;
   isDefault?: boolean;
+  isSensitive?: boolean;
 }): Promise<QuickFile> {
   return fetchAPI(`/quick-files/${encodeURIComponent(id)}`, {
     method: 'PATCH',
