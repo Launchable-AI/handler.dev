@@ -198,6 +198,13 @@ export class FirecrackerService extends EventEmitter {
     const STARTUP_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
     for (const [id, vm] of this.vms) {
+      // Clear stale statusMessage from previous server sessions (e.g. server restarted during snapshot)
+      if (vm.statusMessage) {
+        console.log(`[FirecrackerService] Clearing stale statusMessage for VM ${id}: "${vm.statusMessage}"`);
+        vm.statusMessage = undefined;
+        await this.saveVmState(vm);
+      }
+
       // Recover VMs stuck in paused state (e.g. server restarted during snapshot)
       if (vm.status === 'paused' && vm.pid) {
         if (this.isProcessRunning(vm.pid) && vm.apiSocket && fs.existsSync(vm.apiSocket)) {
@@ -764,25 +771,42 @@ export class FirecrackerService extends EventEmitter {
       parentLayers.push(layerPath);
     }
 
-    // Create VM's own overlay
+    // Create or expand VM's own overlay
     const overlayPath = path.join(vmDir, 'overlay.ext4');
+    const desiredSize = Math.max(vm.diskGb || 5, 5);
     if (!fs.existsSync(overlayPath)) {
-      const overlaySize = Math.max(vm.diskGb || 5, 5); // At least 5GB for overlay
-      console.log(`[FirecrackerService] Creating ${overlaySize}GB overlay for VM ${vm.id} (sparse, ~1MB actual)`);
-      execSync(`truncate -s ${overlaySize}G "${overlayPath}"`, { stdio: 'pipe' });
+      console.log(`[FirecrackerService] Creating ${desiredSize}GB overlay for VM ${vm.id} (sparse, ~1MB actual)`);
+      execSync(`truncate -s ${desiredSize}G "${overlayPath}"`, { stdio: 'pipe' });
       execSync(`mkfs.ext4 -F -q "${overlayPath}"`, { stdio: 'pipe' });
-
+    } else {
+      // Expand if diskGb increased since creation
+      const currentBytes = fs.statSync(overlayPath).size;
+      const desiredBytes = desiredSize * 1024 * 1024 * 1024;
+      if (desiredBytes > currentBytes) {
+        console.log(`[FirecrackerService] Expanding overlay from ${(currentBytes / 1024 / 1024 / 1024).toFixed(0)}GB to ${desiredSize}GB for VM ${vm.id}`);
+        execSync(`truncate -s ${desiredSize}G "${overlayPath}"`, { stdio: 'pipe' });
+        execSync(`resize2fs "${overlayPath}"`, { stdio: 'pipe' });
+      }
     }
 
-    // Create dedicated Docker volume (ext4, for /var/lib/docker)
+    // Create or expand dedicated Docker volume (ext4, for /var/lib/docker)
     // This avoids nested overlayfs issues: Docker overlay2 operates on ext4 directly
     // instead of on top of the guest's overlayfs root.
     const dockerVolumePath = path.join(vmDir, 'docker-volume.ext4');
+    const dockerVolumeSize = Math.max(vm.diskGb || 10, 5);
     if (!fs.existsSync(dockerVolumePath)) {
-      const dockerVolumeSize = Math.max(vm.diskGb || 10, 5); // At least 5GB for Docker images
       console.log(`[FirecrackerService] Creating ${dockerVolumeSize}GB Docker volume for VM ${vm.id} (sparse)`);
       execSync(`truncate -s ${dockerVolumeSize}G "${dockerVolumePath}"`, { stdio: 'pipe' });
       execSync(`mkfs.ext4 -F -q "${dockerVolumePath}"`, { stdio: 'pipe' });
+    } else {
+      // Expand if diskGb increased since creation
+      const currentBytes = fs.statSync(dockerVolumePath).size;
+      const desiredBytes = dockerVolumeSize * 1024 * 1024 * 1024;
+      if (desiredBytes > currentBytes) {
+        console.log(`[FirecrackerService] Expanding Docker volume from ${(currentBytes / 1024 / 1024 / 1024).toFixed(0)}GB to ${dockerVolumeSize}GB for VM ${vm.id}`);
+        execSync(`truncate -s ${dockerVolumeSize}G "${dockerVolumePath}"`, { stdio: 'pipe' });
+        execSync(`resize2fs "${dockerVolumePath}"`, { stdio: 'pipe' });
+      }
     }
 
     return {
