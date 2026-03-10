@@ -213,6 +213,13 @@ export function TerminalInstance({
         }
         URL_SCAN_RE.lastIndex = 0;
         setDetectedUrls(urls);
+        // Prune dismissed URLs that are no longer visible — if a URL disappears
+        // (server stopped, scrolled away) and reappears later, show it again
+        const currentUrls = new Set(urls.map(u => u.url));
+        setDismissedUrls(prev => {
+          const pruned = new Set([...prev].filter(u => currentUrls.has(u)));
+          return pruned.size === prev.size ? prev : pruned;
+        });
         onUrlsDetectedRef.current?.(urls.map(u => u.url));
       }, 300);
     };
