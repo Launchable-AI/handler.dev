@@ -585,23 +585,35 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
     setError(null);
     const fileList = Array.from(files);
 
+    // Filter out common large/unnecessary directories for folder uploads
+    const EXCLUDED_DIRS = /^[^/]+\/(node_modules|\.git|\.next|\.nuxt|dist|build|\.cache|\.turbo|__pycache__|\.venv|venv|target)\//;
+    const effectiveList = isFolder
+      ? fileList.filter(file => !EXCLUDED_DIRS.test(file.webkitRelativePath))
+      : fileList;
+
+    if (effectiveList.length === 0) {
+      console.warn('No files remaining after filtering');
+      setIsUploading(false);
+      return;
+    }
+
     // Calculate total size
-    const totalSize = fileList.reduce((sum, f) => sum + f.size, 0);
-    const displayName = isFolder && fileList.length > 1
-      ? fileList[0].webkitRelativePath.split('/')[0] || 'folder'
-      : fileList[0].name;
+    const totalSize = effectiveList.reduce((sum, f) => sum + f.size, 0);
+    const displayName = isFolder
+      ? effectiveList[0].webkitRelativePath.split('/')[0] || 'folder'
+      : effectiveList[0].name;
 
     setUploadDetails({
       fileName: displayName,
-      fileCount: fileList.length,
+      fileCount: effectiveList.length,
       loaded: 0,
       total: totalSize,
     });
 
     try {
-      if (isFolder && fileList.length > 1) {
+      if (isFolder) {
         // For folder uploads, use the directory upload endpoint (tar-based, single transfer)
-        const filesWithPaths = fileList.map(file => ({
+        const filesWithPaths = effectiveList.map(file => ({
           file,
           relativePath: file.webkitRelativePath || file.name,
         }));

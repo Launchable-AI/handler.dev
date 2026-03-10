@@ -35,13 +35,17 @@ export function validatePath(inputPath: string): string {
 }
 
 export function validateFilename(name: string): string {
-  if (!name || name.includes('/') || name.includes('\\') || name.includes('\0')) {
+  if (!name || name.includes('\0')) {
     throw new Error('Invalid filename');
   }
-  if (name === '.' || name === '..' || name.length > 255) {
+  // Extract basename if the browser sends a path (e.g., webkitdirectory files)
+  const basename = name.includes('/') ? name.split('/').pop()!
+    : name.includes('\\') ? name.split('\\').pop()!
+    : name;
+  if (!basename || basename === '.' || basename === '..' || basename.length > 255) {
     throw new Error('Invalid filename');
   }
-  return name;
+  return basename;
 }
 
 export function validateIpAddress(ip: string): string {

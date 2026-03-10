@@ -172,8 +172,15 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
     const fileList = Array.from(files);
 
     try {
-      if (isFolder && fileList.length > 1) {
-        const filesWithPaths = fileList.map(file => ({
+      if (isFolder) {
+        // Filter out common large/unnecessary directories
+        const EXCLUDED_DIRS = /^[^/]+\/(node_modules|\.git|\.next|\.nuxt|dist|build|\.cache|\.turbo|__pycache__|\.venv|venv|target)\//;
+        const filtered = fileList.filter(file => !EXCLUDED_DIRS.test(file.webkitRelativePath));
+        if (filtered.length === 0) {
+          console.warn('No files remaining after filtering');
+          return;
+        }
+        const filesWithPaths = filtered.map(file => ({
           file,
           relativePath: file.webkitRelativePath || file.name,
         }));

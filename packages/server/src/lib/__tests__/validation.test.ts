@@ -84,9 +84,10 @@ describe('validateFilename', () => {
     expect(() => validateFilename('')).toThrow('Invalid filename');
   });
 
-  it('rejects filenames with path separators', () => {
-    expect(() => validateFilename('path/file.txt')).toThrow('Invalid filename');
-    expect(() => validateFilename('path\\file.txt')).toThrow('Invalid filename');
+  it('extracts basename from filenames with path separators', () => {
+    expect(validateFilename('path/file.txt')).toBe('file.txt');
+    expect(validateFilename('path\\file.txt')).toBe('file.txt');
+    expect(validateFilename('a/b/c/deep.js')).toBe('deep.js');
   });
 
   it('rejects null bytes', () => {
