@@ -381,7 +381,14 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
       {/* Status */}
       {isColumnVisible('status') && (
         <td className="px-3 py-2">
-          <StatusIndicator status={sandbox.status} size="sm" />
+          <div className="flex items-center gap-1.5">
+            <StatusIndicator status={sandbox.status} size="sm" />
+            {sandbox.statusMessage && sandbox.status !== 'error' && (
+              <span className="text-[9px] text-[hsl(var(--cyan))] truncate max-w-[120px]" title={sandbox.statusMessage}>
+                {sandbox.statusMessage}
+              </span>
+            )}
+          </div>
         </td>
       )}
 

@@ -364,6 +364,14 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
       )}
       {!metrics && <div className="mb-3" />}
 
+      {/* Status message (e.g. snapshotting progress) */}
+      {sandbox.statusMessage && !isFailed && (
+        <div className="flex items-center gap-1.5 mb-2 p-1.5 bg-[hsl(var(--cyan)/0.05)] border border-[hsl(var(--cyan)/0.2)]">
+          <Loader2 className="h-3 w-3 text-[hsl(var(--cyan))] animate-spin shrink-0" />
+          <span className="text-[9px] text-[hsl(var(--cyan))] truncate">{sandbox.statusMessage}</span>
+        </div>
+      )}
+
       {/* Connect Command (if running) - Docker exec for containers, SSH for VMs */}
       {isRunning && connectCommand && (
         <div className="flex items-center gap-1 mb-2 p-1.5 bg-[hsl(var(--bg-base))] border border-[hsl(var(--border))]">

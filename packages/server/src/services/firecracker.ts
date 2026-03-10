@@ -604,7 +604,7 @@ export class FirecrackerService extends EventEmitter {
           this.killProcessGroup(pid);
         }
         // Wait for orphans to die
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 250));
       }
 
       if (vm.status === 'error' || vm.status === 'creating' || vm.status === 'booting') {
@@ -1234,13 +1234,13 @@ export class FirecrackerService extends EventEmitter {
           '-i', sshKeyPath,
           '-o', 'StrictHostKeyChecking=no',
           '-o', 'UserKnownHostsFile=/dev/null',
-          '-o', 'ConnectTimeout=10',
+          '-o', 'ConnectTimeout=3',
           '-o', 'IdentitiesOnly=yes',
           '-o', 'BatchMode=yes',
           `agent@${host}`,
           '-p', port!.toString(),
           'echo ready',
-        ], { stdio: 'pipe', timeout: 15000 });
+        ], { stdio: 'pipe', timeout: 5000 });
         console.log(`${tag} SSH ready after ${Math.round((Date.now() - startTime) / 1000)}s (attempt ${sshAttempts})`);
         return;
       } catch (err: unknown) {
@@ -1271,7 +1271,7 @@ export class FirecrackerService extends EventEmitter {
         }
 
         // On the last attempt before timeout, dump full verbose output
-        if (Date.now() - startTime + 15000 > timeoutMs) {
+        if (Date.now() - startTime + 5000 > timeoutMs) {
           console.warn(`${tag} FULL SSH DIAGNOSTIC (attempt ${sshAttempts}):`);
           for (const line of stderrLines.slice(-30)) {
             console.warn(`${tag}   ${line}`);
@@ -1303,7 +1303,7 @@ export class FirecrackerService extends EventEmitter {
             `Errors: ${errorLines.join(' | ') || 'none'}`
           );
         }
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
   }
@@ -1702,6 +1702,7 @@ export class FirecrackerService extends EventEmitter {
 
     // Pause → snapshot → resume: keep the pause window as short as possible
     const wasRunning = vm.status === 'running';
+    vm.statusMessage = 'Snapshotting: capturing VM state…';
     if (wasRunning) {
       await this.pauseVm(id);
     }
@@ -1719,6 +1720,8 @@ export class FirecrackerService extends EventEmitter {
         await this.resumeVm(id);
       }
     }
+
+    vm.statusMessage = 'Snapshotting: copying disk in background…';
 
     // Save metadata with diskReady: false (disk copy pending)
     const snapshotInfo: FirecrackerSnapshotInfo = {
@@ -1755,14 +1758,17 @@ export class FirecrackerService extends EventEmitter {
         } else {
           console.error(`[FirecrackerService] Snapshot ${snapshotId} disk copy failed (exit ${code})`);
         }
+        vm.statusMessage = undefined;
       });
       copyProc.on('error', (err) => {
         console.error(`[FirecrackerService] Snapshot ${snapshotId} disk copy error:`, err);
+        vm.statusMessage = undefined;
       });
     } else {
       // No overlay disk — mark as ready immediately
       snapshotInfo.diskReady = true;
       fs.writeFileSync(metadataPath, JSON.stringify(snapshotInfo, null, 2));
+      vm.statusMessage = undefined;
       console.warn(`[FirecrackerService] VM disk not found at ${vmDiskPath}`);
     }
 
