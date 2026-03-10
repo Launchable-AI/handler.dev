@@ -334,6 +334,8 @@ export interface FirecrackerSnapshotInfo {
   sizeBytes?: number;
   /** Whether this is the quick launch default */
   isQuickLaunchDefault?: boolean;
+  /** Whether the disk copy has completed (false while background copy is in progress) */
+  diskReady?: boolean;
 }
 
 // ============================================================================

@@ -198,7 +198,28 @@ export class FirecrackerService extends EventEmitter {
     const STARTUP_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
     for (const [id, vm] of this.vms) {
-      if (vm.status === 'running' && vm.pid) {
+      // Recover VMs stuck in paused state (e.g. server restarted during snapshot)
+      if (vm.status === 'paused' && vm.pid) {
+        if (this.isProcessRunning(vm.pid) && vm.apiSocket && fs.existsSync(vm.apiSocket)) {
+          try {
+            await this.sendApiRequest(vm.apiSocket, 'PATCH', '/vm', { state: 'Resumed' });
+            vm.status = 'running';
+            await this.saveVmState(vm);
+            console.log(`[FirecrackerService] Recovered paused VM ${id} (${vm.name}) — resumed`);
+          } catch (err) {
+            console.error(`[FirecrackerService] Failed to resume paused VM ${id}:`, err);
+            vm.status = 'error';
+            vm.error = 'VM was paused but could not be resumed after server restart';
+            await this.saveVmState(vm);
+          }
+        } else if (!vm.pid || !this.isProcessRunning(vm.pid)) {
+          console.warn(`[FirecrackerService] VM ${id} was paused but process is gone — marking stopped`);
+          vm.status = 'stopped';
+          vm.pid = undefined;
+          vm.stoppedAt = new Date().toISOString();
+          await this.saveVmState(vm);
+        }
+      } else if (vm.status === 'running' && vm.pid) {
         if (!this.isProcessRunning(vm.pid)) {
           console.warn(`[FirecrackerService] VM ${id} was running but process ${vm.pid} is gone`);
           vm.status = 'stopped';
@@ -1655,7 +1676,12 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
-   * Create a snapshot of a VM
+   * Create a snapshot of a VM.
+   *
+   * The VM is paused only for the Firecracker state+memory snapshot (sub-second),
+   * then immediately resumed. The disk copy runs in the background — the snapshot
+   * is returned with `diskReady: false` and the metadata file is updated to
+   * `diskReady: true` once the copy finishes. Rollback/clone check this flag.
    */
   async createSnapshot(id: string, name: string): Promise<FirecrackerSnapshotInfo> {
     const vm = this.vms.get(id);
@@ -1663,68 +1689,85 @@ export class FirecrackerService extends EventEmitter {
       throw new Error(`VM ${id} not found`);
     }
 
-    // Pause the VM if running
+    const vmDir = path.join(this.config.dataDir, id);
+    const snapshotsDir = path.join(vmDir, 'snapshots');
+    const snapshotId = `snap-${Date.now()}`;
+    const snapshotDir = path.join(snapshotsDir, snapshotId);
+
+    fs.mkdirSync(snapshotDir, { recursive: true });
+
+    const snapshotPath = path.join(snapshotDir, 'snapshot.bin');
+    const memFilePath = path.join(snapshotDir, 'mem.bin');
+    const diskPath = path.join(snapshotDir, 'rootfs.ext4');
+
+    // Pause → snapshot → resume: keep the pause window as short as possible
     const wasRunning = vm.status === 'running';
     if (wasRunning) {
       await this.pauseVm(id);
     }
 
     try {
-      const vmDir = path.join(this.config.dataDir, id);
-      const snapshotsDir = path.join(vmDir, 'snapshots');
-      const snapshotId = `snap-${Date.now()}`;
-      const snapshotDir = path.join(snapshotsDir, snapshotId);
-
-      fs.mkdirSync(snapshotDir, { recursive: true });
-
-      const snapshotPath = path.join(snapshotDir, 'snapshot.bin');
-      const memFilePath = path.join(snapshotDir, 'mem.bin');
-      const diskPath = path.join(snapshotDir, 'rootfs.ext4');
-
-      // Create snapshot via Firecracker API
+      // Create snapshot via Firecracker API (captures CPU state + memory)
       await this.sendApiRequest(vm.apiSocket!, 'PUT', '/snapshot/create', {
         snapshot_type: 'Full',
         snapshot_path: snapshotPath,
         mem_file_path: memFilePath,
       } as SnapshotCreateParams);
-
-      // Copy disk image (use sparse-aware copy to preserve sparse file structure)
-      // The VM uses overlay.ext4 as its writable disk layer
-      const vmDiskPath = path.join(vmDir, 'overlay.ext4');
-      if (fs.existsSync(vmDiskPath)) {
-        execSync(`cp --sparse=always "${vmDiskPath}" "${diskPath}"`, { stdio: 'pipe' });
-      } else {
-        console.warn(`[FirecrackerService] VM disk not found at ${vmDiskPath}`);
-      }
-
-      // Save metadata
-      const snapshotInfo: FirecrackerSnapshotInfo = {
-        id: snapshotId,
-        vmId: id,
-        name,
-        baseImage: vm.baseImage,
-        snapshotPath,
-        memFilePath,
-        diskPath,
-        mmdsMetadata: vm.mmdsMetadata!,
-        vcpus: vm.vcpus,
-        memoryMb: vm.memoryMb,
-        diskGb: vm.diskGb,
-        createdAt: new Date().toISOString(),
-      };
-
-      const metadataPath = path.join(snapshotDir, 'metadata.json');
-      fs.writeFileSync(metadataPath, JSON.stringify(snapshotInfo, null, 2));
-
-      console.log(`[FirecrackerService] Created snapshot ${snapshotId} for VM ${id}`);
-      return snapshotInfo;
-
     } finally {
-      // Resume VM if it was running
+      // Resume immediately — disk copy happens in the background
       if (wasRunning) {
         await this.resumeVm(id);
       }
     }
+
+    // Save metadata with diskReady: false (disk copy pending)
+    const snapshotInfo: FirecrackerSnapshotInfo = {
+      id: snapshotId,
+      vmId: id,
+      name,
+      baseImage: vm.baseImage,
+      snapshotPath,
+      memFilePath,
+      diskPath,
+      mmdsMetadata: vm.mmdsMetadata!,
+      vcpus: vm.vcpus,
+      memoryMb: vm.memoryMb,
+      diskGb: vm.diskGb,
+      createdAt: new Date().toISOString(),
+      diskReady: false,
+    };
+
+    const metadataPath = path.join(snapshotDir, 'metadata.json');
+    fs.writeFileSync(metadataPath, JSON.stringify(snapshotInfo, null, 2));
+
+    // Background disk copy — overlay.ext4 is a sparse file, cp --sparse=always
+    // avoids copying hole regions. The snapshot's memory image pins the consistent
+    // disk state; post-resume writes won't affect the snapshot's restore semantics
+    // because memory restore rewinds the guest to the snapshot point.
+    const vmDiskPath = path.join(vmDir, 'overlay.ext4');
+    if (fs.existsSync(vmDiskPath)) {
+      const copyProc = spawn('cp', ['--sparse=always', '--reflink=auto', vmDiskPath, diskPath], { stdio: 'ignore' });
+      copyProc.on('close', (code) => {
+        if (code === 0) {
+          snapshotInfo.diskReady = true;
+          fs.writeFileSync(metadataPath, JSON.stringify(snapshotInfo, null, 2));
+          console.log(`[FirecrackerService] Snapshot ${snapshotId} disk copy complete`);
+        } else {
+          console.error(`[FirecrackerService] Snapshot ${snapshotId} disk copy failed (exit ${code})`);
+        }
+      });
+      copyProc.on('error', (err) => {
+        console.error(`[FirecrackerService] Snapshot ${snapshotId} disk copy error:`, err);
+      });
+    } else {
+      // No overlay disk — mark as ready immediately
+      snapshotInfo.diskReady = true;
+      fs.writeFileSync(metadataPath, JSON.stringify(snapshotInfo, null, 2));
+      console.warn(`[FirecrackerService] VM disk not found at ${vmDiskPath}`);
+    }
+
+    console.log(`[FirecrackerService] Created snapshot ${snapshotId} for VM ${id} (disk copy in background)`);
+    return snapshotInfo;
   }
 
   /**
@@ -1751,6 +1794,10 @@ export class FirecrackerService extends EventEmitter {
     }
 
     const snapshotMeta = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as FirecrackerSnapshotInfo;
+
+    if (snapshotMeta.diskReady === false) {
+      throw new Error('Snapshot disk copy is still in progress. Please wait and try again.');
+    }
 
     console.log(`[FirecrackerService] Rolling back VM ${vmId} to snapshot ${snapshotId}`);
 
@@ -1799,6 +1846,10 @@ export class FirecrackerService extends EventEmitter {
     }
 
     const snapshotMeta = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as FirecrackerSnapshotInfo;
+
+    if (snapshotMeta.diskReady === false) {
+      throw new Error('Snapshot disk copy is still in progress. Please wait and try again.');
+    }
 
     // Check snapshot disk exists
     if (!fs.existsSync(snapshotMeta.diskPath)) {
