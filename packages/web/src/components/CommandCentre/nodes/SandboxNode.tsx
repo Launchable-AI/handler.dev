@@ -1,9 +1,9 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Handle, Position, type NodeProps } from 'reactflow';
+import { type NodeProps } from 'reactflow';
 import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
-import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose } from 'lucide-react';
+import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive } from 'lucide-react';
 import type { WorktreeNode } from '../../../types/command-centre';
 import { useCanvas } from '../../../context/CanvasContext';
 import { useSandboxMetrics } from '../../../hooks/useSandboxes';
@@ -37,9 +37,9 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [nodeFontSize, setNodeFontSize] = useState(DEFAULT_NODE_FONT_SIZE);
   const [focusFontSize, setFocusFontSize] = useState(DEFAULT_FOCUS_FONT_SIZE);
   const [isFocused, setIsFocused] = useState(false);
-  const [currentCwd, setCurrentCwd] = useState<string>('/home/dev/workspace');
+  const [currentCwd, setCurrentCwd] = useState<string>(data.cwd || '/home/agent');
+  const [inGitRepo, setInGitRepo] = useState<boolean>(data.inGitRepo ?? false);
   const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'waiting' | 'off'>('off');
-  const [inGitRepo, setInGitRepo] = useState(false);
   const { data: metrics } = useSandboxMetrics(data.sandboxId, connState === 'connected');
   const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
@@ -67,23 +67,31 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const isRoot = data.parentNodeId === null;
   const statusColor = statusColors[data.status];
 
-  const handleTerminalStateChange = useCallback((state: ConnectionState) => {
-    setConnState(state);
-  }, []);
+  const handleTerminalStateChange = useCallback((newState: ConnectionState) => {
+    setConnState(newState);
+    // Auto-remove node when shell session ends
+    if (newState === 'disconnected') {
+      removeNode(data.id);
+    }
+  }, [data.id, removeNode]);
 
   // Real-time shell state tracking via OSC 7337
   const handleShellState = useCallback((state: ShellState) => {
+    // Always update local states immediately for responsive UI
     setCurrentCwd(state.cwd);
+    setInGitRepo(!!state.branch);
     if (state.claudeStatus) {
       setClaudeStatus(state.claudeStatus);
     }
-    if (state.branch) {
-      setInGitRepo(true);
-      if (state.branch !== data.branch) {
-        updateNode(data.id, { branch: state.branch });
-      }
+    // Persist changes to node data for remount survival (batched into one call)
+    const updates: Partial<WorktreeNode> = {};
+    if (state.cwd !== data.cwd) updates.cwd = state.cwd;
+    if (!!state.branch !== (data.inGitRepo ?? false)) updates.inGitRepo = !!state.branch;
+    if (state.branch && state.branch !== data.branch) updates.branch = state.branch;
+    if (Object.keys(updates).length > 0) {
+      updateNode(data.id, updates);
     }
-  }, [data.id, data.branch, updateNode]);
+  }, [data.id, data.branch, data.cwd, data.inGitRepo, updateNode]);
 
   const handleUrlsDetected = useCallback((urls: string[]) => {
     const has = urls.length > 0;
@@ -161,6 +169,18 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
     updateSize(data.id, { width: params.width, height: params.height });
   }, [data.id, updateSize]);
 
+  // After resize ends, trigger xterm refit to fix mouse coordinate caching
+  const handleResizeEnd = useCallback(() => {
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+  }, []);
+
+  // After drag ends, trigger xterm refit to fix selection offset
+  useEffect(() => {
+    if (!dragging) {
+      requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    }
+  }, [dragging]);
+
   // Escape key exits focus mode
   useEffect(() => {
     if (!isFocused) return;
@@ -197,6 +217,14 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
               className="w-2 h-2 rounded-full shrink-0"
               style={{ backgroundColor: statusColor }}
             />
+            {data.sandboxName && (
+              <span className="text-[11px] font-medium text-[hsl(var(--text-primary))] shrink-0">
+                {data.sandboxName}
+              </span>
+            )}
+            {data.sandboxName && (
+              <span className="text-[9px] text-[hsl(var(--text-muted))]">/</span>
+            )}
             <GitBranch className="h-3 w-3 text-[hsl(var(--cyan))] shrink-0" />
             <span className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate flex-1">
               {data.branch}
@@ -263,25 +291,10 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         minWidth={300}
         minHeight={200}
         onResize={handleResize}
-        lineClassName="!border-transparent hover:!border-[hsl(var(--cyan)/0.5)] !border-[4px]"
-        handleClassName="!w-3.5 !h-3.5 !bg-transparent hover:!bg-[hsl(var(--cyan))] !border-2 !border-transparent hover:!border-[hsl(var(--bg-surface))] !rounded-sm"
+        onResizeEnd={handleResizeEnd}
+        lineClassName="!border-transparent hover:!border-[hsl(var(--cyan)/0.5)] !border-[4px] !z-10"
+        handleClassName="!w-3.5 !h-3.5 !bg-transparent hover:!bg-[hsl(var(--cyan))] !border-2 !border-transparent hover:!border-[hsl(var(--bg-surface))] !rounded-sm !z-10"
       />
-
-      {/* Source handle (bottom) */}
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!w-3 !h-3 !bg-[hsl(var(--cyan))] !border-2 !border-[hsl(var(--bg-surface))]"
-      />
-
-      {/* Target handle (top) */}
-      {!isRoot && (
-        <Handle
-          type="target"
-          position={Position.Top}
-          className="!w-3 !h-3 !bg-[hsl(var(--purple))] !border-2 !border-[hsl(var(--bg-surface))]"
-        />
-      )}
 
       {/* Title bar - drag handle */}
       <div className={`terminal-node-drag-handle flex items-center gap-1.5 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))] cursor-grab active:cursor-grabbing shrink-0 select-none ${slimToolbar ? 'px-1.5 py-0.5' : 'px-3 py-1.5 gap-2'}`}>
@@ -290,23 +303,27 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
           style={{ backgroundColor: statusColor }}
           title={data.status}
         />
+        {data.sandboxName && (
+          <span className={`font-medium text-[hsl(var(--text-primary))] truncate ${slimToolbar ? 'text-[9px] max-w-[60px]' : 'text-[11px] max-w-[120px]'}`} title={data.sandboxName}>
+            {data.sandboxName}
+          </span>
+        )}
+        {data.sandboxName && (
+          <span className={`text-[hsl(var(--text-muted))] ${slimToolbar ? 'text-[8px]' : 'text-[9px]'}`}>/</span>
+        )}
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('open-git-panel', { detail: { nodeId: data.id, sandboxId: data.sandboxId, cwd: currentCwd } }))}
+          onPointerDown={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
           className="flex items-center gap-1 min-w-0 hover:text-[hsl(var(--cyan))] transition-colors"
           title="View git history"
         >
-          <GitBranch className={`text-[hsl(var(--cyan))] shrink-0 ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
-          <span className={`font-medium text-[hsl(var(--text-primary))] truncate ${slimToolbar ? 'text-[9px]' : 'text-[11px]'}`}>
+          <GitBranch className={`shrink-0 ${inGitRepo ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-muted))]'} ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
+          <span className={`font-medium truncate ${inGitRepo ? 'text-[hsl(var(--text-primary))]' : 'text-[hsl(var(--text-muted))]'} ${slimToolbar ? 'text-[9px]' : 'text-[11px]'}`}>
             {data.branch}
           </span>
         </button>
         <div className="flex-1" />
-
-        {isRoot && !slimToolbar && (
-          <span className="px-1.5 py-0.5 text-[9px] font-medium bg-[hsl(var(--cyan)/0.15)] text-[hsl(var(--cyan))] rounded shrink-0">
-            MAIN
-          </span>
-        )}
 
         {/* Claude Code status indicator */}
         {claudeStatus !== 'off' && (
@@ -376,14 +393,14 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
             <>
               <div className="w-px h-3 bg-[hsl(var(--border))]" />
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className={`text-[9px] tabular-nums font-mono ${metrics.cpuUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--cyan))]'}`} title="CPU usage">
-                  C:{metrics.cpuUsage}%
+                <span className={`flex items-center gap-0.5 text-[9px] tabular-nums font-mono ${metrics.cpuUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--cyan))]'}`} title="CPU usage">
+                  <Cpu className="h-2.5 w-2.5" />{metrics.cpuUsage}%
                 </span>
-                <span className={`text-[9px] tabular-nums font-mono ${metrics.memoryUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--green))]'}`} title="Memory usage">
-                  M:{metrics.memoryUsage}%
+                <span className={`flex items-center gap-0.5 text-[9px] tabular-nums font-mono ${metrics.memoryUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--green))]'}`} title="Memory usage">
+                  <MemoryStick className="h-2.5 w-2.5" />{metrics.memoryUsage}%
                 </span>
-                <span className={`text-[9px] tabular-nums font-mono ${metrics.diskUsage > 90 ? 'text-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--purple))]'}`} title="Disk usage">
-                  D:{metrics.diskUsage}%
+                <span className={`flex items-center gap-0.5 text-[9px] tabular-nums font-mono ${metrics.diskUsage > 90 ? 'text-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--purple))]'}`} title="Disk usage">
+                  <HardDrive className="h-2.5 w-2.5" />{metrics.diskUsage}%
                 </span>
               </div>
             </>
@@ -443,16 +460,14 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
           {/* Separator - hidden in slim mode */}
           {!slimToolbar && <div className="w-px h-3 bg-[hsl(var(--border))] mx-0.5" />}
 
-          {inGitRepo && (
-            <button
-              onClick={() => setShowForkInput(!showForkInput)}
-              disabled={data.status !== 'ready'}
-              className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 ${slimToolbar ? 'p-0.5' : 'p-1'}`}
-              title="Fork worktree"
-            >
-              <GitFork className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
-            </button>
-          )}
+          <button
+            onClick={() => setShowForkInput(!showForkInput)}
+            disabled={data.status !== 'ready'}
+            className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 ${slimToolbar ? 'p-0.5' : 'p-1'}`}
+            title="Fork worktree"
+          >
+            <GitFork className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+          </button>
 
           {!isRoot && data.status === 'ready' && (
             <button
@@ -535,13 +550,14 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
       )}
 
       {/* Terminal body - takes remaining space, clips overflow */}
-      <div ref={termContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col" onKeyDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+      <div ref={termContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col pb-1" onKeyDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
         {termReady && (
           <div ref={termWrapperRef} className="flex-1 min-h-0 flex flex-col">
             <TerminalInstance
               target={{
                 type: data.backendType && data.backendType !== 'docker' ? 'vm' : 'container',
                 id: data.sandboxId,
+                sessionKey: data.id,
                 ...(data.ip ? { ip: data.ip } : {}),
                 ...(data.worktreePath && !isRoot ? { workdir: data.worktreePath } : {}),
               }}

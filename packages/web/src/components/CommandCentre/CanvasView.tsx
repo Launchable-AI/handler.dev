@@ -47,7 +47,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       setActiveGitPanel((prev) =>
-        prev?.sandboxId === detail.sandboxId ? null : detail
+        prev?.nodeId === detail.nodeId ? null : detail
       );
     };
     window.addEventListener('open-git-panel', handler);
@@ -75,15 +75,8 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     [sandboxes]
   );
 
-  const availableSandboxes = useMemo(() => {
-    const activeNodeIds = new Set(activeWorkspace?.nodeIds || []);
-    const onCanvas = new Set(
-      state.worktreeNodes
-        .filter(n => activeNodeIds.has(n.id))
-        .map(n => n.sandboxId)
-    );
-    return runningSandboxes.filter(s => !onCanvas.has(s.id));
-  }, [runningSandboxes, state.worktreeNodes, activeWorkspace]);
+  // All running sandboxes are available — multiple nodes per sandbox are allowed
+  const availableSandboxes = runningSandboxes;
 
   // Visible worktree nodes for the panel list
   const visibleWorktreeNodes = useMemo(() => {
@@ -217,6 +210,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       size: { width: 500, height: 350 },
       backendType: sandbox.backend as WorktreeNode['backendType'],
       ip: sandbox.guestIp,
+      sandboxName: sandbox.name,
     };
     addNode(newNode);
     setShowAddMenu(false);

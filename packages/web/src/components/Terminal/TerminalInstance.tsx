@@ -17,6 +17,8 @@ export interface TerminalTarget {
   ip?: string;
   /** Override the working directory for the shell session */
   workdir?: string;
+  /** Unique key for session storage — allows multiple independent sessions for the same target */
+  sessionKey?: string;
 }
 
 export interface ShellState {
@@ -99,10 +101,11 @@ export function TerminalInstance({
   const maxReconnectAttempts = 5;
   const reconnectDelay = 2000;
 
-  // Get storage key for this target
+  // Get storage key for this target (sessionKey allows multiple independent sessions per target)
   const getStorageKey = useCallback(() => {
-    return `${SESSION_STORAGE_KEY}${target.type}-${target.id}`;
-  }, [target.type, target.id]);
+    const suffix = target.sessionKey ? `-${target.sessionKey}` : '';
+    return `${SESSION_STORAGE_KEY}${target.type}-${target.id}${suffix}`;
+  }, [target.type, target.id, target.sessionKey]);
 
   // Save session to localStorage
   const saveSession = useCallback((sessionId: string) => {
@@ -493,7 +496,7 @@ export function TerminalInstance({
         cleanupRef.current = null;
       }
     };
-  }, [target.type, target.id, target.ip, target.workdir, getWsUrl, updateState, saveSession, getSavedSession, clearSavedSession]);
+  }, [target.type, target.id, target.ip, target.workdir, target.sessionKey, getWsUrl, updateState, saveSession, getSavedSession, clearSavedSession]);
 
   // Update font size when prop changes
   useEffect(() => {

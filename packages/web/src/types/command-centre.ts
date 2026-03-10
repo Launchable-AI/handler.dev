@@ -48,6 +48,12 @@ export interface WorktreeNode {
   backendType?: 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
   /** Guest IP for VM/cloud backends (required for SSH terminal connections) */
   ip?: string;
+  /** Display name of the sandbox (e.g., "my-dev-vm") */
+  sandboxName?: string;
+  /** Current working directory reported by the shell (persisted across remounts) */
+  cwd?: string;
+  /** Whether a git repo with commits was detected (persisted across remounts) */
+  inGitRepo?: boolean;
 }
 
 // Workspace for organizing canvas nodes

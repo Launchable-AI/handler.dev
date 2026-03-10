@@ -28,6 +28,7 @@ import type { SandboxBackend, SandboxStatus } from '../types/sandbox.js';
 import { execFileSync } from 'child_process';
 import { validateSandboxId, validatePath, validateFilename } from '../lib/validation.js';
 import { injectViaTar } from '../services/sandbox-inject.js';
+import { safeExec } from '../lib/safe-exec.js';
 
 const sandboxes = new Hono();
 
@@ -1709,6 +1710,103 @@ sandboxes.get('/:id/agents', async (c) => {
   } catch (error) {
     console.error('[SandboxRoutes] Agent detection error:', error);
     return c.json({ agents: [] });
+  }
+});
+
+// ============ Git Operations (backend-agnostic) ============
+
+/**
+ * Run a command inside a sandbox, dispatching to Docker exec or SSH based on backend.
+ * Returns stdout as a string. Throws on failure.
+ */
+async function execInSandbox(
+  sandbox: { id: string; backend: string; guestIp?: string },
+  command: string,
+): Promise<string> {
+  if (sandbox.backend === 'docker') {
+    const containerId = sandbox.id.startsWith('docker-') ? sandbox.id.slice(7) : sandbox.id;
+    return dockerService.execInContainer(containerId, ['sh', '-c', command]);
+  }
+
+  // VM backends — run via SSH
+  if (!sandbox.guestIp) throw new Error('No guest IP');
+
+  let keyPath = '';
+  if (sandbox.backend === 'firecracker') {
+    const svc = getFirecrackerService();
+    keyPath = svc ? svc.getSshKeyPath() : '';
+  } else if (sandbox.backend === 'cloud-hypervisor') {
+    const svc = getCloudHypervisorService();
+    keyPath = svc ? svc.getSshKeyPath() : '';
+  }
+  if (!keyPath) throw new Error('No SSH key available');
+
+  return safeExec('ssh', [
+    '-i', keyPath,
+    ...SSH_OPTS,
+    `agent@${sandbox.guestIp}`,
+    command,
+  ], { timeout: 10000 });
+}
+
+/**
+ * GET /api/sandboxes/:id/git-log
+ * Get git commit history from inside a running sandbox
+ */
+sandboxes.get('/:id/git-log', async (c) => {
+  const id = c.req.param('id');
+  const limit = parseInt(c.req.query('limit') || '50', 10);
+  const workdir = c.req.query('cwd') || '/home/agent';
+
+  try {
+    const service = await getSandboxService();
+    const sandbox = await service.get(id);
+    if (!sandbox) return c.json({ commits: [], branch: '' });
+    if (sandbox.status !== 'running') return c.json({ commits: [], branch: '' });
+
+    const repoRoot = (await execInSandbox(sandbox, `cd ${JSON.stringify(workdir)} && git rev-parse --show-toplevel 2>/dev/null || echo ""`)).trim();
+    const gitDir = repoRoot || workdir;
+
+    const [logOutput, branch] = await Promise.all([
+      execInSandbox(sandbox, `cd ${JSON.stringify(gitDir)} && git log --pretty=format:'%H|%h|%s|%an|%ae|%aI' -n ${limit} 2>/dev/null || echo ""`),
+      execInSandbox(sandbox, `cd ${JSON.stringify(gitDir)} && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""`),
+    ]);
+
+    const commits = logOutput
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [hash, shortHash, subject, author, email, date] = line.split('|');
+        return { hash, shortHash, subject, author, email, date };
+      });
+
+    return c.json({ commits, branch: branch.trim() || '' });
+  } catch {
+    return c.json({ commits: [], branch: '' });
+  }
+});
+
+/**
+ * GET /api/sandboxes/:id/git-show/:hash
+ * Get details of a specific commit from inside a running sandbox
+ */
+sandboxes.get('/:id/git-show/:hash', async (c) => {
+  const id = c.req.param('id');
+  const hash = c.req.param('hash');
+  const workdir = c.req.query('cwd') || '/home/agent';
+
+  try {
+    const service = await getSandboxService();
+    const sandbox = await service.get(id);
+    if (!sandbox) return c.json({ output: '' });
+
+    const repoRoot = (await execInSandbox(sandbox, `cd ${JSON.stringify(workdir)} && git rev-parse --show-toplevel 2>/dev/null || echo ""`)).trim();
+    const gitDir = repoRoot || workdir;
+
+    const output = await execInSandbox(sandbox, `cd ${JSON.stringify(gitDir)} && git show ${hash} --stat 2>/dev/null || echo ""`);
+    return c.json({ output });
+  } catch {
+    return c.json({ output: '' });
   }
 });
 

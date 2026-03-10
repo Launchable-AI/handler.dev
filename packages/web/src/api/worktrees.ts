@@ -86,14 +86,14 @@ export interface GitLogResponse {
   branch: string;
 }
 
-export async function getContainerGitLog(containerId: string, limit = 50, cwd?: string): Promise<GitLogResponse> {
+export async function getContainerGitLog(sandboxId: string, limit = 50, cwd?: string): Promise<GitLogResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (cwd) params.set('cwd', cwd);
-  return fetchAPI<GitLogResponse>(`/containers/${containerId}/git-log?${params}`);
+  return fetchAPI<GitLogResponse>(`/sandboxes/${sandboxId}/git-log?${params}`);
 }
 
-export async function getContainerGitShow(containerId: string, hash: string, cwd?: string): Promise<string> {
+export async function getContainerGitShow(sandboxId: string, hash: string, cwd?: string): Promise<string> {
   const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
-  const res = await fetchAPI<{ output: string }>(`/containers/${containerId}/git-show/${hash}${params}`);
+  const res = await fetchAPI<{ output: string }>(`/sandboxes/${sandboxId}/git-show/${hash}${params}`);
   return res.output;
 }
