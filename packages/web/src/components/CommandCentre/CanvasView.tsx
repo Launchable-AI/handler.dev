@@ -241,25 +241,27 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
 
     if (layout === 'grid') {
       const cols = Math.ceil(Math.sqrt(visible.length));
-      const rows = Math.ceil(visible.length / cols);
-      // Compute max width per column and max height per row
-      const colWidths = Array(cols).fill(0);
-      const rowHeights = Array(rows).fill(0);
-      visible.forEach((node, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        colWidths[col] = Math.max(colWidths[col], node.size?.width || 500);
-        rowHeights[row] = Math.max(rowHeights[row], node.size?.height || 350);
-      });
-      visible.forEach((node, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        let x = 0;
-        for (let c = 0; c < col; c++) x += colWidths[c] + gap;
-        let y = 0;
-        for (let r = 0; r < row; r++) y += rowHeights[r] + gap;
-        updatePosition(node.id, { x, y });
-      });
+      // Sort tallest-first so the packing algorithm fills columns evenly
+      const sorted = [...visible].sort((a, b) => (b.size?.height || 350) - (a.size?.height || 350));
+      // Track each column: current y offset and max width seen
+      const colY = Array(cols).fill(0);
+      const colMaxW = Array(cols).fill(0);
+      const placements: Array<{ node: typeof sorted[0]; col: number; y: number }> = [];
+      // Place each node into the shortest column
+      for (const node of sorted) {
+        const shortestCol = colY.indexOf(Math.min(...colY));
+        const h = node.size?.height || 350;
+        const w = node.size?.width || 500;
+        placements.push({ node, col: shortestCol, y: colY[shortestCol] });
+        colY[shortestCol] += h + gap;
+        colMaxW[shortestCol] = Math.max(colMaxW[shortestCol], w);
+      }
+      // Compute column x offsets from max widths
+      const colX = Array(cols).fill(0);
+      for (let c = 1; c < cols; c++) colX[c] = colX[c - 1] + colMaxW[c - 1] + gap;
+      for (const { node, col, y } of placements) {
+        updatePosition(node.id, { x: colX[col], y });
+      }
     } else if (layout === 'vertical') {
       let y = 0;
       for (const node of visible) {

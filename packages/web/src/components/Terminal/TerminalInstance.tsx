@@ -606,16 +606,16 @@ export function TerminalInstance({
                 >
                   {copiedUrl === url ? <Check className="h-2.5 w-2.5 text-[hsl(var(--green))]" /> : <Copy className="h-2.5 w-2.5" />}
                 </button>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                  }}
                   className="shrink-0 p-0.5 hover:text-[hsl(var(--text-primary))] transition-colors rounded hover:bg-[hsl(var(--bg-overlay))]"
                   title="Open in browser"
                 >
                   <ExternalLink className="h-2.5 w-2.5" />
-                </a>
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
