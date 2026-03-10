@@ -535,9 +535,9 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
       )}
 
       {/* Terminal body - takes remaining space, clips overflow */}
-      <div ref={termContainerRef} className="flex-1 min-h-0 overflow-hidden" onKeyDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+      <div ref={termContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col" onKeyDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
         {termReady && (
-          <div ref={termWrapperRef} className="h-full">
+          <div ref={termWrapperRef} className="flex-1 min-h-0 flex flex-col">
             <TerminalInstance
               target={{
                 type: data.backendType && data.backendType !== 'docker' ? 'vm' : 'container',
@@ -550,7 +550,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
               onUrlsDetected={handleUrlsDetected}
               showStatusBar={false}
               fontSize={isFocused ? focusFontSize : nodeFontSize}
-              className="h-full [&_.xterm]:!h-full [&_.xterm-viewport]:!overflow-hidden"
+              className="flex-1 min-h-0 [&_.xterm-viewport]:!overflow-hidden"
             />
           </div>
         )}

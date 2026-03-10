@@ -91,6 +91,13 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     return state.worktreeNodes.filter(n => activeNodeIds.has(n.id));
   }, [state.worktreeNodes, activeWorkspace]);
 
+  // Sandbox name lookup
+  const sandboxNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of sandboxes || []) map.set(s.id, s.name);
+    return map;
+  }, [sandboxes]);
+
   // Minimized nodes info for the sidebar
   const minimizedNodesInfo = useMemo((): MinimizedNodeInfo[] => {
     const minimizedSet = new Set(state.minimizedNodeIds);
@@ -234,12 +241,24 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
 
     if (layout === 'grid') {
       const cols = Math.ceil(Math.sqrt(visible.length));
+      const rows = Math.ceil(visible.length / cols);
+      // Compute max width per column and max height per row
+      const colWidths = Array(cols).fill(0);
+      const rowHeights = Array(rows).fill(0);
       visible.forEach((node, i) => {
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const w = node.size?.width || 500;
-        const h = node.size?.height || 350;
-        updatePosition(node.id, { x: col * (w + gap), y: row * (h + gap) });
+        colWidths[col] = Math.max(colWidths[col], node.size?.width || 500);
+        rowHeights[row] = Math.max(rowHeights[row], node.size?.height || 350);
+      });
+      visible.forEach((node, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        let x = 0;
+        for (let c = 0; c < col; c++) x += colWidths[c] + gap;
+        let y = 0;
+        for (let r = 0; r < row; r++) y += rowHeights[r] + gap;
+        updatePosition(node.id, { x, y });
       });
     } else if (layout === 'vertical') {
       let y = 0;
@@ -295,13 +314,19 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
                 className="group flex items-center gap-2 px-3 py-2 hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer border-b border-[hsl(var(--border)/0.5)]"
                 onClick={() => handleFocusNode(wn)}
               >
-                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDotColor[wn.status]}`} />
+                <div className={`w-1.5 h-1.5 rounded-full shrink-0 self-start mt-1.5 ${statusDotColor[wn.status]}`} />
                 <div className="flex-1 min-w-0">
                   <div className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
-                    {wn.branch}
+                    {sandboxNameMap.get(wn.sandboxId) || wn.sandboxId.slice(0, 12)}
                   </div>
-                  <div className="text-[9px] text-[hsl(var(--text-muted))] truncate">
-                    {wn.sandboxId.slice(0, 12)}
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-[9px] text-[hsl(var(--text-muted))] truncate">
+                      <GitBranch className="h-2.5 w-2.5 inline mr-0.5 -mt-px" />
+                      {wn.branch}
+                    </div>
+                    <div className="text-[8px] text-[hsl(var(--text-muted))] opacity-60 font-mono shrink-0">
+                      {wn.sandboxId.slice(0, 8)}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">

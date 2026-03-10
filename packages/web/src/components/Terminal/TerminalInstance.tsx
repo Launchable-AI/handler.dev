@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Loader2, Copy, Check, RefreshCw } from 'lucide-react';
+import { Loader2, Copy, Check, RefreshCw, ExternalLink, X } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import type { ShellPromptTheme } from '../../lib/prompt-themes';
 import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../../lib/terminal-themes';
@@ -58,6 +58,7 @@ export function TerminalInstance({
   const [isTmuxSession, setIsTmuxSession] = useState(false);
   const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const [dismissedUrls, setDismissedUrls] = useState<Set<string>>(new Set());
   const terminalIsDarkRef = useRef(terminalIsDark);
   terminalIsDarkRef.current = terminalIsDark;
 
@@ -579,30 +580,57 @@ export function TerminalInstance({
       />
 
       {/* Detected URLs bar */}
-      {detectedUrls.length > 0 && (
-        <div className="flex items-center gap-1 px-2 py-1 bg-[hsl(var(--bg-surface))] border-t border-[hsl(var(--border))] overflow-x-auto shrink-0">
-          <span className="text-[9px] text-[hsl(var(--text-muted))] uppercase tracking-wider shrink-0">Links</span>
-          {[...new Map(detectedUrls.map(u => [u.url, u])).values()].map(({ url }) => (
-            <button
-              key={url}
-              onClick={(e) => {
-                e.stopPropagation();
-                navigator.clipboard.writeText(url).then(() => {
-                  setCopiedUrl(url);
-                  setTimeout(() => setCopiedUrl(null), 1500);
-                });
-              }}
-              onMouseDown={e => e.stopPropagation()}
-              onPointerDown={e => e.stopPropagation()}
-              className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-mono bg-[hsl(var(--bg-elevated))] text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.15)] rounded truncate max-w-[300px] transition-colors"
-              title={url}
-            >
-              {copiedUrl === url ? <Check className="h-2.5 w-2.5 text-[hsl(var(--green))] shrink-0" /> : <Copy className="h-2.5 w-2.5 shrink-0" />}
-              <span className="truncate">{url.replace(/^https?:\/\//, '')}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {(() => {
+        const visibleUrls = [...new Map(detectedUrls.map(u => [u.url, u])).values()].filter(({ url }) => !dismissedUrls.has(url));
+        return visibleUrls.length > 0 ? (
+          <div className="flex items-center gap-1 px-2 py-1 bg-[hsl(var(--bg-surface))] border-t border-[hsl(var(--border))] overflow-x-auto shrink-0">
+            <span className="text-[9px] text-[hsl(var(--text-muted))] uppercase tracking-wider shrink-0">Links</span>
+            {visibleUrls.map(({ url }) => (
+              <div
+                key={url}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-mono bg-[hsl(var(--bg-elevated))] text-[hsl(var(--cyan))] rounded max-w-[300px] group/link"
+                onMouseDown={e => e.stopPropagation()}
+                onPointerDown={e => e.stopPropagation()}
+              >
+                <span className="truncate" title={url}>{url.replace(/^https?:\/\//, '')}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(url).then(() => {
+                      setCopiedUrl(url);
+                      setTimeout(() => setCopiedUrl(null), 1500);
+                    });
+                  }}
+                  className="shrink-0 p-0.5 hover:text-[hsl(var(--text-primary))] transition-colors rounded hover:bg-[hsl(var(--bg-overlay))]"
+                  title="Copy URL"
+                >
+                  {copiedUrl === url ? <Check className="h-2.5 w-2.5 text-[hsl(var(--green))]" /> : <Copy className="h-2.5 w-2.5" />}
+                </button>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  className="shrink-0 p-0.5 hover:text-[hsl(var(--text-primary))] transition-colors rounded hover:bg-[hsl(var(--bg-overlay))]"
+                  title="Open in browser"
+                >
+                  <ExternalLink className="h-2.5 w-2.5" />
+                </a>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDismissedUrls(prev => new Set(prev).add(url));
+                  }}
+                  className="shrink-0 p-0.5 hover:text-[hsl(var(--red))] transition-colors rounded hover:bg-[hsl(var(--bg-overlay))]"
+                  title="Dismiss link"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null;
+      })()}
 
       {/* Error overlay */}
       {connectionState === 'error' && errorMessage && (
