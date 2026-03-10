@@ -6,6 +6,7 @@ import '@reactflow/node-resizer/dist/style.css';
 import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose } from 'lucide-react';
 import type { WorktreeNode } from '../../../types/command-centre';
 import { useCanvas } from '../../../context/CanvasContext';
+import { useSandboxMetrics } from '../../../hooks/useSandboxes';
 import { TerminalInstance } from '../../Terminal/TerminalInstance';
 import type { ConnectionState, ShellState } from '../../Terminal/TerminalInstance';
 import * as worktreeApi from '../../../api/worktrees';
@@ -39,6 +40,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [currentCwd, setCurrentCwd] = useState<string>('/home/dev/workspace');
   const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'waiting' | 'off'>('off');
   const [inGitRepo, setInGitRepo] = useState(false);
+  const { data: metrics } = useSandboxMetrics(data.sandboxId, connState === 'connected');
   const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termWrapperRef = useRef<HTMLDivElement>(null);
@@ -351,6 +353,41 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
           }`}>
             {connState}
           </span>
+        )}
+
+        {/* System metrics */}
+        {metrics && (
+          slimToolbar ? (
+            <div className="flex items-center gap-0.5 shrink-0">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${metrics.cpuUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--cyan))]'}`}
+                title={`CPU: ${metrics.cpuUsage}%`}
+              />
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${metrics.memoryUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--green))]'}`}
+                title={`Memory: ${metrics.memoryUsage}%`}
+              />
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${metrics.diskUsage > 90 ? 'bg-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--purple))]'}`}
+                title={`Disk: ${metrics.diskUsage}%`}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="w-px h-3 bg-[hsl(var(--border))]" />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`text-[9px] tabular-nums font-mono ${metrics.cpuUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--cyan))]'}`} title="CPU usage">
+                  C:{metrics.cpuUsage}%
+                </span>
+                <span className={`text-[9px] tabular-nums font-mono ${metrics.memoryUsage > 80 ? 'text-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--green))]'}`} title="Memory usage">
+                  M:{metrics.memoryUsage}%
+                </span>
+                <span className={`text-[9px] tabular-nums font-mono ${metrics.diskUsage > 90 ? 'text-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'text-[hsl(var(--amber))]' : 'text-[hsl(var(--purple))]'}`} title="Disk usage">
+                  D:{metrics.diskUsage}%
+                </span>
+              </div>
+            </>
+          )
         )}
 
         {/* Action buttons */}
