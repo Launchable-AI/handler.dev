@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { type NodeProps, useStore } from 'reactflow';
 import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
-import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive } from 'lucide-react';
+import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, Copy, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive } from 'lucide-react';
 import type { WorktreeNode } from '../../../types/command-centre';
 import { useCanvas } from '../../../context/CanvasContext';
 import { useSandboxMetrics } from '../../../hooks/useSandboxes';
@@ -33,6 +33,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [showForkInput, setShowForkInput] = useState(false);
   const [forkBranch, setForkBranch] = useState('');
   const [isForking, setIsForking] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [connState, setConnState] = useState<ConnectionState>('connecting');
@@ -128,6 +129,8 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         ports: [],
         position: { x: data.position.x + 550, y: data.position.y + 50 },
         size: { width: 500, height: 350 },
+        backendType: data.backendType,
+        ip: data.ip,
       });
 
       setShowForkInput(false);
@@ -136,6 +139,32 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
       console.error('Failed to fork worktree:', err);
     } finally {
       setIsForking(false);
+    }
+  };
+
+  const handleClone = async () => {
+    setIsCloning(true);
+    try {
+      const result = await worktreeApi.cloneSandbox(data.sandboxId);
+
+      addNode({
+        id: result.id,
+        sandboxId: result.sandboxId,
+        branch: data.branch,
+        worktreePath: '/home/agent',
+        parentNodeId: null,
+        status: 'ready',
+        ports: [],
+        position: { x: data.position.x + 550, y: data.position.y + 50 },
+        size: { width: 500, height: 350 },
+        backendType: (result.backendType as WorktreeNode['backendType']) || data.backendType,
+        ip: result.ip || data.ip,
+        sandboxName: result.name,
+      });
+    } catch (err) {
+      console.error('Failed to clone VM:', err);
+    } finally {
+      setIsCloning(false);
     }
   };
 
@@ -463,14 +492,29 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
           {/* Separator - hidden in slim mode */}
           {!slimToolbar && <div className="w-px h-3 bg-[hsl(var(--border))] mx-0.5" />}
 
-          <button
-            onClick={() => setShowForkInput(!showForkInput)}
-            disabled={data.status !== 'ready'}
-            className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 ${slimToolbar ? 'p-0.5' : 'p-1'}`}
-            title="Fork worktree"
-          >
-            <GitFork className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
-          </button>
+          {/* Fork (git worktree) — only when inside a git repo */}
+          {inGitRepo && (
+            <button
+              onClick={() => setShowForkInput(!showForkInput)}
+              disabled={data.status !== 'ready'}
+              className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 ${slimToolbar ? 'p-0.5' : 'p-1'}`}
+              title="Fork worktree"
+            >
+              <GitFork className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+            </button>
+          )}
+
+          {/* Clone (VM duplicate) — only for Firecracker VMs */}
+          {data.backendType === 'firecracker' && (
+            <button
+              onClick={handleClone}
+              disabled={data.status !== 'ready' || isCloning}
+              className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--purple))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors disabled:opacity-50 ${slimToolbar ? 'p-0.5' : 'p-1'}`}
+              title="Clone VM"
+            >
+              {isCloning ? <Loader2 className={`animate-spin ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} /> : <Copy className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />}
+            </button>
+          )}
 
           {!isRoot && data.status === 'ready' && (
             <button

@@ -14,6 +14,14 @@ export interface ForkWorktreeResponse {
   branch: string;
 }
 
+export interface CloneSandboxResponse {
+  id: string;
+  sandboxId: string;
+  ip?: string;
+  backendType: string;
+  name: string;
+}
+
 export interface MergeWorktreeRequest {
   sandboxId: string;
   worktreeId: string;
@@ -42,6 +50,13 @@ export async function forkWorktree(request: ForkWorktreeRequest): Promise<ForkWo
   return fetchAPI<ForkWorktreeResponse>('/worktrees/fork', {
     method: 'POST',
     body: JSON.stringify(request),
+  });
+}
+
+export async function cloneSandbox(sandboxId: string): Promise<CloneSandboxResponse> {
+  return fetchAPI<CloneSandboxResponse>('/worktrees/clone', {
+    method: 'POST',
+    body: JSON.stringify({ sandboxId }),
   });
 }
 

@@ -200,9 +200,10 @@ The server is hardened against malicious agents inside sandboxes attempting to e
 
 Key files:
 - `packages/server/src/lib/safe-exec.ts` — Shell-free command execution utilities
+- `packages/server/src/lib/exec-in-sandbox.ts` — Backend-agnostic command execution inside sandboxes (Docker exec or SSH)
 - `packages/server/src/lib/validation.ts` — Input validation functions
 
-When adding new `execSync` calls that handle user input, always use `execFileSync` with an argument array instead. When adding new API endpoints that accept IDs or paths, apply the validators from `validation.ts`.
+When adding new `execSync` calls that handle user input, always use `execFileSync` with an argument array instead. When adding new API endpoints that accept IDs or paths, apply the validators from `validation.ts`. When running commands inside sandboxes, use `execInSandbox()` from `exec-in-sandbox.ts` — it dispatches to Docker exec or SSH based on the backend.
 
 ### SSH Key Management
 
@@ -335,6 +336,23 @@ The data directory is configurable via Settings > General > Data Directory. When
 What stays on the static `DATA_DIR`: `config.json` itself (bootstrap file), VM infrastructure paths (firecracker-vms, base-images), and cloud provider SSH keys.
 
 When adding new services that store data, use `getDataPath()` from `data-dir.ts` and export a cache reset function.
+
+### Canvas Fork & Clone
+
+Canvas nodes have two distinct actions for creating isolated workspaces:
+
+1. **Fork** (GitFork icon) — creates a git worktree (new branch at a separate path) inside the same sandbox. Only visible when the sandbox is inside a git repo. Works on all backends (Docker and VMs) via the backend-agnostic `CommandRunner` pattern. The new node is a child of the original (linked via `parentNodeId`).
+
+2. **Clone** (Copy icon) — snapshots a running Firecracker VM and boots an independent copy. Only visible for Firecracker VMs. The new canvas node is a root node (`parentNodeId: null`) pointing to the independent cloned VM.
+
+The worktree service (`packages/server/src/services/worktree.ts`) accepts a `CommandRunner` function instead of calling Docker directly. The route layer builds the runner from the resolved sandbox using `execInSandbox()`.
+
+Key files:
+- `packages/server/src/services/worktree.ts` — Backend-agnostic worktree CRUD (accepts `CommandRunner`)
+- `packages/server/src/routes/worktrees.ts` — Route layer: `/fork` for git worktrees, `/clone` for VM duplication
+- `packages/server/src/lib/exec-in-sandbox.ts` — Shared `execInSandbox()` utility (Docker exec or SSH)
+- `packages/web/src/api/worktrees.ts` — Client types (`ForkWorktreeResponse`, `CloneSandboxResponse`) and API functions
+- `packages/web/src/components/CommandCentre/nodes/SandboxNode.tsx` — Fork and Clone buttons with separate UI flows
 
 ### Key tech choices
 

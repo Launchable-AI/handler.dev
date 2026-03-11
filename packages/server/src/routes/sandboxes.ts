@@ -29,17 +29,9 @@ import { execFileSync } from 'child_process';
 import { validateSandboxId, validatePath, validateFilename } from '../lib/validation.js';
 import { injectViaTar } from '../services/sandbox-inject.js';
 import { safeExec } from '../lib/safe-exec.js';
+import { execInSandbox, SSH_OPTS } from '../lib/exec-in-sandbox.js';
 
 const sandboxes = new Hono();
-
-/** Common SSH options used across all SSH/SCP calls */
-const SSH_OPTS = [
-  '-o', 'StrictHostKeyChecking=no',
-  '-o', 'UserKnownHostsFile=/dev/null',
-  '-o', 'IdentitiesOnly=yes',
-  '-o', 'ConnectTimeout=5',
-  '-o', 'BatchMode=yes',
-];
 
 // Lazy initialization state
 let sandboxServiceInitialized = false;
@@ -1714,40 +1706,6 @@ sandboxes.get('/:id/agents', async (c) => {
 });
 
 // ============ Git Operations (backend-agnostic) ============
-
-/**
- * Run a command inside a sandbox, dispatching to Docker exec or SSH based on backend.
- * Returns stdout as a string. Throws on failure.
- */
-async function execInSandbox(
-  sandbox: { id: string; backend: string; guestIp?: string },
-  command: string,
-): Promise<string> {
-  if (sandbox.backend === 'docker') {
-    const containerId = sandbox.id.startsWith('docker-') ? sandbox.id.slice(7) : sandbox.id;
-    return dockerService.execInContainer(containerId, ['sh', '-c', command]);
-  }
-
-  // VM backends — run via SSH
-  if (!sandbox.guestIp) throw new Error('No guest IP');
-
-  let keyPath = '';
-  if (sandbox.backend === 'firecracker') {
-    const svc = getFirecrackerService();
-    keyPath = svc ? svc.getSshKeyPath() : '';
-  } else if (sandbox.backend === 'cloud-hypervisor') {
-    const svc = getCloudHypervisorService();
-    keyPath = svc ? svc.getSshKeyPath() : '';
-  }
-  if (!keyPath) throw new Error('No SSH key available');
-
-  return safeExec('ssh', [
-    '-i', keyPath,
-    ...SSH_OPTS,
-    `agent@${sandbox.guestIp}`,
-    command,
-  ], { timeout: 10000 });
-}
 
 /**
  * GET /api/sandboxes/:id/git-log
