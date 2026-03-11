@@ -1,6 +1,6 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { type NodeProps } from 'reactflow';
+import { type NodeProps, useStore } from 'reactflow';
 import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
 import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive } from 'lucide-react';
@@ -24,8 +24,11 @@ const DEFAULT_FOCUS_FONT_SIZE = 13;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
+const zoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
+
 function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const { addNode, removeNode, updateNode, updateSize, state, minimizeNode } = useCanvas();
+  const zoom = useStore(zoomSelector);
   const slimToolbar = state.slimToolbar;
   const [showForkInput, setShowForkInput] = useState(false);
   const [forkBranch, setForkBranch] = useState('');
@@ -566,6 +569,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
               onUrlsDetected={handleUrlsDetected}
               showStatusBar={false}
               fontSize={isFocused ? focusFontSize : nodeFontSize}
+              zoomLevel={isFocused ? 1 : zoom}
               className="flex-1 min-h-0 [&_.xterm-viewport]:!overflow-hidden"
             />
           </div>

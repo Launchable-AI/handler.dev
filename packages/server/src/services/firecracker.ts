@@ -790,7 +790,12 @@ export class FirecrackerService extends EventEmitter {
         } catch {
           // e2fsck returns non-zero if it made changes (e.g. fixed dirty journal), which is expected
         }
-        execFileSync('resize2fs', [overlayPath], { stdio: 'pipe' });
+        // Best-effort host-side resize; definitive resize happens inside the guest after boot
+        try {
+          execFileSync('resize2fs', [overlayPath], { stdio: 'pipe' });
+        } catch {
+          console.log(`[FirecrackerService] Host-side resize2fs skipped for overlay (will resize in guest)`);
+        }
       }
     }
 
@@ -815,7 +820,11 @@ export class FirecrackerService extends EventEmitter {
         } catch {
           // e2fsck returns non-zero if it made changes (e.g. fixed dirty journal), which is expected
         }
-        execFileSync('resize2fs', [dockerVolumePath], { stdio: 'pipe' });
+        try {
+          execFileSync('resize2fs', [dockerVolumePath], { stdio: 'pipe' });
+        } catch {
+          console.log(`[FirecrackerService] Host-side resize2fs skipped for docker volume (will resize in guest)`);
+        }
       }
     }
 
@@ -1048,8 +1057,13 @@ export class FirecrackerService extends EventEmitter {
       await this.waitForSshReady(id);
       console.log(`[FirecrackerService] VM ${id} SSH ready in ${Date.now() - startTime}ms`);
 
-      // Configure hostname in /etc/hosts to avoid sudo warnings
+      // Resize filesystems inside the guest to match expanded block devices
+      // ext4 supports online resize — this is the definitive resize step
+      // (host-side resize2fs is best-effort and may not work on dirty journals)
       this.setStatusMessage(vm, 'Configuring guest...');
+      await this.resizeGuestFilesystems(id, overlayDevice, dockerDevice);
+
+      // Configure hostname in /etc/hosts to avoid sudo warnings
       await this.configureHostname(id);
       console.log(`[FirecrackerService] VM ${id} post-boot config done in ${Date.now() - startTime}ms`);
 
@@ -1338,6 +1352,43 @@ export class FirecrackerService extends EventEmitter {
           );
         }
         await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+  }
+
+  /**
+   * Resize ext4 filesystems inside the guest after boot.
+   * ext4 supports online resize — `resize2fs` expands the filesystem to fill the block device.
+   * This is the definitive resize step; the host-side resize2fs is best-effort.
+   */
+  private async resizeGuestFilesystems(vmId: string, overlayDevice: string, dockerDevice: string): Promise<void> {
+    const vm = this.vms.get(vmId);
+    if (!vm) return;
+
+    const sshKeyPath = this.getSshKeyPath();
+    const port = vm.networkConfig.mode === 'tap' ? 22 : vm.sshPort;
+    const host = vm.networkConfig.mode === 'tap' ? vm.networkConfig.guestIp : '127.0.0.1';
+
+    const devices = [overlayDevice];
+    if (dockerDevice) devices.push(dockerDevice);
+
+    for (const dev of devices) {
+      try {
+        execFileSync('ssh', [
+          '-i', sshKeyPath,
+          '-o', 'StrictHostKeyChecking=no',
+          '-o', 'UserKnownHostsFile=/dev/null',
+          '-o', 'ConnectTimeout=5',
+          '-o', 'IdentitiesOnly=yes',
+          `agent@${host}`,
+          '-p', port!.toString(),
+          `sudo resize2fs /dev/${dev} 2>/dev/null`,
+        ], { stdio: 'pipe', timeout: 15000 });
+        console.log(`[FirecrackerService] Guest resize2fs /dev/${dev} completed for VM ${vmId}`);
+      } catch {
+        // resize2fs prints "Nothing to do!" and exits 0 when already full size,
+        // but may fail if the device doesn't need resizing — either way, non-fatal
+        console.log(`[FirecrackerService] Guest resize2fs /dev/${dev} skipped for VM ${vmId}`);
       }
     }
   }

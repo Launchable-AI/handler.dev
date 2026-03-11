@@ -36,6 +36,8 @@ export interface TerminalInstanceProps {
   showStatusBar?: boolean;
   className?: string;
   fontSize?: number;
+  /** Current CSS zoom/scale factor (e.g. from ReactFlow). Corrects mouse coordinates for text selection. */
+  zoomLevel?: number;
 }
 
 // Session storage key prefix
@@ -50,6 +52,7 @@ export function TerminalInstance({
   showStatusBar = true,
   className = '',
   fontSize = 13,
+  zoomLevel,
 }: TerminalInstanceProps) {
   const { isDark: systemIsDark } = useTheme();
   const [terminalThemeMode, setTerminalThemeMode] = useState<TerminalThemeMode>(getStoredTerminalThemeMode);
@@ -63,6 +66,8 @@ export function TerminalInstance({
   const [dismissedUrls, setDismissedUrls] = useState<Set<string>>(new Set());
   const terminalIsDarkRef = useRef(terminalIsDark);
   terminalIsDarkRef.current = terminalIsDark;
+  const zoomRef = useRef(zoomLevel ?? 1);
+  zoomRef.current = zoomLevel ?? 1;
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -173,6 +178,44 @@ export function TerminalInstance({
     // Open terminal
     term.open(containerEl);
     xtermRef.current = term;
+
+    // Fix mouse coordinates when inside a CSS-transformed container (e.g. ReactFlow zoom).
+    // xterm.js computes cell position as: ceil((clientX - rect.left) / cssCellWidth)
+    // But getBoundingClientRect() returns visual (scaled) coordinates while cssCellWidth
+    // is unscaled, causing selection offset at non-1.0 zoom. We patch getCoords to divide
+    // the visual offset by the zoom factor before the cell-width division.
+    const core = (term as unknown as { _core: { _mouseService?: {
+      getCoords: (...args: unknown[]) => [number, number] | undefined;
+      getMouseReportCoords: (...args: unknown[]) => { col: number; row: number } | undefined;
+    }}})._core;
+    if (core._mouseService) {
+      const origGetCoords = core._mouseService.getCoords.bind(core._mouseService);
+      core._mouseService.getCoords = function(event: unknown, element: unknown, ...rest: unknown[]) {
+        const z = zoomRef.current;
+        if (z !== 1) {
+          const me = event as { clientX: number; clientY: number };
+          const rect = (element as HTMLElement).getBoundingClientRect();
+          event = {
+            clientX: rect.left + (me.clientX - rect.left) / z,
+            clientY: rect.top + (me.clientY - rect.top) / z,
+          };
+        }
+        return origGetCoords(event, element, ...rest);
+      } as typeof core._mouseService.getCoords;
+      const origGetMouseReportCoords = core._mouseService.getMouseReportCoords.bind(core._mouseService);
+      core._mouseService.getMouseReportCoords = function(event: unknown, element: unknown) {
+        const z = zoomRef.current;
+        if (z !== 1) {
+          const me = event as { clientX: number; clientY: number };
+          const rect = (element as HTMLElement).getBoundingClientRect();
+          event = {
+            clientX: rect.left + (me.clientX - rect.left) / z,
+            clientY: rect.top + (me.clientY - rect.top) / z,
+          };
+        }
+        return origGetMouseReportCoords(event, element);
+      } as typeof core._mouseService.getMouseReportCoords;
+    }
 
     // Register OSC 7337 handler for real-time cwd/branch tracking from shell
     const oscDisposable = term.parser.registerOscHandler(7337, (data) => {
