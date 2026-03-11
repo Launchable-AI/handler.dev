@@ -179,6 +179,34 @@ export function TerminalInstance({
     term.open(containerEl);
     xtermRef.current = term;
 
+    // Let browser handle clipboard shortcuts (paste/copy) instead of xterm consuming them
+    term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      if (event.type === 'keydown') {
+        const mod = event.ctrlKey || event.metaKey;
+        // Let browser handle paste (Ctrl+V / Cmd+V / Ctrl+Shift+V / Shift+Insert)
+        if ((mod && event.key === 'v') || (event.ctrlKey && event.shiftKey && event.key === 'V') ||
+            (event.shiftKey && event.key === 'Insert')) {
+          return false;
+        }
+        // Let browser handle copy (Ctrl+C / Cmd+C) when there's a selection
+        if (mod && event.key === 'c' && term.hasSelection()) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Right-click to paste from clipboard
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      navigator.clipboard.readText().then(text => {
+        if (text) term.paste(text);
+      }).catch(() => {
+        // Clipboard access denied or unavailable
+      });
+    };
+    containerEl.addEventListener('contextmenu', handleContextMenu);
+
     // Fix mouse coordinates when inside a CSS-transformed container (e.g. ReactFlow zoom).
     // xterm.js computes cell position as: ceil((clientX - rect.left) / cssCellWidth)
     // But getBoundingClientRect() returns visual (scaled) coordinates while cssCellWidth
@@ -516,6 +544,7 @@ export function TerminalInstance({
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       resizeObserver.disconnect();
       if (scanTimeout) clearTimeout(scanTimeout);
+      containerEl.removeEventListener('contextmenu', handleContextMenu);
       scrollDisposable.dispose();
       dataDisposable.dispose();
       oscDisposable.dispose();

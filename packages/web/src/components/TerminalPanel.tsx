@@ -698,14 +698,38 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
     term.open(terminalRef.current);
     xtermRef.current = term;
 
-    // Prevent xterm from consuming our global shortcut keys
+    // Prevent xterm from consuming our global shortcut keys,
+    // and let the browser handle clipboard shortcuts natively
     term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
       if (matchesCombo(event, getCombo('terminal.nextTab')) ||
           matchesCombo(event, getCombo('terminal.prevTab'))) {
         return false;
       }
+      // Let browser handle paste (Ctrl+V / Cmd+V / Ctrl+Shift+V / Shift+Insert)
+      if (event.type === 'keydown') {
+        const mod = event.ctrlKey || event.metaKey;
+        if ((mod && event.key === 'v') || (event.ctrlKey && event.shiftKey && event.key === 'V') ||
+            (event.shiftKey && event.key === 'Insert')) {
+          return false;
+        }
+        // Let browser handle copy (Ctrl+C / Cmd+C) when there's a selection
+        if (mod && event.key === 'c' && term.hasSelection()) {
+          return false;
+        }
+      }
       return true;
     });
+
+    // Right-click to paste from clipboard
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      navigator.clipboard.readText().then(text => {
+        if (text) term.paste(text);
+      }).catch(() => {
+        // Clipboard access denied or unavailable
+      });
+    };
+    terminalRef.current.addEventListener('contextmenu', handleContextMenu);
 
     // Fit immediately (throttled via rAF), debounce only the WebSocket resize message
     let lastSentCols = 0;
@@ -920,6 +944,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
       resizeObserver.disconnect();
       dataDisposable.dispose();
+      terminalRef.current?.removeEventListener('contextmenu', handleContextMenu);
       const ws = wsRef.current;
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close();
