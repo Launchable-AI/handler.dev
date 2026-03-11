@@ -13,6 +13,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useCanvas } from '../../context/CanvasContext';
+import { useCommandCentre } from '../../hooks/useCommandCentre';
 import { useSandboxes } from '../../hooks/useSandboxes';
 import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
@@ -37,10 +38,18 @@ interface CanvasViewProps {
 function CanvasViewInner({ className = '' }: CanvasViewProps) {
   const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar, restoreNode } = useCanvas();
   const { data: sandboxData } = useSandboxes();
+  const { state: ccState } = useCommandCentre();
   const { setCenter, fitView } = useReactFlow();
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [activeGitPanel, setActiveGitPanel] = useState<{ nodeId: string; sandboxId: string; cwd?: string } | null>(null);
+
+  // Auto-close node list panel when Command Centre enters fullscreen
+  useEffect(() => {
+    if (ccState.isFullscreen) {
+      setPanelOpen(false);
+    }
+  }, [ccState.isFullscreen]);
 
   // Listen for git panel open events from SandboxNode
   useEffect(() => {
@@ -207,7 +216,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       status: 'ready',
       ports: [],
       position: { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 },
-      size: { width: 500, height: 350 },
+      size: { width: 650, height: 350 },
       backendType: sandbox.backend as WorktreeNode['backendType'],
       ip: sandbox.guestIp,
       sandboxName: sandbox.name,
@@ -217,7 +226,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
   };
 
   const handleFocusNode = (node: WorktreeNode) => {
-    const w = node.size?.width || 500;
+    const w = node.size?.width || 650;
     const h = node.size?.height || 350;
     setCenter(
       node.position.x + w / 2,
@@ -245,7 +254,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       for (const node of sorted) {
         const shortestCol = colY.indexOf(Math.min(...colY));
         const h = node.size?.height || 350;
-        const w = node.size?.width || 500;
+        const w = node.size?.width || 650;
         placements.push({ node, col: shortestCol, y: colY[shortestCol] });
         colY[shortestCol] += h + gap;
         colMaxW[shortestCol] = Math.max(colMaxW[shortestCol], w);
@@ -266,7 +275,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       let x = 0;
       for (const node of visible) {
         updatePosition(node.id, { x, y: 0 });
-        x += (node.size?.width || 500) + gap;
+        x += (node.size?.width || 650) + gap;
       }
     }
 

@@ -128,7 +128,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         status: 'ready',
         ports: [],
         position: { x: data.position.x + 550, y: data.position.y + 50 },
-        size: { width: 500, height: 350 },
+        size: { width: 650, height: 350 },
         backendType: data.backendType,
         ip: data.ip,
       });
@@ -156,7 +156,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         status: 'ready',
         ports: [],
         position: { x: data.position.x + 550, y: data.position.y + 50 },
-        size: { width: 500, height: 350 },
+        size: { width: 650, height: 350 },
         backendType: (result.backendType as WorktreeNode['backendType']) || data.backendType,
         ip: result.ip || data.ip,
         sandboxName: result.name,
@@ -234,9 +234,8 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
       termContainerRef.current.appendChild(wrapper);
     }
 
-    // Trigger xterm refit after reparenting
-    const fitEvent = new Event('resize');
-    window.dispatchEvent(fitEvent);
+    // Trigger xterm refit after reparenting — deferred to allow layout to compute
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
   }, [isFocused]);
 
   // Focus mode overlay rendered via portal so it escapes ReactFlow transforms
@@ -257,10 +256,14 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
             {data.sandboxName && (
               <span className="text-[9px] text-[hsl(var(--text-muted))]">/</span>
             )}
-            <GitBranch className="h-3 w-3 text-[hsl(var(--cyan))] shrink-0" />
-            <span className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate flex-1">
-              {data.branch}
-            </span>
+            {inGitRepo && (
+              <>
+                <GitBranch className="h-3 w-3 text-[hsl(var(--cyan))] shrink-0" />
+                <span className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate flex-1">
+                  {data.branch}
+                </span>
+              </>
+            )}
 
             <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 ${
               connState === 'connected'
@@ -343,18 +346,20 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         {data.sandboxName && (
           <span className={`text-[hsl(var(--text-muted))] ${slimToolbar ? 'text-[8px]' : 'text-[9px]'}`}>/</span>
         )}
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent('open-git-panel', { detail: { nodeId: data.id, sandboxId: data.sandboxId, cwd: currentCwd } }))}
-          onPointerDown={e => e.stopPropagation()}
-          onMouseDown={e => e.stopPropagation()}
-          className="flex items-center gap-1 min-w-0 hover:text-[hsl(var(--cyan))] transition-colors"
-          title="View git history"
-        >
-          <GitBranch className={`shrink-0 ${inGitRepo ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-secondary))]'} ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
-          <span className={`font-medium truncate ${inGitRepo ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-secondary))]'} ${slimToolbar ? 'text-[9px]' : 'text-[11px]'}`}>
-            {data.branch}
-          </span>
-        </button>
+        {inGitRepo && (
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-git-panel', { detail: { nodeId: data.id, sandboxId: data.sandboxId, cwd: currentCwd } }))}
+            onPointerDown={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            className="flex items-center gap-1 min-w-0 hover:text-[hsl(var(--cyan))] transition-colors"
+            title="View git history"
+          >
+            <GitBranch className={`shrink-0 text-[hsl(var(--cyan))] ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
+            <span className={`font-medium truncate text-[hsl(var(--cyan))] ${slimToolbar ? 'text-[9px]' : 'text-[11px]'}`}>
+              {data.branch}
+            </span>
+          </button>
+        )}
         <div className="flex-1" />
 
         {/* Claude Code status indicator */}

@@ -64,7 +64,7 @@ function loadPersistedNodes(): WorktreeNode[] {
     // Migrate old nodes missing the size field
     return nodes.map(n => ({
       ...n,
-      size: n.size || { width: 500, height: 350 },
+      size: n.size || { width: 650, height: 350 },
       position: n.position || { x: 100, y: 100 },
     }));
   } catch {
@@ -238,7 +238,7 @@ function buildReactFlowNodes(worktreeNodes: WorktreeNode[], visibleIds: Set<stri
       position: wn.position,
       data: wn,
       dragHandle: '.terminal-node-drag-handle',
-      style: { width: wn.size?.width || 500, height: wn.size?.height || 350 },
+      style: { width: wn.size?.width || 650, height: wn.size?.height || 350 },
     }));
 }
 
