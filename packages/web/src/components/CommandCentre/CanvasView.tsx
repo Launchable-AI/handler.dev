@@ -19,7 +19,6 @@ import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
 import { GitLogPanel } from './GitLogPanel';
 import { MinimizedNodesSidebar, type MinimizedNodeInfo } from './MinimizedNodesSidebar';
-import { TerminalInstance } from '../Terminal/TerminalInstance';
 import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween, LayoutGrid, Columns3, Rows3 } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
 
@@ -112,6 +111,8 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         sandboxId: n.sandboxId,
         branch: n.branch,
         sandboxName: n.sandboxName || sandboxNameMap.get(n.sandboxId),
+        backendType: n.backendType,
+        ip: n.ip,
         status: n.status,
         claudeStatus: 'off' as const, // Will be updated by monitors
       }));
@@ -297,7 +298,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       {/* Node list panel */}
       <div
         className={`relative z-10 bg-[hsl(var(--bg-surface))] border-r border-[hsl(var(--border))] flex flex-col transition-all duration-200 ${
-          panelOpen ? 'w-64' : 'w-0'
+          panelOpen ? 'w-56' : 'w-0'
         } overflow-hidden shrink-0`}
       >
         <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))] shrink-0">
@@ -318,54 +319,40 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
             visibleWorktreeNodes.map(wn => (
               <div
                 key={wn.id}
-                className="group border-b border-[hsl(var(--border)/0.5)] hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer"
+                className="group flex items-center gap-2 px-3 py-2 hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer border-b border-[hsl(var(--border)/0.5)]"
                 onClick={() => handleFocusNode(wn)}
               >
-                {/* Top row: status, name, branch, actions */}
-                <div className="flex items-center gap-1.5 px-2 py-1.5">
-                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDotColor[wn.status]}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-medium text-[hsl(var(--text-primary))] truncate">
-                      {sandboxNameMap.get(wn.sandboxId) || wn.sandboxId.slice(0, 12)}
-                    </div>
-                    <div className="text-[8px] text-[hsl(var(--text-muted))] truncate flex items-center gap-0.5">
-                      <GitBranch className="h-2 w-2 shrink-0" />
+                <div className={`w-1.5 h-1.5 rounded-full shrink-0 self-start mt-1.5 ${statusDotColor[wn.status]}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
+                    {sandboxNameMap.get(wn.sandboxId) || wn.sandboxId.slice(0, 12)}
+                  </div>
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="text-[9px] text-[hsl(var(--text-muted))] truncate">
+                      <GitBranch className="h-2.5 w-2.5 inline mr-0.5 -mt-px" />
                       {wn.branch}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleFocusNode(wn); }}
-                      className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] rounded"
-                      title="Focus"
-                    >
-                      <Crosshair className="h-2.5 w-2.5" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeNode(wn.id); }}
-                      className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] rounded"
-                      title="Remove from canvas"
-                    >
-                      <Trash2 className="h-2.5 w-2.5" />
-                    </button>
+                    <div className="text-[8px] text-[hsl(var(--text-muted))] opacity-60 font-mono shrink-0">
+                      {wn.sandboxId.slice(0, 8)}
+                    </div>
                   </div>
                 </div>
-                {/* Terminal preview - only for running nodes */}
-                {wn.status === 'ready' && (
-                  <div className="h-16 mx-1 mb-1 rounded overflow-hidden bg-[hsl(var(--bg-base))] pointer-events-none">
-                    <TerminalInstance
-                      target={{
-                        type: wn.backendType && wn.backendType !== 'docker' ? 'vm' : 'container',
-                        id: wn.sandboxId,
-                        sessionKey: `sidebar-${wn.id}`,
-                        ...(wn.ip ? { ip: wn.ip } : {}),
-                      }}
-                      showStatusBar={false}
-                      fontSize={6}
-                      className="h-full [&_.xterm-viewport]:!overflow-hidden"
-                    />
-                  </div>
-                )}
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleFocusNode(wn); }}
+                    className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] rounded"
+                    title="Focus"
+                  >
+                    <Crosshair className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeNode(wn.id); }}
+                    className="p-0.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--red))] rounded"
+                    title="Remove from canvas"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
               </div>
             ))
           )}
@@ -376,7 +363,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       <button
         onClick={() => setPanelOpen(!panelOpen)}
         className="absolute top-3 left-3 z-20 p-1.5 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded shadow-lg text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors"
-        style={{ left: panelOpen ? 'calc(16rem + 0.75rem)' : '0.75rem' }}
+        style={{ left: panelOpen ? 'calc(14rem + 0.75rem)' : '0.75rem' }}
         title={panelOpen ? 'Collapse panel' : 'Expand panel'}
       >
         {panelOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}

@@ -5,12 +5,15 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, GitBranch, Maximize2, AlertCircle } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
+import { TerminalInstance } from '../Terminal/TerminalInstance';
 
 export interface MinimizedNodeInfo {
   id: string;
   sandboxId: string;
   branch: string;
   sandboxName?: string;
+  backendType?: string;
+  ip?: string;
   status: WorktreeNode['status'];
   claudeStatus: 'off' | 'idle' | 'processing' | 'waiting';
 }
@@ -39,7 +42,7 @@ export function MinimizedNodesSidebar({ nodes, onRestore }: MinimizedNodesSideba
   return (
     <div
       className={`relative z-10 bg-[hsl(var(--bg-surface))] border-l border-[hsl(var(--border))] flex flex-col transition-all duration-200 ${
-        collapsed ? 'w-10' : 'w-48'
+        collapsed ? 'w-10' : 'w-56'
       } shrink-0`}
     >
       {/* Toggle button */}
@@ -95,54 +98,78 @@ function MinimizedNodeItem({ node, collapsed, onRestore }: MinimizedNodeItemProp
   return (
     <div
       onClick={() => onRestore(node.id)}
-      className={`group flex items-center gap-2 py-2 hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer border-b border-[hsl(var(--border)/0.5)] ${
-        collapsed ? 'px-2 justify-center' : 'px-3'
+      className={`group hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer border-b border-[hsl(var(--border)/0.5)] ${
+        collapsed ? 'px-2 py-2 flex items-center justify-center' : ''
       } ${needsInput ? 'bg-[hsl(var(--amber)/0.05)]' : ''}`}
       title={collapsed ? `${node.sandboxName || node.sandboxId.slice(0, 12)} - Click to restore` : 'Click to restore'}
     >
-      {/* Status dot */}
-      <div className={`w-2 h-2 rounded-full shrink-0 ${statusColors[node.status]}`} />
-
-      {!collapsed && (
+      {collapsed && (
         <>
-          <div className="flex-1 min-w-0">
-            <div className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
-              {node.sandboxName || node.sandboxId.slice(0, 12)}
-            </div>
-            <div className="flex items-center gap-1 text-[9px] text-[hsl(var(--text-muted))] truncate">
-              <GitBranch className="h-2.5 w-2.5 text-[hsl(var(--cyan))] shrink-0" />
-              {node.branch}
-            </div>
-          </div>
-
-          {/* Claude status indicator */}
-          {node.claudeStatus !== 'off' && (
-            <div className="shrink-0">
-              {needsInput ? (
-                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-[hsl(var(--amber)/0.15)] rounded">
-                  <AlertCircle className="h-3 w-3 text-[hsl(var(--amber))]" />
-                  <span className="text-[9px] font-medium text-[hsl(var(--amber))]">INPUT</span>
-                </div>
-              ) : node.claudeStatus === 'processing' ? (
-                <span className="w-2 h-2 rounded-full bg-[hsl(var(--purple))] animate-pulse" />
-              ) : (
-                <span className="w-2 h-2 rounded-full bg-[hsl(var(--text-muted)/0.3)]" />
-              )}
+          {/* Status dot */}
+          <div className={`w-2 h-2 rounded-full shrink-0 ${statusColors[node.status]}`} />
+          {/* Collapsed: show alert indicator */}
+          {needsInput && (
+            <div className="absolute right-1 top-1/2 -translate-y-1/2">
+              <span className="w-2 h-2 rounded-full bg-[hsl(var(--amber))] animate-pulse block" />
             </div>
           )}
-
-          {/* Restore icon on hover */}
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-            <Maximize2 className="h-3 w-3 text-[hsl(var(--cyan))]" />
-          </div>
         </>
       )}
 
-      {/* Collapsed: show alert indicator */}
-      {collapsed && needsInput && (
-        <div className="absolute right-1 top-1/2 -translate-y-1/2">
-          <span className="w-2 h-2 rounded-full bg-[hsl(var(--amber))] animate-pulse block" />
-        </div>
+      {!collapsed && (
+        <>
+          {/* Header row */}
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            <div className={`w-2 h-2 rounded-full shrink-0 ${statusColors[node.status]}`} />
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
+                {node.sandboxName || node.sandboxId.slice(0, 12)}
+              </div>
+              <div className="flex items-center gap-1 text-[9px] text-[hsl(var(--text-muted))] truncate">
+                <GitBranch className="h-2.5 w-2.5 text-[hsl(var(--cyan))] shrink-0" />
+                {node.branch}
+              </div>
+            </div>
+
+            {/* Claude status indicator */}
+            {node.claudeStatus !== 'off' && (
+              <div className="shrink-0">
+                {needsInput ? (
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 bg-[hsl(var(--amber)/0.15)] rounded">
+                    <AlertCircle className="h-3 w-3 text-[hsl(var(--amber))]" />
+                    <span className="text-[9px] font-medium text-[hsl(var(--amber))]">INPUT</span>
+                  </div>
+                ) : node.claudeStatus === 'processing' ? (
+                  <span className="w-2 h-2 rounded-full bg-[hsl(var(--purple))] animate-pulse" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-[hsl(var(--text-muted)/0.3)]" />
+                )}
+              </div>
+            )}
+
+            {/* Restore icon on hover */}
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+              <Maximize2 className="h-3 w-3 text-[hsl(var(--cyan))]" />
+            </div>
+          </div>
+
+          {/* Terminal preview */}
+          {node.status === 'ready' && (
+            <div className="h-16 mx-1.5 mb-1.5 rounded overflow-hidden bg-[hsl(var(--bg-base))] pointer-events-none">
+              <TerminalInstance
+                target={{
+                  type: node.backendType && node.backendType !== 'docker' ? 'vm' : 'container',
+                  id: node.sandboxId,
+                  sessionKey: `minimized-${node.id}`,
+                  ...(node.ip ? { ip: node.ip } : {}),
+                }}
+                showStatusBar={false}
+                fontSize={6}
+                className="h-full [&_.xterm-viewport]:!overflow-hidden"
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
