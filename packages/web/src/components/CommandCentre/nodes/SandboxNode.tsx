@@ -3,13 +3,15 @@ import { createPortal } from 'react-dom';
 import { type NodeProps, useStore } from 'reactflow';
 import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
-import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, Copy, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive } from 'lucide-react';
+import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, Copy, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive, Upload, Download, Check } from 'lucide-react';
 import type { WorktreeNode } from '../../../types/command-centre';
 import { useCanvas } from '../../../context/CanvasContext';
 import { useSandboxMetrics } from '../../../hooks/useSandboxes';
 import { TerminalInstance } from '../../Terminal/TerminalInstance';
 import type { ConnectionState, ShellState } from '../../Terminal/TerminalInstance';
+import { SandboxFileBrowser } from '../../sandbox/SandboxFileBrowser';
 import * as worktreeApi from '../../../api/worktrees';
+import * as api from '../../../api/client';
 
 const statusColors: Record<WorktreeNode['status'], string> = {
   creating: 'hsl(var(--amber))',
@@ -44,6 +46,11 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [currentCwd, setCurrentCwd] = useState<string>(data.cwd || '/home/agent');
   const [inGitRepo, setInGitRepo] = useState<boolean>(data.inGitRepo ?? false);
   const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'waiting' | 'off'>('off');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileBrowserRef = useRef<HTMLDivElement>(null);
   const { data: metrics } = useSandboxMetrics(data.sandboxId, connState === 'connected');
   const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
@@ -107,6 +114,44 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
     }
     prevHasUrlsRef.current = has;
   }, [data.id, data.size.width, data.size.height, updateSize]);
+
+  const handleUploadClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    setUploadSuccess(false);
+    try {
+      if (data.backendType && data.backendType !== 'docker') {
+        await api.uploadFileToVm(data.sandboxId, file, '/home/agent');
+      } else {
+        await api.uploadFileToSandbox(data.sandboxId, file, '/home/dev/workspace').promise;
+      }
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 2000);
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [data.sandboxId, data.backendType]);
+
+  // Close file browser on click outside
+  useEffect(() => {
+    if (!showFileBrowser) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (fileBrowserRef.current && !fileBrowserRef.current.contains(e.target as Node)) {
+        setShowFileBrowser(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFileBrowser]);
 
   const handleFork = async () => {
     if (!forkBranch.trim()) return;
@@ -197,18 +242,26 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
     }
   };
 
+  const resizeRafRef = useRef(0);
+  const isResizingRef = useRef(false);
+
   const handleResize = useCallback((_event: unknown, params: { width: number; height: number }) => {
-    updateSize(data.id, { width: params.width, height: params.height });
+    isResizingRef.current = true;
+    cancelAnimationFrame(resizeRafRef.current);
+    resizeRafRef.current = requestAnimationFrame(() => {
+      updateSize(data.id, { width: params.width, height: params.height });
+    });
   }, [data.id, updateSize]);
 
   // After resize ends, trigger xterm refit to fix mouse coordinate caching
   const handleResizeEnd = useCallback(() => {
+    isResizingRef.current = false;
     requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
   }, []);
 
   // After drag ends, trigger xterm refit to fix selection offset
   useEffect(() => {
-    if (!dragging) {
+    if (!dragging && !isResizingRef.current) {
       requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
     }
   }, [dragging]);
@@ -318,7 +371,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
     <>
     {focusOverlay}
     <div
-      className={`relative flex flex-col bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded-lg shadow-lg overflow-hidden w-full h-full transition-opacity duration-75 ${dragging ? 'opacity-70' : ''}`}
+      className={`relative flex flex-col bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded-lg shadow-lg overflow-hidden w-full h-full ${dragging ? 'opacity-70' : ''}`}
       style={{ willChange: 'transform' }}
     >
       <NodeResizer
@@ -494,6 +547,54 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
             <PanelBottomClose className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
           </button>
 
+          {/* Upload file */}
+          {connState === 'connected' && (
+            <button
+              onClick={handleUploadClick}
+              onPointerDown={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+              disabled={isUploading}
+              className={`transition-colors ${slimToolbar ? 'p-0.5' : 'p-1'} ${
+                uploadSuccess
+                  ? 'text-[hsl(var(--green))]'
+                  : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))]'
+              } rounded`}
+              title="Upload file"
+            >
+              {isUploading ? (
+                <Loader2 className={`animate-spin ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
+              ) : uploadSuccess ? (
+                <Check className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+              ) : (
+                <Upload className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+              )}
+            </button>
+          )}
+
+          {/* Download/browse files */}
+          {connState === 'connected' && (
+            <div className="relative" ref={fileBrowserRef}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowFileBrowser(!showFileBrowser); }}
+                onPointerDown={e => e.stopPropagation()}
+                onMouseDown={e => e.stopPropagation()}
+                className={`text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors ${slimToolbar ? 'p-0.5' : 'p-1'}`}
+                title="Browse & download files"
+              >
+                <Download className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+              </button>
+              {showFileBrowser && (
+                <div className="absolute right-0 top-full mt-1 z-50" onPointerDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+                  <SandboxFileBrowser
+                    sandboxId={data.sandboxId}
+                    defaultPath={data.backendType && data.backendType !== 'docker' ? '/home/agent' : '/home/dev/workspace'}
+                    onClose={() => setShowFileBrowser(false)}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Separator - hidden in slim mode */}
           {!slimToolbar && <div className="w-px h-3 bg-[hsl(var(--border))] mx-0.5" />}
 
@@ -624,6 +725,14 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
           </div>
         )}
       </div>
+
+      {/* Hidden file input for uploads */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileSelect}
+      />
     </div>
     </>
   );

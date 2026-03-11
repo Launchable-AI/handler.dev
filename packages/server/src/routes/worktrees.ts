@@ -85,11 +85,8 @@ async function cloneVm(
     throw new Error('Firecracker service not available');
   }
 
-  // Strip sandbox-adapter prefix to get the raw VM id
-  const rawId = sandbox.id.replace(/^fc-/, '');
-
   // 1. Create a snapshot
-  const snapshot = await fcService.createSnapshot(rawId, cloneName);
+  const snapshot = await fcService.createSnapshot(sandbox.id, cloneName);
 
   // 2. Wait for disk copy to complete (poll up to 60s)
   const maxWait = 60_000;
@@ -98,7 +95,7 @@ async function cloneVm(
   while (!snapshot.diskReady && waited < maxWait) {
     await new Promise(r => setTimeout(r, pollInterval));
     waited += pollInterval;
-    const snapshots = fcService.listVmSnapshots(rawId);
+    const snapshots = fcService.listVmSnapshots(sandbox.id);
     const latest = snapshots.find(s => s.id === snapshot.id);
     if (latest?.diskReady) {
       snapshot.diskReady = true;
@@ -113,7 +110,7 @@ async function cloneVm(
   // 3. Create a new VM from the snapshot
   const newVm = await fcService.createVm({
     name: cloneName,
-    fromSnapshot: { vmId: rawId, snapshotId: snapshot.id },
+    fromSnapshot: { vmId: sandbox.id, snapshotId: snapshot.id },
   });
 
   return {

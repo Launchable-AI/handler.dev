@@ -10,6 +10,7 @@ export interface MinimizedNodeInfo {
   id: string;
   sandboxId: string;
   branch: string;
+  sandboxName?: string;
   status: WorktreeNode['status'];
   claudeStatus: 'off' | 'idle' | 'processing' | 'waiting';
 }
@@ -97,7 +98,7 @@ function MinimizedNodeItem({ node, collapsed, onRestore }: MinimizedNodeItemProp
       className={`group flex items-center gap-2 py-2 hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer border-b border-[hsl(var(--border)/0.5)] ${
         collapsed ? 'px-2 justify-center' : 'px-3'
       } ${needsInput ? 'bg-[hsl(var(--amber)/0.05)]' : ''}`}
-      title={collapsed ? `${node.branch} - Click to restore` : 'Click to restore'}
+      title={collapsed ? `${node.sandboxName || node.sandboxId.slice(0, 12)} - Click to restore` : 'Click to restore'}
     >
       {/* Status dot */}
       <div className={`w-2 h-2 rounded-full shrink-0 ${statusColors[node.status]}`} />
@@ -105,14 +106,12 @@ function MinimizedNodeItem({ node, collapsed, onRestore }: MinimizedNodeItemProp
       {!collapsed && (
         <>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <GitBranch className="h-3 w-3 text-[hsl(var(--cyan))] shrink-0" />
-              <span className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
-                {node.branch}
-              </span>
+            <div className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
+              {node.sandboxName || node.sandboxId.slice(0, 12)}
             </div>
-            <div className="text-[9px] text-[hsl(var(--text-muted))] truncate">
-              {node.sandboxId.slice(0, 12)}
+            <div className="flex items-center gap-1 text-[9px] text-[hsl(var(--text-muted))] truncate">
+              <GitBranch className="h-2.5 w-2.5 text-[hsl(var(--cyan))] shrink-0" />
+              {node.branch}
             </div>
           </div>
 
