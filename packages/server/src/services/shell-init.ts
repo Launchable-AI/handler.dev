@@ -171,15 +171,19 @@ const TMUX_STATUS_THEMES: Record<ShellPromptTheme, string> = {
  * When true, returns the full themed status bar config.
  */
 export function getTmuxThemeContent(theme: ShellPromptTheme, showStatusBar: boolean): string {
+  // allow-passthrough lets custom OSC sequences (e.g. 7337 for shell state) reach the outer terminal
+  const passthrough = 'set -g allow-passthrough on';
   if (!showStatusBar) {
-    return 'set -g status off';
+    return `${passthrough}\nset -g status off`;
   }
   const themeContent = TMUX_STATUS_THEMES[theme] || TMUX_STATUS_THEMES.minimal;
-  return `set -g status on\n${themeContent}`;
+  return `${passthrough}\nset -g status on\n${themeContent}`;
 }
 
 // OSC 7337 is a custom code (unused by standard terminals).
 // Format: \033]7337;{"cwd":"...","branch":"...","claudeStatus":"..."}\007
+// Inside tmux, OSC sequences must be wrapped in DCS passthrough: \033Ptmux;\033{OSC}\033\\
+// The __handler_osc helper detects $TMUX and wraps automatically.
 const SHELL_INIT_SCRIPT = [
   // Set up Claude Code hooks for status tracking
   CLAUDE_HOOKS_INIT,
@@ -193,13 +197,15 @@ const SHELL_INIT_SCRIPT = [
   `export CLICOLOR=1`,
   // Helper to read Claude Code status from hook-written file, falling back to process detection
   `__handler_claude_status() { if [ -f ~/.claude-status ]; then cat ~/.claude-status; elif pgrep -x claude >/dev/null 2>&1; then echo idle; else echo off; fi; }`,
+  // Helper to emit OSC 7337, wrapped in DCS passthrough when inside tmux
+  `__handler_osc() { local payload="$1"; if [ -n "$TMUX" ]; then printf '\\033Ptmux;\\033\\033]7337;%s\\007\\033\\\\' "$payload"; else printf '\\033]7337;%s\\007' "$payload"; fi; }`,
   // Define the prompt hook function
-  `__handler_prompt() { local b cs; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); cs=$(__handler_claude_status); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; }`,
+  `__handler_prompt() { local b cs; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); cs=$(__handler_claude_status); __handler_osc "{\\"cwd\\":\\"$PWD\\",\\"branch\\":\\"$b\\",\\"claudeStatus\\":\\"$cs\\"}"; }`,
   // Append to PROMPT_COMMAND (preserve existing value if any)
   `PROMPT_COMMAND="__handler_prompt\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`,
   // Background watcher: emit OSC on Claude status changes (every 2s), independent of prompt.
   // Redirects stdout/stderr to /dev/tty so non-interactive SSH sessions (metrics, agent-detect) aren't blocked by inherited FDs.
-  `(if [ -t 1 ] || [ -e /dev/tty ]; then __cs_prev=""; while true; do cs=$(__handler_claude_status); if [ "$cs" != "$__cs_prev" ]; then __cs_prev="$cs"; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); printf '\\033]7337;{"cwd":"%s","branch":"%s","claudeStatus":"%s"}\\007' "$PWD" "$b" "$cs"; fi; sleep 2; done >/dev/tty 2>/dev/null; fi &) 2>/dev/null`,
+  `(if [ -t 1 ] || [ -e /dev/tty ]; then __cs_prev=""; while true; do cs=$(__handler_claude_status); if [ "$cs" != "$__cs_prev" ]; then __cs_prev="$cs"; b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); __handler_osc "{\\"cwd\\":\\"$PWD\\",\\"branch\\":\\"$b\\",\\"claudeStatus\\":\\"$cs\\"}"; fi; sleep 2; done >/dev/tty 2>/dev/null; fi &) 2>/dev/null`,
   // tmux wrapper: emits state markers so the Handler badge tracks manual attach/detach
   `__handler_tmux_wrap() { case "\${1:-}" in a*|new*|"") echo __HANDLER_TMUX_ACTIVE__; command tmux "$@"; echo __HANDLER_TMUX_DETACHED__; return ;; esac; command tmux "$@"; }`,
   `alias tmux='__handler_tmux_wrap'`,

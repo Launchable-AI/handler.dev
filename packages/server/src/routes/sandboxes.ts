@@ -1759,7 +1759,7 @@ sandboxes.get('/:id/git-log', async (c) => {
   const workdir = c.req.query('cwd') || '/home/agent';
 
   try {
-    const service = await getSandboxService();
+    const service = await ensureSandboxServiceInitialized();
     const sandbox = await service.get(id);
     if (!sandbox) return c.json({ commits: [], branch: '' });
     if (sandbox.status !== 'running') return c.json({ commits: [], branch: '' });
@@ -1781,7 +1781,8 @@ sandboxes.get('/:id/git-log', async (c) => {
       });
 
     return c.json({ commits, branch: branch.trim() || '' });
-  } catch {
+  } catch (error) {
+    console.error('[SandboxRoutes] Git log error:', error);
     return c.json({ commits: [], branch: '' });
   }
 });
@@ -1796,7 +1797,7 @@ sandboxes.get('/:id/git-show/:hash', async (c) => {
   const workdir = c.req.query('cwd') || '/home/agent';
 
   try {
-    const service = await getSandboxService();
+    const service = await ensureSandboxServiceInitialized();
     const sandbox = await service.get(id);
     if (!sandbox) return c.json({ output: '' });
 
@@ -1805,7 +1806,8 @@ sandboxes.get('/:id/git-show/:hash', async (c) => {
 
     const output = await execInSandbox(sandbox, `cd ${JSON.stringify(gitDir)} && git show ${hash} --stat 2>/dev/null || echo ""`);
     return c.json({ output });
-  } catch {
+  } catch (error) {
+    console.error('[SandboxRoutes] Git show error:', error);
     return c.json({ output: '' });
   }
 });

@@ -28,22 +28,35 @@ export function GitLogPanel({ sandboxId, cwd, onClose }: GitLogPanelProps) {
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [branch, setBranch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
   const [showOutput, setShowOutput] = useState<string>('');
   const [showLoading, setShowLoading] = useState(false);
+  const [overrideCwd, setOverrideCwd] = useState(cwd || '');
+
+  const effectiveCwd = overrideCwd || cwd;
 
   const fetchLog = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await worktreeApi.getContainerGitLog(sandboxId, 50, cwd);
+      const res = await worktreeApi.getContainerGitLog(sandboxId, 50, effectiveCwd);
       setCommits(res.commits);
       setBranch(res.branch);
     } catch (err) {
       console.error('Failed to fetch git log:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch git log');
     } finally {
       setLoading(false);
     }
-  }, [sandboxId, cwd]);
+  }, [sandboxId, effectiveCwd]);
+
+  // Sync from prop when OSC updates the cwd
+  useEffect(() => {
+    if (cwd && cwd !== overrideCwd) {
+      setOverrideCwd(cwd);
+    }
+  }, [cwd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchLog();
@@ -58,7 +71,7 @@ export function GitLogPanel({ sandboxId, cwd, onClose }: GitLogPanelProps) {
     setExpandedHash(hash);
     setShowLoading(true);
     try {
-      const output = await worktreeApi.getContainerGitShow(sandboxId, hash, cwd);
+      const output = await worktreeApi.getContainerGitShow(sandboxId, hash, effectiveCwd);
       setShowOutput(output);
     } catch {
       setShowOutput('Failed to load commit details');
@@ -70,17 +83,29 @@ export function GitLogPanel({ sandboxId, cwd, onClose }: GitLogPanelProps) {
   return (
     <div className="absolute top-0 right-0 bottom-0 w-80 z-20 bg-[hsl(var(--bg-surface))] border-l border-[hsl(var(--border))] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))] shrink-0">
-        <GitBranch className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
-        <span className="text-xs font-medium text-[hsl(var(--text-primary))] flex-1 truncate">
-          {branch || 'Git History'}
-        </span>
-        <button
-          onClick={onClose}
-          className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+      <div className="flex flex-col border-b border-[hsl(var(--border))] bg-[hsl(var(--bg-elevated))] shrink-0">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <GitBranch className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
+          <span className="text-xs font-medium text-[hsl(var(--text-primary))] flex-1 truncate">
+            {branch || 'Git History'}
+          </span>
+          <button
+            onClick={onClose}
+            className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="px-3 pb-1.5 -mt-1">
+          <input
+            type="text"
+            value={overrideCwd}
+            onChange={(e) => setOverrideCwd(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') fetchLog(); }}
+            placeholder="/home/agent/project"
+            className="w-full text-[9px] font-mono text-[hsl(var(--text-muted))] bg-transparent border-b border-[hsl(var(--border)/0.5)] focus:border-[hsl(var(--cyan))] focus:text-[hsl(var(--text-primary))] outline-none py-0.5 placeholder:text-[hsl(var(--text-muted)/0.4)]"
+          />
+        </div>
       </div>
 
       {/* Commit list */}
@@ -89,9 +114,17 @@ export function GitLogPanel({ sandboxId, cwd, onClose }: GitLogPanelProps) {
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-4 w-4 animate-spin text-[hsl(var(--text-muted))]" />
           </div>
+        ) : error ? (
+          <div className="px-3 py-6 text-center space-y-2">
+            <div className="text-xs text-[hsl(var(--red))]">{error}</div>
+            <button onClick={fetchLog} className="text-[10px] text-[hsl(var(--cyan))] hover:underline">
+              Retry
+            </button>
+          </div>
         ) : commits.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-[hsl(var(--text-muted))]">
-            No commits found
+          <div className="px-3 py-6 text-center space-y-2">
+            <div className="text-xs text-[hsl(var(--text-muted))]">No commits found</div>
+            <div className="text-[9px] text-[hsl(var(--text-muted))] opacity-60">Edit the path above and press Enter</div>
           </div>
         ) : (
           commits.map((commit) => (

@@ -321,8 +321,8 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
           className="flex items-center gap-1 min-w-0 hover:text-[hsl(var(--cyan))] transition-colors"
           title="View git history"
         >
-          <GitBranch className={`shrink-0 ${inGitRepo ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-muted))]'} ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
-          <span className={`font-medium truncate ${inGitRepo ? 'text-[hsl(var(--text-primary))]' : 'text-[hsl(var(--text-muted))]'} ${slimToolbar ? 'text-[9px]' : 'text-[11px]'}`}>
+          <GitBranch className={`shrink-0 ${inGitRepo ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-secondary))]'} ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
+          <span className={`font-medium truncate ${inGitRepo ? 'text-[hsl(var(--cyan))]' : 'text-[hsl(var(--text-secondary))]'} ${slimToolbar ? 'text-[9px]' : 'text-[11px]'}`}>
             {data.branch}
           </span>
         </button>
