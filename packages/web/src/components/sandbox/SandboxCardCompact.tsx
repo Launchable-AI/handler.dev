@@ -81,7 +81,7 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
   const { data: metrics } = useSandboxMetrics(sandbox.id, isRunning);
 
   // Check if this is a VM-based sandbox that supports snapshots
-  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const isVm = sandbox.backend === 'firecracker';
   const vmMeta = sandbox.backendMeta as VmMeta | undefined;
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
 
@@ -269,7 +269,6 @@ export function SandboxCardCompact({ sandbox, highlight }: SandboxCardCompactPro
       case 'daytona': return '/home/daytona';
       case 'aws': return '/home/ubuntu';
       case 'firecracker':
-      case 'cloud-hypervisor':
       default: return '/home/agent';
     }
   };

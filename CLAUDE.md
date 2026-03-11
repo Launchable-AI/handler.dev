@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Handler?
 
-Handler is a web application for spawning and managing isolated compute sandboxes. It provides a unified API/UI over multiple backends: Docker, Cloud-Hypervisor VMs, Firecracker microVMs, Daytona, and cloud providers (AWS, Azure, GCP, DigitalOcean, Linode).
+Handler is a web application for spawning and managing isolated compute sandboxes. It provides a unified API/UI over multiple backends: Docker, Firecracker microVMs, Daytona, and cloud providers (AWS, Azure, GCP, DigitalOcean, Linode).
 
 ## Commands
 
@@ -51,7 +51,7 @@ pnpm --filter web test
 
 - Test files live next to source in `__tests__/` directories (e.g., `src/lib/__tests__/validation.test.ts`)
 - Use `.test.ts` for pure logic, `.test.tsx` for component tests
-- Server tests can use `vi.mock()` for heavy dependencies (Docker, Hypervisor)
+- Server tests can use `vi.mock()` for heavy dependencies (Docker, Firecracker)
 - Web component tests use the custom `render()` from `src/test/test-utils.tsx` which wraps QueryClientProvider
 - Vitest globals (`describe`, `it`, `expect`, `vi`) are available without imports (configured in vitest configs)
 
@@ -84,7 +84,7 @@ pnpm --filter web test
 
 All sandbox operations go through a `SandboxAdapter` interface with backend-specific implementations. The coordinator in `packages/server/src/services/sandbox/index.ts` dispatches to the correct adapter based on the sandbox's `backend` field.
 
-Adapters live in `packages/server/src/services/sandbox/` (docker, vm, daytona, aws, azure, gcp, digitalocean, linode). Heavy backend logic lives in dedicated service files under `packages/server/src/services/` (e.g., `hypervisor.ts`, `firecracker.ts`, `docker.ts`).
+Adapters live in `packages/server/src/services/sandbox/` (docker, vm, daytona, aws, azure, gcp, digitalocean, linode). Heavy backend logic lives in dedicated service files under `packages/server/src/services/` (e.g., `firecracker.ts`, `docker.ts`).
 
 ### Server
 
@@ -154,7 +154,7 @@ File upload, download, and browsing for all sandbox backends through a unified A
 
 Backend-specific transport:
 - Docker: `docker exec ls -la` for listing, `docker cp` for file transfer
-- VMs (Firecracker/Cloud-Hypervisor): delegates to `listVmFiles()`/`downloadFileFromVm()` on the respective service (SSH/SCP-based)
+- VMs (Firecracker): delegates to `listVmFiles()`/`downloadFileFromVm()` via SSH/SCP
 - Daytona/AWS/Azure/GCP/DigitalOcean/Linode: SSH `ls -la` for listing, SCP for transfer with backend-specific SSH keys
 
 The sandbox card/row actions include a download button (visible when running) that opens a file browser popover with directory navigation. Click a directory to navigate into it; click a file to download it.
@@ -212,7 +212,7 @@ Global VM SSH keypair management for distributing Handler without bundling priva
 - **Download**: `GET /api/ssh-keys/download` — returns the current private key as a PEM file
 - **Regenerate**: `POST /api/ssh-keys/regenerate` — generates a new ed25519 keypair, returns the new private key
 - Keys are stored at `data/ssh-keys/id_ed25519` (private) and `id_ed25519.pub` (public)
-- All VM backends (Firecracker, Cloud-Hypervisor) share the same keypair
+- All VM backends (Firecracker) share the same keypair
 - UI: Settings > Self-Hosting tab has "Download Current Key" and "Regenerate Key" buttons
 - Running VMs must be rebooted after regeneration for the new key to take effect
 

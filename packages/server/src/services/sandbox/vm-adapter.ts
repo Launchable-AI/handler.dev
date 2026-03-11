@@ -1,7 +1,7 @@
 /**
  * VM Sandbox Adapter
  *
- * Converts Cloud-Hypervisor and Firecracker VMs to the unified Sandbox abstraction.
+ * Converts Firecracker VMs to the unified Sandbox abstraction.
  */
 
 import type { SandboxAdapter } from './types.js';
@@ -13,7 +13,6 @@ import type {
   CreateSandboxRequest,
 } from '../../types/sandbox.js';
 import type { VmInfo, VmStatus, HypervisorType } from '../../types/vm.js';
-import { CloudHypervisorService } from '../hypervisor.js';
 import { FirecrackerService } from '../firecracker.js';
 
 /**
@@ -44,10 +43,8 @@ function mapVmStatus(status: VmStatus): SandboxStatus {
 function getIdPrefix(hypervisor: HypervisorType): string {
   switch (hypervisor) {
     case 'firecracker':
-      return 'fc';
-    case 'cloud-hypervisor':
     default:
-      return 'vm';
+      return 'fc';
   }
 }
 
@@ -61,9 +58,9 @@ function vmToSandbox(vm: VmInfo, hypervisorType: HypervisorType): Sandbox {
 
   const meta: VmMeta = {
     type: 'vm',
-    hypervisor: hypervisorType === 'daytona' ? 'cloud-hypervisor' : hypervisorType,
+    hypervisor: 'firecracker',
     networkMode: vm.networkMode || 'tap',
-    hasSnapshots: true, // Both CH and FC support snapshots
+    hasSnapshots: true,
     tapDevice: undefined, // Not exposed in VmInfo
     bootTimeMs: undefined,
     volumes: vm.volumes?.map((v) => ({
@@ -109,96 +106,6 @@ function vmToSandbox(vm: VmInfo, hypervisorType: HypervisorType): Sandbox {
 
     backendMeta: meta,
   };
-}
-
-/**
- * Adapter for Cloud-Hypervisor VMs
- */
-export class CloudHypervisorAdapter implements SandboxAdapter {
-  readonly backend = 'cloud-hypervisor' as const;
-
-  constructor(private hypervisor: CloudHypervisorService) {}
-
-  async isAvailable(): Promise<boolean> {
-    try {
-      const fs = await import('fs');
-      const { execSync } = await import('child_process');
-
-      // Check common cloud-hypervisor binary locations
-      const paths = ['/usr/bin/cloud-hypervisor', '/usr/local/bin/cloud-hypervisor'];
-      for (const path of paths) {
-        if (fs.existsSync(path)) {
-          return true;
-        }
-      }
-
-      // Try 'which cloud-hypervisor' as fallback
-      try {
-        const result = execSync('which cloud-hypervisor', { encoding: 'utf-8' }).trim();
-        return !!result;
-      } catch {
-        return false;
-      }
-    } catch {
-      return false;
-    }
-  }
-
-  async list(): Promise<Sandbox[]> {
-    const vms = this.hypervisor.listVms();
-    // Filter to only cloud-hypervisor VMs (exclude firecracker and daytona)
-    return vms
-      .filter((vm) => vm.hypervisor === 'cloud-hypervisor')
-      .map((vm) => vmToSandbox(vm, 'cloud-hypervisor'));
-  }
-
-  async get(id: string): Promise<Sandbox | null> {
-    // Strip the 'vm-' prefix to get the VM ID
-    const vmId = id.startsWith('vm-') ? id.slice(3) : id;
-    const vm = this.hypervisor.getVm(vmId);
-    return vm ? vmToSandbox(vm, 'cloud-hypervisor') : null;
-  }
-
-  async create(request: CreateSandboxRequest): Promise<Sandbox> {
-    const vm = await this.hypervisor.createVm({
-      name: request.name,
-      baseImage: request.image,
-      vcpus: request.vcpus,
-      memoryMb: request.memoryMb,
-      diskGb: request.diskGb,
-      portMappings: request.ports?.map((p) => ({
-        container: p.container,
-        host: p.host,
-        protocol: (p.protocol as 'tcp' | 'udp') || 'tcp',
-      })),
-      volumes: request.vmOptions?.volumes?.map((v) => ({
-        name: v.id,
-        hostPath: '', // Will be resolved by service
-        mountPath: v.mountPath,
-      })),
-      networkMode: request.vmOptions?.networkMode === 'nat' ? 'user' : 'tap',
-      autoStart: true,
-    });
-
-    return vmToSandbox(vm, 'cloud-hypervisor');
-  }
-
-  async start(id: string): Promise<Sandbox> {
-    const vmId = id.startsWith('vm-') ? id.slice(3) : id;
-    const vm = await this.hypervisor.startVm(vmId);
-    return vmToSandbox(vm, 'cloud-hypervisor');
-  }
-
-  async stop(id: string): Promise<Sandbox> {
-    const vmId = id.startsWith('vm-') ? id.slice(3) : id;
-    const vm = await this.hypervisor.stopVm(vmId);
-    return vmToSandbox(vm, 'cloud-hypervisor');
-  }
-
-  async delete(id: string): Promise<void> {
-    const vmId = id.startsWith('vm-') ? id.slice(3) : id;
-    await this.hypervisor.deleteVm(vmId);
-  }
 }
 
 /**

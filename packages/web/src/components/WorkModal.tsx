@@ -3,7 +3,7 @@
  */
 
 import { useState } from 'react';
-import { X, Loader2, Github, Server, Container, Zap, Cloud } from 'lucide-react';
+import { X, Loader2, Github, Container, Zap, Cloud } from 'lucide-react';
 import { useStartWork } from '../hooks/useGitHub';
 import { useBackendStatus } from '../hooks/useContainers';
 import { useAgentConfigs } from '../hooks/useAgentConfigs';
@@ -20,12 +20,6 @@ const backendInfo: Record<SandboxBackend, { icon: typeof Container; label: strin
     label: 'Docker',
     description: 'Container-based sandbox with shared kernel',
     color: 'cyan',
-  },
-  'cloud-hypervisor': {
-    icon: Server,
-    label: 'Cloud-Hypervisor',
-    description: 'Lightweight VM with full isolation',
-    color: 'purple',
   },
   firecracker: {
     icon: Zap,
@@ -88,7 +82,6 @@ export function WorkModal({ repo, onClose }: WorkModalProps) {
       // Map backend status keys to SandboxBackend values
       const keyMap: Record<string, SandboxBackend> = {
         docker: 'docker',
-        cloudHypervisor: 'cloud-hypervisor',
         firecracker: 'firecracker',
         daytona: 'daytona',
         aws: 'aws',

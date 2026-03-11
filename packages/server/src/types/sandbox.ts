@@ -2,11 +2,11 @@
  * Unified Sandbox Types
  *
  * This module defines the unified "Sandbox" abstraction that encompasses
- * all compute environments: Docker containers, VMs (Cloud-Hypervisor, Firecracker),
+ * all compute environments: Docker containers, Firecracker VMs,
  * and Daytona cloud workspaces.
  */
 
-export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
+export type SandboxBackend = 'docker' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
 
 export type SandboxStatus =
   | 'creating'
@@ -23,7 +23,7 @@ export type SandboxStatus =
  * Base sandbox interface - common fields across all backends
  */
 export interface Sandbox {
-  /** Prefixed ID: 'docker-xxx', 'vm-xxx', 'fc-xxx', 'daytona-xxx' */
+  /** Prefixed ID: 'docker-xxx', 'fc-xxx', 'daytona-xxx' */
   id: string;
   /** Display name */
   name: string;
@@ -103,12 +103,12 @@ export interface DockerMeta {
 }
 
 /**
- * VM-specific metadata (Cloud-Hypervisor and Firecracker)
+ * VM-specific metadata (Firecracker)
  */
 export interface VmMeta {
   type: 'vm';
   /** Hypervisor type */
-  hypervisor: 'cloud-hypervisor' | 'firecracker';
+  hypervisor: 'firecracker';
   /** Network mode */
   networkMode: string;
   /** Whether snapshots are available */
@@ -316,7 +316,7 @@ export interface DockerCreateOptions {
 
 export interface VmCreateOptions {
   /** Hypervisor type */
-  hypervisor?: 'cloud-hypervisor' | 'firecracker';
+  hypervisor?: 'firecracker';
   /** Network mode */
   networkMode?: 'bridged' | 'nat';
   /** Root filesystem path */

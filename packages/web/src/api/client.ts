@@ -525,7 +525,7 @@ export async function browseDirectory(path?: string): Promise<BrowseDirectoryRes
 
 // Quick Launch config
 export interface QuickLaunchConfig {
-  backend: 'docker' | 'firecracker' | 'cloud-hypervisor' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
+  backend: 'docker' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
   image?: string;
   ports?: number[];
   vcpus?: number;
@@ -1461,7 +1461,7 @@ export interface VmInfo {
   hypervisor?: HypervisorType;
 }
 
-export type HypervisorType = 'cloud-hypervisor' | 'firecracker' | 'daytona';
+export type HypervisorType = 'firecracker' | 'daytona';
 
 export type DaytonaSizeClass = 'small' | 'medium' | 'large';
 
@@ -1770,7 +1770,6 @@ export interface BackendInfo {
 
 export interface BackendStatus {
   docker: BackendInfo;
-  cloudHypervisor: BackendInfo;
   firecracker: BackendInfo;
   daytona: BackendInfo;
   aws: BackendInfo;
@@ -2090,7 +2089,7 @@ export async function downloadBaseImage(
 /**
  * Backend types for sandboxes
  */
-export type SandboxBackend = 'docker' | 'cloud-hypervisor' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
+export type SandboxBackend = 'docker' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
 
 /**
  * Unified status across all backends
@@ -2131,7 +2130,7 @@ export interface DockerMeta {
  */
 export interface VmMeta {
   type: 'vm';
-  hypervisor: 'cloud-hypervisor' | 'firecracker';
+  hypervisor: 'firecracker';
   networkMode: string;
   hasSnapshots: boolean;
   tapDevice?: string;
@@ -2223,7 +2222,6 @@ export interface SandboxListResponse {
   sandboxes: Sandbox[];
   backends: {
     docker: boolean;
-    'cloud-hypervisor': boolean;
     firecracker: boolean;
     daytona: boolean;
     aws: boolean;
@@ -2265,7 +2263,7 @@ export interface CreateSandboxRequest {
   };
 
   vmOptions?: {
-    hypervisor?: 'cloud-hypervisor' | 'firecracker';
+    hypervisor?: 'firecracker';
     networkMode?: 'bridged' | 'nat';
     volumes?: Array<{ id: string; mountPath: string }>;
   };

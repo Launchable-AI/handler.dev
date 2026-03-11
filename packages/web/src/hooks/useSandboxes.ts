@@ -391,7 +391,6 @@ export function useSandboxesByBackend(filter?: SandboxListFilter) {
   if (!data) {
     return {
       docker: [] as Sandbox[],
-      'cloud-hypervisor': [] as Sandbox[],
       firecracker: [] as Sandbox[],
       daytona: [] as Sandbox[],
       aws: [] as Sandbox[],
@@ -404,7 +403,6 @@ export function useSandboxesByBackend(filter?: SandboxListFilter) {
 
   const grouped: Record<SandboxBackend, Sandbox[]> = {
     docker: [],
-    'cloud-hypervisor': [],
     firecracker: [],
     daytona: [],
     aws: [],

@@ -79,7 +79,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
   }, [isFullscreen, maximizedSessionId, toggleFullscreen, maximizeSession]);
 
   // Classify sandboxes by type
-  const isVmBackend = (s: Sandbox) => s.backend === 'cloud-hypervisor' || s.backend === 'firecracker';
+  const isVmBackend = (s: Sandbox) => s.backend === 'firecracker';
   const isContainerBackend = (s: Sandbox) => s.backend === 'docker';
 
   const allVMs = sandboxes.filter(isVmBackend);
@@ -501,7 +501,7 @@ function SessionPicker({ onClose }: SessionPickerProps) {
   const { data: sandboxData, isLoading } = useSandboxes();
 
   const sandboxes = sandboxData?.sandboxes || [];
-  const isVmBackend = (s: Sandbox) => s.backend === 'cloud-hypervisor' || s.backend === 'firecracker';
+  const isVmBackend = (s: Sandbox) => s.backend === 'firecracker';
   const runningVMs = sandboxes.filter(s => isVmBackend(s) && s.status === 'running');
   const runningContainers = sandboxes.filter(s => s.backend === 'docker' && s.status === 'running');
 

@@ -16,9 +16,9 @@ import * as path from 'path';
 export interface FirecrackerConfig {
   /** Directory for Firecracker VM data */
   dataDir: string;
-  /** Directory for base images (shared with cloud-hypervisor) */
+  /** Directory for base images */
   baseImagesDir: string;
-  /** Directory for SSH keys (shared with cloud-hypervisor) */
+  /** Directory for SSH keys */
   sshKeysDir: string;
   /** Path to firecracker binary */
   firecrackerBinary: string;
@@ -47,7 +47,7 @@ export const DEFAULT_FIRECRACKER_CONFIG: FirecrackerConfig = {
   sshKeysDir: path.join(DATA_DIR, 'ssh-keys'),
   firecrackerBinary: '/usr/local/bin/firecracker',
   jailerBinary: '/usr/local/bin/jailer',
-  sshPortRangeStart: 10122,  // Different range from cloud-hypervisor (10022-10122)
+  sshPortRangeStart: 10122,
   sshPortRangeEnd: 10222,
   defaultVcpus: 1,
   defaultMemoryMb: 1024,

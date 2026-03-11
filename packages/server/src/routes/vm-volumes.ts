@@ -1,7 +1,7 @@
 /**
  * VM Volumes API Routes
  *
- * Manages standalone persistent volumes for Firecracker/cloud-hypervisor VMs.
+ * Manages standalone persistent volumes for Firecracker VMs.
  * These volumes persist independently of VMs and can be attached/detached.
  */
 

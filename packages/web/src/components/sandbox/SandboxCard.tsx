@@ -61,7 +61,7 @@ function ReconfigureDialog({ sandbox, onClose, onSave, isPending, error }: Recon
   const [memoryMb, setMemoryMb] = useState(sandbox.memoryMb);
   const [diskGb, setDiskGb] = useState(sandbox.diskGb);
 
-  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const isVm = sandbox.backend === 'firecracker';
   const isDocker = sandbox.backend === 'docker';
   const isStopped = sandbox.status === 'stopped' || sandbox.status === 'error' || sandbox.status === 'archived';
 
@@ -232,7 +232,6 @@ function getDefaultWorkspacePath(backend: Sandbox['backend']): string {
     case 'aws':
       return '/home/ubuntu';
     case 'firecracker':
-    case 'cloud-hypervisor':
     default:
       return '/home/agent';
   }
@@ -306,7 +305,7 @@ export function SandboxCard({ sandbox, highlight }: SandboxCardProps) {
   const vmMeta = sandbox.backendMeta as VmMeta | undefined;
 
   // Check if this is a VM-based sandbox that supports snapshots
-  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const isVm = sandbox.backend === 'firecracker';
   const canSnapshot = isVm && isRunning && vmMeta?.type === 'vm';
   const canReconfigure = isVm || isDocker;
 

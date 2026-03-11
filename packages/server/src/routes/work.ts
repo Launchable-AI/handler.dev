@@ -17,7 +17,7 @@ work.post(
     z.object({
       repoFullName: z.string().min(1),
       branch: z.string().optional(),
-      backend: z.enum(['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode']),
+      backend: z.enum(['docker', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode']),
       agentConfigId: z.string().optional(),
     })
   ),

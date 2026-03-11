@@ -106,7 +106,7 @@ export interface ContainerRegistriesConfig {
 export type ShellPromptTheme = 'minimal' | 'clean' | 'bracket' | 'lambda' | 'cyberpunk' | 'multiline';
 
 export interface QuickLaunchConfig {
-  backend: 'docker' | 'firecracker' | 'cloud-hypervisor' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
+  backend: 'docker' | 'firecracker' | 'daytona' | 'aws' | 'azure' | 'gcp' | 'digitalocean' | 'linode';
   image?: string;           // Docker image tag or VM base image name
   ports?: number[];         // Quick access ports
   vcpus?: number;           // For VMs

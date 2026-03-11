@@ -21,8 +21,7 @@
 Handler treats all compute environments as **Sandboxes** - a unified abstraction over different backends:
 
 - **Docker Containers**: Fast startup, easy volume management, port forwarding
-- **Cloud-Hypervisor VMs**: Full isolation with QCOW2 overlay disks
-- **Firecracker VMs**: Lightweight microVMs with OverlayFS
+- **Firecracker VMs**: Lightweight microVMs with OverlayFS, full isolation
 - **Daytona Cloud**: Remote cloud workspaces (when configured)
 
 The UI presents a single "Sandboxes" view where you can filter by backend, manage all environments with consistent Start/Stop/Delete actions, and open terminals regardless of the underlying technology.
@@ -47,11 +46,10 @@ The UI presents a single "Sandboxes" view where you can filter by backend, manag
 
 ### Virtual Machines
 - **VM Management**: Create, start, stop, and remove virtual machines
-- **Multiple Hypervisors**: Support for cloud-hypervisor and Firecracker
+- **Firecracker Hypervisor**: Lightweight microVM support via Firecracker
 - **SSH Access**: Auto-generated SSH keys with direct VM access via TAP networking
 - **Resource Configuration**: Configure vCPUs (1-32), memory (512MB-64GB), and disk (1-1000GB)
-- **Copy-on-Write Disks**: Fast VM creation using QCOW2 overlays (cloud-hypervisor) or OverlayFS (Firecracker)
-- **Cloud-init Integration**: Automatic VM configuration with SSH keys and package installation
+- **Copy-on-Write Disks**: Fast VM creation using OverlayFS
 - **Network Bridge**: Pre-configured TAP devices for VM networking with NAT
 
 ### Shared Features
@@ -94,11 +92,8 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 To enable virtual machine support, run the setup script:
 
 ```bash
-# Basic setup (cloud-hypervisor support)
+# Setup VM support (Firecracker)
 sudo ./scripts/setup.sh
-
-# With Firecracker support
-sudo ./scripts/setup.sh --firecracker
 
 # Check installation status
 ./scripts/status.sh
@@ -108,14 +103,13 @@ The setup script:
 - Installs the `handler-tap-helper` binary with network capabilities
 - Creates a network bridge (`handler-br0`) with NAT for VM internet access
 - Downloads Ubuntu 24.04 base image
+- Installs Firecracker
 - Creates a systemd service for persistence across reboots
-- Optionally installs Firecracker
 
 **Options:**
 ```bash
 sudo ./scripts/setup.sh --help           # Show all options
 sudo ./scripts/setup.sh --skip-image     # Skip base image download
-sudo ./scripts/setup.sh --firecracker    # Also install Firecracker
 sudo ./scripts/setup.sh --unattended     # Non-interactive mode
 ```
 
@@ -132,7 +126,6 @@ sudo ./scripts/uninstall.sh --keep-data  # Keep VM images and data
 │   └── ubuntu-24.04/
 │       ├── rootfs.ext4   # Firecracker rootfs
 │       └── vmlinux       # Kernel
-├── vms/                  # cloud-hypervisor VM data
 ├── firecracker-vms/      # Firecracker VM data
 └── ssh-keys/             # SSH keys
 ```
@@ -185,7 +178,7 @@ Volumes persist data across container restarts and rebuilds. Common uses:
 2. Click the **VMs** tab in the sidebar
 3. Click **+ New VM**
 4. Enter a name for your VM
-5. Select a base image and hypervisor (cloud-hypervisor or Firecracker)
+5. Select a base image
 6. Configure resources (vCPUs, memory, disk size)
 7. Click **Create**
 
@@ -220,7 +213,7 @@ ssh -i ~/.ssh/vm-name.pem agent@<vm-ip>
 │   │   │   │   ├── sandbox/  # Unified sandbox service with backend adapters
 │   │   │   │   │   ├── index.ts          # SandboxService coordinator
 │   │   │   │   │   ├── docker-adapter.ts # Docker backend adapter
-│   │   │   │   │   ├── vm-adapter.ts     # CH/Firecracker adapters
+│   │   │   │   │   ├── vm-adapter.ts     # Firecracker VM adapter
 │   │   │   │   │   └── daytona-adapter.ts
 │   │   │   │   ├── volume/   # Unified volume service
 │   │   │   │   │   ├── index.ts          # VolumeService coordinator
@@ -230,7 +223,7 @@ ssh -i ~/.ssh/vm-name.pem agent@<vm-ip>
 │   │   │   │   ├── template/ # Template/image management service
 │   │   │   │   │   └── index.ts          # TemplateService
 │   │   │   │   ├── docker.ts    # Docker-specific logic
-│   │   │   │   └── hypervisor.ts # VM-specific logic
+│   │   │   │   └── firecracker.ts # Firecracker VM logic
 │   │   │   └── types/   # TypeScript types & Zod schemas
 │   │   │       ├── sandbox.ts   # Unified Sandbox types
 │   │   │       ├── volume.ts    # Unified Volume types
@@ -279,12 +272,6 @@ VM data is stored in the user's home directory:
 
 ```
 ~/.local/share/handler/
-├── vms/                 # cloud-hypervisor VM data
-│   └── <vm-id>/
-│       ├── disk.qcow2   # VM disk overlay
-│       ├── cloud-init.iso
-│       ├── vm.pid       # cloud-hypervisor PID
-│       └── vm.log       # VM console log
 ├── firecracker-vms/     # Firecracker VM data
 │   └── <vm-id>/
 │       ├── overlay.ext4 # Writable overlay
@@ -293,9 +280,7 @@ VM data is stored in the user's home directory:
 ├── base-images/         # Base VM images (shared)
 │   └── ubuntu-24.04/
 │       ├── rootfs.ext4  # Firecracker rootfs
-│       ├── vmlinux      # Kernel
-│       ├── image.qcow2  # cloud-hypervisor image
-│       └── kernel
+│       └── vmlinux      # Kernel
 └── ssh-keys/            # SSH keys (shared)
 ```
 

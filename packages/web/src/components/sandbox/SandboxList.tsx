@@ -13,9 +13,9 @@ import {
   Eye,
   EyeOff,
   Container,
-  Cloud,
   Flame,
   Globe,
+  Cloud,
   X,
   ChevronUp,
   ChevronDown,
@@ -70,7 +70,6 @@ const COLUMNS: ColumnDef[] = [
 
 const BACKEND_OPTIONS: Array<{ value: SandboxBackend; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { value: 'docker', label: 'Docker', icon: Container },
-  { value: 'cloud-hypervisor', label: 'Cloud-Hypervisor', icon: Cloud },
   { value: 'firecracker', label: 'Firecracker', icon: Flame },
   { value: 'daytona', label: 'Daytona', icon: Globe },
   { value: 'aws', label: 'AWS', icon: Cloud },
@@ -250,7 +249,6 @@ export function SandboxList({ onCreateClick, highlightedId }: SandboxListProps) 
   const allSandboxes = data?.sandboxes ?? [];
   const backends = data?.backends ?? {
     docker: false,
-    'cloud-hypervisor': false,
     firecracker: false,
     daytona: false,
     aws: false,

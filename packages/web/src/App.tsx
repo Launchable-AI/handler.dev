@@ -231,7 +231,7 @@ function App() {
           image: quickLaunchConfig.image,
           ports,
         });
-      } else if (quickLaunchConfig.backend === 'firecracker' || quickLaunchConfig.backend === 'cloud-hypervisor') {
+      } else if (quickLaunchConfig.backend === 'firecracker') {
         await createVmMutation.mutateAsync({
           name,
           hypervisor: quickLaunchConfig.backend,
@@ -307,7 +307,7 @@ function App() {
       try {
         if (backend === 'docker') {
           await createContainerMutation.mutateAsync({ name, image, ports });
-        } else if (backend === 'firecracker' || backend === 'cloud-hypervisor') {
+        } else if (backend === 'firecracker') {
           await createVmMutation.mutateAsync({
             name,
             hypervisor: backend,
@@ -374,7 +374,6 @@ function App() {
   // Get enabled backends with their status
   const enabledBackends = backendStatus ? [
     { name: 'Docker', status: backendStatus.docker },
-    { name: 'Cloud-Hypervisor', status: backendStatus.cloudHypervisor },
     { name: 'Firecracker', status: backendStatus.firecracker },
     { name: 'Daytona', status: backendStatus.daytona },
   ].filter(b => b.status.installed || b.status.enabled) : [];

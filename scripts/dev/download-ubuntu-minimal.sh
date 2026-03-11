@@ -37,7 +37,7 @@ fi
 # Cloud-hypervisor can boot QCOW2 images directly using the image's bootloader,
 # so kernel/initrd extraction is optional. We'll try to extract them for direct
 # kernel boot (faster startup) but won't fail if we can't.
-echo "Attempting to extract kernel and initrd (optional for cloud-hypervisor)..."
+echo "Attempting to extract kernel and initrd..."
 
 # Check if kernel/initrd already exist
 if [ -f "${IMAGE_DIR}/kernel" ] && [ -f "${IMAGE_DIR}/initrd" ]; then

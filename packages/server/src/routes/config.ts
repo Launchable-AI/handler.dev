@@ -145,7 +145,7 @@ configRoutes.put('/dockerhub', async (c) => {
 
 // Quick Launch config schema
 const QuickLaunchSchema = z.object({
-  backend: z.enum(['docker', 'firecracker', 'cloud-hypervisor', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode']),
+  backend: z.enum(['docker', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode']),
   image: z.string().optional(),
   ports: z.array(z.number()).optional(),
   vcpus: z.number().optional(),

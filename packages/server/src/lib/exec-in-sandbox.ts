@@ -6,7 +6,6 @@
 
 import * as dockerService from '../services/docker.js';
 import { getFirecrackerService } from '../services/firecracker.js';
-import { getCloudHypervisorService } from '../services/hypervisor.js';
 import { safeExec } from './safe-exec.js';
 
 /** Common SSH options used across all SSH/SCP calls */
@@ -38,9 +37,6 @@ export async function execInSandbox(
   let keyPath = '';
   if (sandbox.backend === 'firecracker') {
     const svc = getFirecrackerService();
-    keyPath = svc ? svc.getSshKeyPath() : '';
-  } else if (sandbox.backend === 'cloud-hypervisor') {
-    const svc = getCloudHypervisorService();
     keyPath = svc ? svc.getSshKeyPath() : '';
   }
   if (!keyPath) throw new Error('No SSH key available');

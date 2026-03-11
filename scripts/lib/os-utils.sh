@@ -95,10 +95,6 @@ map_package() {
                 ovmf)
                     echo "edk2-ovmf"
                     ;;
-                cloud-hypervisor)
-                    # Available in AUR as cloud-hypervisor-bin
-                    echo "cloud-hypervisor"
-                    ;;
                 *)
                     # Try to use the same name
                     echo "$canonical"
