@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { type NodeProps, useStore } from 'reactflow';
 import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
-import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, Copy, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive, Upload, Download, Check } from 'lucide-react';
+import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, Copy, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive, Upload, Download, Check, Activity } from 'lucide-react';
 import type { WorktreeNode } from '../../../types/command-centre';
 import { useCanvas } from '../../../context/CanvasContext';
 import { useSandboxMetrics } from '../../../hooks/useSandboxes';
@@ -465,19 +465,37 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         {/* System metrics */}
         {metrics && (
           slimToolbar ? (
-            <div className="flex items-center gap-0.5 shrink-0">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${metrics.cpuUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--cyan))]'}`}
-                title={`CPU: ${metrics.cpuUsage}%`}
-              />
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${metrics.memoryUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--green))]'}`}
-                title={`Memory: ${metrics.memoryUsage}%`}
-              />
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${metrics.diskUsage > 90 ? 'bg-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--purple))]'}`}
-                title={`Disk: ${metrics.diskUsage}%`}
-              />
+            <div className="group/metrics relative shrink-0">
+              <Activity className={`h-2.5 w-2.5 ${
+                metrics.cpuUsage > 80 || metrics.memoryUsage > 80 ? 'text-[hsl(var(--red))]'
+                : metrics.cpuUsage > 50 || metrics.memoryUsage > 50 ? 'text-[hsl(var(--amber))]'
+                : 'text-[hsl(var(--text-muted))]'
+              }`} />
+              <div className="absolute right-0 top-full mt-1 z-50 hidden group-hover/metrics:block">
+                <div className="bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] rounded shadow-lg p-2 space-y-1.5 min-w-[120px]">
+                  <div className="flex items-center gap-1.5">
+                    <Cpu className="h-2.5 w-2.5 text-[hsl(var(--text-muted))] shrink-0" />
+                    <div className="flex-1 h-1.5 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden">
+                      <div className={`h-full rounded-sm ${metrics.cpuUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.cpuUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--cyan))]'}`} style={{ width: `${metrics.cpuUsage}%` }} />
+                    </div>
+                    <span className="text-[8px] tabular-nums font-mono w-6 text-right text-[hsl(var(--text-muted))]">{metrics.cpuUsage}%</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <MemoryStick className="h-2.5 w-2.5 text-[hsl(var(--text-muted))] shrink-0" />
+                    <div className="flex-1 h-1.5 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden">
+                      <div className={`h-full rounded-sm ${metrics.memoryUsage > 80 ? 'bg-[hsl(var(--red))]' : metrics.memoryUsage > 50 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--green))]'}`} style={{ width: `${metrics.memoryUsage}%` }} />
+                    </div>
+                    <span className="text-[8px] tabular-nums font-mono w-6 text-right text-[hsl(var(--text-muted))]">{metrics.memoryUsage}%</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <HardDrive className="h-2.5 w-2.5 text-[hsl(var(--text-muted))] shrink-0" />
+                    <div className="flex-1 h-1.5 bg-[hsl(var(--bg-base))] rounded-sm overflow-hidden">
+                      <div className={`h-full rounded-sm ${metrics.diskUsage > 90 ? 'bg-[hsl(var(--red))]' : metrics.diskUsage > 70 ? 'bg-[hsl(var(--amber))]' : 'bg-[hsl(var(--purple))]'}`} style={{ width: `${metrics.diskUsage}%` }} />
+                    </div>
+                    <span className="text-[8px] tabular-nums font-mono w-6 text-right text-[hsl(var(--text-muted))]">{metrics.diskUsage}%</span>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <>
