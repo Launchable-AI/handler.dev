@@ -3,7 +3,6 @@
  *
  * Provides a single API for managing all compute environments:
  * - Docker containers
- * - Cloud-Hypervisor VMs
  * - Firecracker VMs
  * - Daytona cloud workspaces
  */
@@ -12,7 +11,6 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { getSandboxService, initializeSandboxService, resetSandboxService } from '../services/sandbox/index.js';
-import { getCloudHypervisorService, initializeCloudHypervisorService } from '../services/hypervisor.js';
 import { getFirecrackerService, initializeFirecrackerService } from '../services/firecracker.js';
 import { getDaytonaService, initializeDaytonaService } from '../services/daytona.js';
 import { getAwsService, initializeAwsService } from '../services/aws.js';
@@ -54,7 +52,6 @@ async function ensureSandboxServiceInitialized() {
   }
 
   // Initialize backends
-  let hypervisor = null;
   let firecracker = null;
   let daytona = null;
   let aws = null;
@@ -62,14 +59,6 @@ async function ensureSandboxServiceInitialized() {
   let gcp = null;
   let digitalocean = null;
   let linode = null;
-
-  // Cloud-Hypervisor
-  try {
-    await initializeCloudHypervisorService();
-    hypervisor = getCloudHypervisorService();
-  } catch (err) {
-    console.log('[SandboxRoutes] Cloud-Hypervisor not available:', err instanceof Error ? err.message : 'unknown');
-  }
 
   // Firecracker
   try {
@@ -147,7 +136,6 @@ async function ensureSandboxServiceInitialized() {
 
   // Initialize sandbox service with available backends
   await initializeSandboxService({
-    hypervisor: hypervisor ?? undefined,
     firecracker: firecracker ?? undefined,
     daytona: daytona ?? undefined,
     aws: aws ?? undefined,
@@ -162,7 +150,7 @@ async function ensureSandboxServiceInitialized() {
 }
 
 // Validation schemas
-const SandboxBackendEnum = z.enum(['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode']);
+const SandboxBackendEnum = z.enum(['docker', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode']);
 const SandboxStatusEnum = z.enum([
   'creating', 'starting', 'running', 'stopping',
   'stopped', 'paused', 'error', 'archived', 'building'
@@ -205,7 +193,7 @@ const CreateSandboxSchema = z.object({
 
   // VM-specific options
   vmOptions: z.object({
-    hypervisor: z.enum(['cloud-hypervisor', 'firecracker']).optional(),
+    hypervisor: z.enum(['firecracker']).optional(),
     networkMode: z.enum(['bridged', 'nat']).optional(),
     volumes: z.array(z.object({
       id: z.string(),
@@ -273,7 +261,7 @@ const CreateSandboxSchema = z.object({
  * List all sandboxes with optional filtering
  *
  * Query params:
- * - backend: Comma-separated list of backends (docker,cloud-hypervisor,firecracker,daytona)
+ * - backend: Comma-separated list of backends (docker,firecracker,daytona)
  * - status: Comma-separated list of statuses (running,stopped,error,etc.)
  * - search: Search term for name/image
  */
@@ -285,7 +273,7 @@ sandboxes.get('/', zValidator('query', ListSandboxesQuerySchema), async (c) => {
   let backends: SandboxBackend[] | undefined;
   if (query.backend) {
     backends = query.backend.split(',').filter((b): b is SandboxBackend =>
-      ['docker', 'cloud-hypervisor', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode'].includes(b)
+      ['docker', 'firecracker', 'daytona', 'aws', 'azure', 'gcp', 'digitalocean', 'linode'].includes(b)
     );
   }
 
@@ -556,21 +544,12 @@ sandboxes.get('/:id/logs', async (c) => {
       // Docker container logs
       const containerId = id.startsWith('docker-') ? id.slice(7) : id;
       logs = await dockerService.getContainerLogs(containerId, { tail, timestamps: true });
-    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+    } else if (sandbox.backend === 'firecracker') {
       // VM logs
-      const vmId = id.startsWith('vm-') || id.startsWith('fc-') ? id : `vm-${id}`;
-      if (sandbox.backend === 'cloud-hypervisor') {
-        const hypervisor = service.getHypervisorService();
-        if (hypervisor) {
-          const result = hypervisor.getVmBootLogs(vmId.replace('vm-', ''));
-          logs = result || '';
-        }
-      } else {
-        const firecracker = service.getFirecrackerService();
-        if (firecracker) {
-          const result = firecracker.getVmBootLogs(vmId.replace('fc-', ''));
-          logs = result || '';
-        }
+      const firecracker = service.getFirecrackerService();
+      if (firecracker) {
+        const result = firecracker.getVmBootLogs(id);
+        logs = result || '';
       }
     } else if (sandbox.backend === 'daytona') {
       // Daytona - logs not supported directly, return info message
@@ -695,11 +674,9 @@ sandboxes.get('/:id/ssh-key', async (c) => {
     if (sandbox.backend === 'docker') {
       // Docker uses shared SSH key
       privateKey = await containerBuilder.getPrivateKey();
-    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+    } else if (sandbox.backend === 'firecracker') {
       // VMs use their own SSH key
-      const vmService = sandbox.backend === 'cloud-hypervisor'
-        ? service.getHypervisorService()
-        : service.getFirecrackerService();
+      const vmService = service.getFirecrackerService();
 
       if (!vmService) {
         return c.json({ error: 'VM service not available' }, 500);
@@ -857,7 +834,7 @@ sandboxes.post('/:id/upload', async (c) => {
       : sandbox.backend === 'gcp' ? '/home/handler'
       : sandbox.backend === 'digitalocean' ? '/root'
       : sandbox.backend === 'linode' ? '/root'
-      : '/home/agent';  // firecracker/cloud-hypervisor
+      : '/home/agent';  // firecracker
     const destPath = validatePath(formData.get('destPath') as string || defaultDestPath);
 
     if (!file) {
@@ -905,11 +882,9 @@ sandboxes.post('/:id/upload', async (c) => {
       }
 
       return c.json({ success: true, path: `${destPath}/${filename}` });
-    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+    } else if (sandbox.backend === 'firecracker') {
       // VM: upload via tar pipe (single SSH connection)
-      const vmService = sandbox.backend === 'cloud-hypervisor'
-        ? service.getHypervisorService()
-        : service.getFirecrackerService();
+      const vmService = service.getFirecrackerService();
 
       if (!vmService) {
         return c.json({ error: 'VM service not available' }, 500);
@@ -1043,7 +1018,7 @@ sandboxes.post('/:id/upload-directory', async (c) => {
       : sandbox.backend === 'gcp' ? '/home/handler'
       : sandbox.backend === 'digitalocean' ? '/root'
       : sandbox.backend === 'linode' ? '/root'
-      : '/home/agent';  // firecracker/cloud-hypervisor
+      : '/home/agent';  // firecracker
     const destPath = validatePath((formData.get('destPath') as string) || defaultDestPath);
 
     if (!files || files.length === 0) {
@@ -1112,10 +1087,8 @@ sandboxes.post('/:id/upload-directory', async (c) => {
         }
 
         console.log(`[SandboxRoutes] Directory uploaded to Docker container ${containerId}`);
-      } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
-        const vmService = sandbox.backend === 'cloud-hypervisor'
-          ? service.getHypervisorService()
-          : service.getFirecrackerService();
+      } else if (sandbox.backend === 'firecracker') {
+        const vmService = service.getFirecrackerService();
 
         if (!vmService) {
           return c.json({ error: 'VM service not available' }, 500);
@@ -1319,11 +1292,9 @@ sandboxes.get('/:id/files', async (c) => {
         // Fallback for BusyBox/Alpine where --time-style is not supported
         lsOutput = execFileSync('docker', ['exec', containerId, 'ls', '-la', requestedPath], { encoding: 'utf-8', timeout: 30000 });
       }
-    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+    } else if (sandbox.backend === 'firecracker') {
       // Delegate to existing VM service
-      const vmService = sandbox.backend === 'cloud-hypervisor'
-        ? service.getHypervisorService()
-        : service.getFirecrackerService();
+      const vmService = service.getFirecrackerService();
 
       if (!vmService) {
         return c.json({ error: 'VM service not available' }, 500);
@@ -1445,11 +1416,9 @@ sandboxes.get('/:id/files/download', async (c) => {
           fs.unlinkSync(tmpFile);
         }
       }
-    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
+    } else if (sandbox.backend === 'firecracker') {
       // Delegate to existing VM service downloadFileFromVm
-      const vmService = sandbox.backend === 'cloud-hypervisor'
-        ? service.getHypervisorService()
-        : service.getFirecrackerService();
+      const vmService = service.getFirecrackerService();
 
       if (!vmService) {
         return c.json({ error: 'VM service not available' }, 500);
@@ -1607,17 +1576,6 @@ sandboxes.get('/:id/metrics', async (c) => {
       }
       const metrics = await getVmMetricsViaSsh(sandbox.guestIp, 22, 'agent', keyPath, id);
       return c.json({ metrics });
-    } else if (sandbox.backend === 'cloud-hypervisor') {
-      if (!sandbox.guestIp) {
-        return c.json({ metrics: null });
-      }
-      const chService = getCloudHypervisorService();
-      const keyPath = chService ? chService.getSshKeyPath() : '';
-      if (!keyPath) {
-        return c.json({ metrics: null });
-      }
-      const metrics = await getVmMetricsViaSsh(sandbox.guestIp, 22, 'agent', keyPath, id);
-      return c.json({ metrics });
     } else if (['aws', 'azure', 'gcp', 'digitalocean', 'linode'].includes(sandbox.backend)) {
       if (!sandbox.guestIp) {
         return c.json({ metrics: null });
@@ -1679,17 +1637,6 @@ sandboxes.get('/:id/agents', async (c) => {
       }
       const fcService = getFirecrackerService();
       const keyPath = fcService ? fcService.getSshKeyPath() : '';
-      if (!keyPath) {
-        return c.json({ agents: [] });
-      }
-      const agents = await detectAgentsViaSsh(sandbox.guestIp, 22, 'agent', keyPath, id);
-      return c.json({ agents });
-    } else if (sandbox.backend === 'cloud-hypervisor') {
-      if (!sandbox.guestIp) {
-        return c.json({ agents: [] });
-      }
-      const chService = getCloudHypervisorService();
-      const keyPath = chService ? chService.getSshKeyPath() : '';
       if (!keyPath) {
         return c.json({ agents: [] });
       }

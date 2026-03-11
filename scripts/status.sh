@@ -155,14 +155,6 @@ else
     warn "Firecracker not installed (optional)"
 fi
 
-# Check cloud-hypervisor
-if command -v cloud-hypervisor &> /dev/null; then
-    CH_VERSION=$(cloud-hypervisor --version 2>&1 | head -1)
-    ok "Cloud-hypervisor installed: $CH_VERSION"
-else
-    warn "Cloud-hypervisor not installed (optional)"
-fi
-
 echo ""
 echo "Checking base images..."
 
@@ -177,16 +169,14 @@ if [ -d "$DATA_DIR/base-images" ]; then
         for img_dir in "$DATA_DIR/base-images"/*/; do
             if [ -d "$img_dir" ]; then
                 img_name=$(basename "$img_dir")
-                has_qcow2=""
                 has_rootfs=""
                 has_kernel=""
 
-                [ -f "$img_dir/image.qcow2" ] && has_qcow2="qcow2"
                 [ -f "$img_dir/rootfs.ext4" ] && has_rootfs="rootfs"
                 [ -f "$img_dir/vmlinux" ] && has_kernel="kernel"
                 [ -f "$img_dir/kernel" ] && has_kernel="kernel"
 
-                formats=$(echo "$has_qcow2 $has_rootfs $has_kernel" | xargs)
+                formats=$(echo "$has_rootfs $has_kernel" | xargs)
                 info "  - $img_name: $formats"
             fi
         done

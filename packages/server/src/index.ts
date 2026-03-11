@@ -9,7 +9,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as net from 'net';
 import { testConnection } from './services/docker.js';
-import { getCloudHypervisorService } from './services/hypervisor.js';
 import { getFirecrackerService } from './services/firecracker.js';
 
 const execAsync = promisify(exec);
@@ -235,25 +234,9 @@ app.use('*', cors({
 app.get('/api/health', async (c) => {
   const dockerConnected = await testConnection();
 
-  // Get hypervisor status (lazy - don't initialize if not already done)
-  let hypervisor = null;
-  try {
-    const service = getCloudHypervisorService();
-    const networkStatus = service.getNetworkStatus();
-    const vmStats = service.getStats();
-    hypervisor = {
-      initialized: true,
-      network: networkStatus.healthy ? 'healthy' : 'not_configured',
-      vms: vmStats,
-    };
-  } catch {
-    hypervisor = { initialized: false };
-  }
-
   return c.json({
     status: 'ok',
     docker: dockerConnected ? 'connected' : 'disconnected',
-    hypervisor,
     devMode: process.env.environment === 'development',
   });
 });
@@ -397,14 +380,11 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
             break;
 
           case 'start-vm':
-            // Start a new VM terminal session (Cloud-Hypervisor or Firecracker)
+            // Start a new VM terminal session (Firecracker)
             if (msg.vmId && msg.vmIp) {
               validateSandboxId(msg.vmId);
               validateIpAddress(msg.vmIp);
-              // Use the correct service based on VM ID prefix
-              const vmService = msg.vmId.startsWith('fc-')
-                ? getFirecrackerService()
-                : getCloudHypervisorService();
+              const vmService = getFirecrackerService();
               const dataDir = vmService.getDataDir();
               sessionId = createVmTerminalSession(
                 ws,

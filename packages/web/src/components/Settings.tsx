@@ -502,7 +502,6 @@ export function Settings() {
                     >
                       <option value="docker">Docker</option>
                       <option value="firecracker">Firecracker (VM)</option>
-                      <option value="cloud-hypervisor">Cloud-Hypervisor (VM)</option>
                       <option value="daytona">Daytona</option>
                       <option value="aws">AWS</option>
                       <option value="azure">Azure</option>
@@ -552,7 +551,7 @@ export function Settings() {
                             {img.repoTags?.[0] || img.id.slice(0, 12)}
                           </option>
                         ))
-                      ) : (qlBackend === 'firecracker' || qlBackend === 'cloud-hypervisor') ? (
+                      ) : qlBackend === 'firecracker' ? (
                         vmBaseImages?.map((img) => (
                           <option key={img.name} value={img.name}>
                             {img.name}
@@ -563,13 +562,13 @@ export function Settings() {
                     {qlBackend === 'docker' && dockerImages?.length === 0 && (
                       <p className="text-[10px] text-[hsl(var(--amber))] mt-1">No Docker images found. Build or pull an image first.</p>
                     )}
-                    {(qlBackend === 'firecracker' || qlBackend === 'cloud-hypervisor') && vmBaseImages?.length === 0 && (
+                    {qlBackend === 'firecracker' && vmBaseImages?.length === 0 && (
                       <p className="text-[10px] text-[hsl(var(--amber))] mt-1">No VM base images found. Run prepare-fc-image.sh to create one.</p>
                     )}
                   </div>
 
                   {/* VM Resources */}
-                  {(qlBackend === 'firecracker' || qlBackend === 'cloud-hypervisor' || qlBackend.match(/^(aws|azure|gcp|digitalocean|linode)$/)) && (
+                  {(qlBackend === 'firecracker' || qlBackend.match(/^(aws|azure|gcp|digitalocean|linode)$/)) && (
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <label className="text-xs font-medium text-[hsl(var(--text-primary))] mb-2 block">vCPUs</label>
@@ -770,7 +769,7 @@ export function Settings() {
                   VM SSH Key
                 </label>
                 <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
-                  This key is used for SSH access to all VM backends (Firecracker, Cloud-Hypervisor). Download the private key to connect from your machine, or regenerate to create a fresh keypair.
+                  This key is used for SSH access to all VM backends (Firecracker). Download the private key to connect from your machine, or regenerate to create a fresh keypair.
                 </p>
 
                 {/* Public key display */}
@@ -992,16 +991,6 @@ export function Settings() {
                         actionInProgress={actionInProgress?.startsWith('docker-') ? actionInProgress : null}
                       />
 
-                      {/* Cloud-Hypervisor */}
-                      <BackendCard
-                        name="Cloud-Hypervisor"
-                        description="Lightweight hypervisor for running virtual machines"
-                        status={backends.cloudHypervisor}
-                        icon={<Server className="h-5 w-5" />}
-                        onAction={(action) => handleBackendAction('cloud-hypervisor', action)}
-                        actionInProgress={actionInProgress?.startsWith('cloud-hypervisor-') ? actionInProgress : null}
-                      />
-
                       {/* Firecracker */}
                       <BackendCard
                         name="Firecracker"
@@ -1020,7 +1009,6 @@ export function Settings() {
                     <h4 className="text-xs font-medium text-[hsl(var(--text-primary))] uppercase tracking-wider">About Local Backends</h4>
                     <div className="space-y-2 text-[10px] text-[hsl(var(--text-muted))]">
                       <p><strong className="text-[hsl(var(--cyan))]">Docker</strong>: Standard container runtime. Best for development environments and services.</p>
-                      <p><strong className="text-[hsl(var(--green))]">Cloud-Hypervisor</strong>: Modern hypervisor for VMs. Great for isolation and production-like environments.</p>
                       <p><strong className="text-[hsl(var(--purple))]">Firecracker</strong>: MicroVM technology with ~125ms snapshot restore. Ideal for golden images and rapid provisioning.</p>
                     </div>
                   </div>

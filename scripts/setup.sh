@@ -5,12 +5,12 @@
 # - TAP helper with network capabilities
 # - Network bridge and NAT rules
 # - Base VM images
-# - Optional Firecracker support
+# - Firecracker microVM support
 #
 # Usage: sudo ./scripts/setup.sh [options]
 #
 # Options:
-#   --firecracker    Also install Firecracker support
+#   --firecracker    Install Firecracker support
 #   --skip-image     Skip base image download
 #   --unattended     Non-interactive mode (auto-yes)
 #   -h, --help       Show this help
@@ -38,8 +38,7 @@ fi
 
 DATA_DIR="$REAL_HOME/.local/share/handler"
 
-# Defaults - both hypervisors optional, user chooses interactively
-INSTALL_CLOUD_HYPERVISOR=false
+# Defaults
 INSTALL_FIRECRACKER=false
 SKIP_IMAGE=false
 UNATTENDED=false
@@ -90,15 +89,12 @@ usage() {
     echo "Usage: sudo $0 [options]"
     echo ""
     echo "Options:"
-    echo "  --cloud-hypervisor  Pre-select Cloud-Hypervisor support"
-    echo "  --firecracker       Pre-select Firecracker support"
-    echo "  --all               Install both hypervisors"
+    echo "  --firecracker       Install Firecracker support"
     echo "  --skip-image        Skip base image download"
     echo "  --unattended        Non-interactive mode (use defaults)"
     echo "  -h, --help          Show this help"
     echo ""
     echo "When run interactively (default), you will be prompted for:"
-    echo "  - Cloud-Hypervisor support (QCOW2 images, UEFI boot)"
     echo "  - Firecracker support (lightweight microVMs)"
     echo "  - Base image download"
     echo ""
@@ -106,7 +102,7 @@ usage() {
     echo "  - TAP helper binary with CAP_NET_ADMIN capability"
     echo "  - Network bridge ($BRIDGE_NAME) with NAT"
     echo "  - Systemd service for persistence"
-    echo "  - Base images for selected hypervisors (optional)"
+    echo "  - Base images (optional)"
     echo ""
     echo "Data directory: \$HOME/.local/share/handler"
     exit 0
@@ -115,16 +111,7 @@ usage() {
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --cloud-hypervisor)
-            INSTALL_CLOUD_HYPERVISOR=true
-            shift
-            ;;
         --firecracker)
-            INSTALL_FIRECRACKER=true
-            shift
-            ;;
-        --all)
-            INSTALL_CLOUD_HYPERVISOR=true
             INSTALL_FIRECRACKER=true
             shift
             ;;
@@ -162,35 +149,16 @@ echo ""
 # Interactive configuration (unless --unattended)
 #
 if [ "$UNATTENDED" = false ]; then
-    echo -e "${BLUE}Select hypervisors to install:${NC}"
-    echo ""
-
-    # Ask about Cloud-Hypervisor if not already set via command line
-    if [ "$INSTALL_CLOUD_HYPERVISOR" = false ]; then
-        if prompt_yn "Install Cloud-Hypervisor support? (QCOW2 images, standard VMs)" Y; then
-            INSTALL_CLOUD_HYPERVISOR=true
-        fi
-    fi
-
     # Ask about Firecracker if not already set via command line
     if [ "$INSTALL_FIRECRACKER" = false ]; then
-        if prompt_yn "Install Firecracker support? (lightweight microVMs)" N; then
+        if prompt_yn "Install Firecracker support? (lightweight microVMs)" Y; then
             INSTALL_FIRECRACKER=true
         fi
     fi
 
-    # Warn if no hypervisor selected
-    if [ "$INSTALL_CLOUD_HYPERVISOR" = false ] && [ "$INSTALL_FIRECRACKER" = false ]; then
-        warn "No hypervisor selected. You'll need at least one to run VMs."
-        if ! prompt_yn "Continue anyway?" N; then
-            echo "Aborted."
-            exit 0
-        fi
-    fi
-
-    # Only ask about images if a hypervisor is selected and not skipped via command line
+    # Only ask about images if Firecracker is selected and not skipped via command line
     if [ "$SKIP_IMAGE" = false ]; then
-        if [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$INSTALL_FIRECRACKER" = true ]; then
+        if [ "$INSTALL_FIRECRACKER" = true ]; then
             if ! prompt_yn "Download base VM images?" Y; then
                 SKIP_IMAGE=true
             fi
@@ -202,7 +170,6 @@ fi
 
 echo "Configuration:"
 echo "  Bridge: $BRIDGE_NAME ($BRIDGE_IP)"
-echo "  Cloud-Hypervisor: $INSTALL_CLOUD_HYPERVISOR"
 echo "  Firecracker: $INSTALL_FIRECRACKER"
 echo "  Download images: $([ "$SKIP_IMAGE" = false ] && echo "yes" || echo "no")"
 echo ""
@@ -279,42 +246,30 @@ step "Installing TAP helper..."
 #
 # Step 3: Download base images
 #
-if [ "$SKIP_IMAGE" = false ] && { [ "$INSTALL_CLOUD_HYPERVISOR" = true ] || [ "$INSTALL_FIRECRACKER" = true ]; }; then
+if [ "$SKIP_IMAGE" = false ] && [ "$INSTALL_FIRECRACKER" = true ]; then
     step "Setting up base images..."
 
     # Create data directory
     mkdir -p "$DATA_DIR/base-images"
     chown -R "$REAL_USER:$(id -gn $REAL_USER)" "$DATA_DIR"
 
-    # Download Cloud-Hypervisor image if selected
-    if [ "$INSTALL_CLOUD_HYPERVISOR" = true ]; then
-        if [ -f "$DATA_DIR/base-images/ubuntu-minimal-24.04/image.qcow2" ]; then
-            log "Cloud-Hypervisor image already exists"
-        else
-            log "Downloading Cloud-Hypervisor image..."
-            sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/dev/download-ubuntu-minimal.sh"
-        fi
-    fi
-
     # Download Firecracker image if selected
     # The download script auto-resolves the default image from the global manifest
-    if [ "$INSTALL_FIRECRACKER" = true ]; then
-        # Check if any Firecracker image already exists (rootfs.ext4 + vmlinux in any base-images subdir)
-        FC_IMAGE_EXISTS=false
-        if [ -d "$DATA_DIR/base-images" ]; then
-            for imgdir in "$DATA_DIR/base-images"/*/; do
-                if [ -f "${imgdir}rootfs.ext4" ] && [ -f "${imgdir}vmlinux" ]; then
-                    FC_IMAGE_EXISTS=true
-                    log "Firecracker image already exists: $(basename "$imgdir")"
-                    break
-                fi
-            done
-        fi
+    # Check if any Firecracker image already exists (rootfs.ext4 + vmlinux in any base-images subdir)
+    FC_IMAGE_EXISTS=false
+    if [ -d "$DATA_DIR/base-images" ]; then
+        for imgdir in "$DATA_DIR/base-images"/*/; do
+            if [ -f "${imgdir}rootfs.ext4" ] && [ -f "${imgdir}vmlinux" ]; then
+                FC_IMAGE_EXISTS=true
+                log "Firecracker image already exists: $(basename "$imgdir")"
+                break
+            fi
+        done
+    fi
 
-        if [ "$FC_IMAGE_EXISTS" = false ]; then
-            log "Downloading Firecracker image..."
-            sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/user/download-image.sh"
-        fi
+    if [ "$FC_IMAGE_EXISTS" = false ]; then
+        log "Downloading Firecracker image..."
+        sudo -H -u "$REAL_USER" env HANDLER_DATA_DIR="$DATA_DIR" "$SCRIPT_DIR/user/download-image.sh"
     fi
 else
     if [ "$SKIP_IMAGE" = true ]; then
@@ -325,20 +280,6 @@ fi
 #
 # Step 4: Install hypervisor binaries
 #
-
-# Install Cloud-Hypervisor if selected
-if [ "$INSTALL_CLOUD_HYPERVISOR" = true ]; then
-    step "Checking Cloud-Hypervisor..."
-
-    if command -v cloud-hypervisor &> /dev/null; then
-        CH_VERSION=$(cloud-hypervisor --version 2>&1 | head -1)
-        log "Cloud-Hypervisor already installed: $CH_VERSION"
-    else
-        warn "Cloud-Hypervisor not installed"
-        log "Install from: https://github.com/cloud-hypervisor/cloud-hypervisor/releases"
-        log "Or use your package manager: $(pkg_install_hint cloud-hypervisor 2>/dev/null || echo 'check your distro')"
-    fi
-fi
 
 # Install Firecracker if selected
 if [ "$INSTALL_FIRECRACKER" = true ]; then
@@ -373,11 +314,6 @@ log "Blocked br-+ → host:$HANDLER_PORT"
 iptables -C INPUT -i fc-tap+ -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null || \
   iptables -I INPUT -i fc-tap+ -p tcp --dport "$HANDLER_PORT" -j DROP
 log "Blocked fc-tap+ → host:$HANDLER_PORT"
-
-# Cloud-Hypervisor TAP interfaces
-iptables -C INPUT -i ch-tap+ -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null || \
-  iptables -I INPUT -i ch-tap+ -p tcp --dport "$HANDLER_PORT" -j DROP
-log "Blocked ch-tap+ → host:$HANDLER_PORT"
 
 # Handler bridge TAP interfaces
 iptables -C INPUT -i tap-+ -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null || \

@@ -119,7 +119,7 @@ fi
 
 # Check for running VMs
 step "Checking for running VMs..."
-VM_PIDS=$(pgrep -f "cloud-hypervisor|firecracker" 2>/dev/null || true)
+VM_PIDS=$(pgrep -f "firecracker" 2>/dev/null || true)
 if [ -n "$VM_PIDS" ]; then
     warn "Found running VMs. Please stop them first:"
     ps -p $VM_PIDS -o pid,cmd 2>/dev/null || true
@@ -237,7 +237,7 @@ fi
 # Remove Handler API firewall rules
 step "Removing Handler API firewall rules..."
 HANDLER_PORT="${HANDLER_PORT:-4001}"
-for iface in docker0 "br-+" "fc-tap+" "ch-tap+" "tap-+"; do
+for iface in docker0 "br-+" "fc-tap+" "tap-+"; do
     if iptables -C INPUT -i "$iface" -p tcp --dport "$HANDLER_PORT" -j DROP 2>/dev/null; then
         iptables -D INPUT -i "$iface" -p tcp --dport "$HANDLER_PORT" -j DROP
         log "Removed iptables rule for $iface"

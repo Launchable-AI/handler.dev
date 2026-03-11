@@ -1,5 +1,5 @@
 /**
- * Virtual Machine Types for Cloud-Hypervisor Integration
+ * Virtual Machine Types for Firecracker Integration
  */
 
 import { z } from 'zod';
@@ -9,7 +9,7 @@ export type VmStatus = 'creating' | 'booting' | 'running' | 'paused' | 'stopped'
 
 export type NetworkMode = 'tap' | 'bridge' | 'user' | 'none';
 
-export type HypervisorType = 'cloud-hypervisor' | 'firecracker' | 'daytona';
+export type HypervisorType = 'firecracker' | 'daytona';
 
 export interface PortMapping {
   container: number;
@@ -86,7 +86,7 @@ export interface VmState {
 
 export interface VmConfig {
   name: string;
-  /** Which hypervisor to use (defaults to cloud-hypervisor) */
+  /** Which hypervisor to use (defaults to firecracker) */
   hypervisor?: HypervisorType;
   baseImage?: string;
   // Launch from an existing snapshot for instant boot
@@ -178,7 +178,7 @@ export interface HypervisorConfig {
   dataDir: string; // Base directory for VM data
   baseImagesDir: string; // Directory for base images
   sshKeysDir: string; // SSH keys directory
-  hypervisorBinary: string; // Path to cloud-hypervisor binary
+  hypervisorBinary: string; // Path to firecracker binary
   kernelPath?: string; // Default kernel path
   initrdPath?: string; // Default initrd path
   sshPortRangeStart: number; // Start of SSH port range
@@ -194,7 +194,7 @@ export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = {
   dataDir: `${DATA_DIR}/vms`,
   baseImagesDir: `${DATA_DIR}/base-images`,
   sshKeysDir: `${DATA_DIR}/ssh-keys`,
-  hypervisorBinary: '/usr/bin/cloud-hypervisor',
+  hypervisorBinary: '/usr/bin/firecracker',
   sshPortRangeStart: 10022,
   sshPortRangeEnd: 10122,
   defaultVcpus: 1,
@@ -210,7 +210,7 @@ export type DaytonaSizeClass = 'small' | 'medium' | 'large';
 export const CreateVmSchema = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/,
     'VM name must start with alphanumeric and contain only alphanumeric, underscore, period, or hyphen'),
-  hypervisor: z.enum(['cloud-hypervisor', 'firecracker', 'daytona']).optional(),
+  hypervisor: z.enum(['firecracker', 'daytona']).optional(),
   baseImage: z.string().optional(),
   // Launch from an existing snapshot (provides instant boot with pre-configured environment)
   fromSnapshot: z.object({

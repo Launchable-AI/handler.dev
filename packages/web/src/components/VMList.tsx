@@ -137,7 +137,7 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
           }`} title={
             vm.hypervisor === 'firecracker' ? 'Firecracker' :
             vm.hypervisor === 'daytona' ? 'Daytona Cloud' :
-            'Cloud-Hypervisor'
+            'VM'
           }>
             {vm.hypervisor === 'firecracker' ? <Flame className="h-3 w-3" /> :
              vm.hypervisor === 'daytona' ? <Globe className="h-3 w-3" /> :
@@ -1337,9 +1337,6 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
   // Determine available hypervisors based on backend status
   const availableHypervisors = useMemo<HypervisorType[]>(() => {
     const available: HypervisorType[] = [];
-    if (backends?.cloudHypervisor?.installed && backends?.cloudHypervisor?.enabled) {
-      available.push('cloud-hypervisor');
-    }
     if (backends?.firecracker?.installed && backends?.firecracker?.enabled) {
       available.push('firecracker');
     }
@@ -1425,7 +1422,7 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
         volumes: volumeMounts.length > 0 ? volumeMounts : undefined,
         ports: validPorts.length > 0 ? validPorts : undefined,
         autoStart: true,
-        hypervisor: hypervisor || 'cloud-hypervisor',
+        hypervisor: hypervisor || 'firecracker',
         daytonaSizeClass: hypervisor === 'daytona' ? daytonaSizeClass : undefined,
       });
       onClose();
@@ -1482,20 +1479,6 @@ function CreateVMForm({ onClose }: { onClose: () => void }) {
               </div>
             ) : (
               <div className={`grid gap-2 ${availableHypervisors.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                {availableHypervisors.includes('cloud-hypervisor') && (
-                  <button
-                    type="button"
-                    onClick={() => setHypervisor('cloud-hypervisor')}
-                    className={`flex items-center gap-2 px-3 py-2 border transition-colors ${
-                      hypervisor === 'cloud-hypervisor'
-                        ? 'border-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)] text-[hsl(var(--cyan))]'
-                        : 'border-[hsl(var(--border))] text-[hsl(var(--text-secondary))] hover:border-[hsl(var(--cyan)/0.5)]'
-                    }`}
-                  >
-                    <Cloud className="h-4 w-4" />
-                    <span className="text-xs font-medium">Cloud-Hypervisor</span>
-                  </button>
-                )}
                 {availableHypervisors.includes('firecracker') && (
                   <button
                     type="button"
@@ -1993,7 +1976,7 @@ export function VMList({ onCreateClick: _onCreateClick }: VMListProps) {
         <div className="flex-1 flex flex-col items-center justify-center text-[hsl(var(--text-muted))]">
           <Server className="h-12 w-12 mb-3 opacity-30" />
           <p className="text-sm mb-1">No virtual machines</p>
-          <p className="text-xs mb-4">Create a VM to get started with cloud-hypervisor</p>
+          <p className="text-xs mb-4">Create a VM to get started</p>
           <button
             onClick={() => setShowCreateForm(true)}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)]"

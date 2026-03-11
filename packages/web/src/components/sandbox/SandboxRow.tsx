@@ -46,7 +46,6 @@ function getDefaultWorkspacePath(backend: Sandbox['backend']): string {
     case 'aws':
       return '/home/ubuntu';
     case 'firecracker':
-    case 'cloud-hypervisor':
     default:
       return '/home/agent';
   }
@@ -80,7 +79,7 @@ export function SandboxRow({ sandbox, highlight, visibleColumns = DEFAULT_COLUMN
   const terminalPanel = useTerminalPanel();
 
   // Determine sandbox type early (needed for hooks)
-  const isVm = sandbox.backend === 'firecracker' || sandbox.backend === 'cloud-hypervisor';
+  const isVm = sandbox.backend === 'firecracker';
   const vmMeta = sandbox.backendMeta as VmMeta | undefined;
 
   const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);

@@ -56,11 +56,6 @@ const BACKEND_INFO: Record<SandboxBackend, { label: string; icon?: typeof Box; i
     icon: Box,
     description: 'Container-based sandbox. Fast startup, easy volume management.',
   },
-  'cloud-hypervisor': {
-    label: 'Cloud-Hypervisor',
-    icon: Server,
-    description: 'Full VM with QCOW2 overlay. Strong isolation, larger resources.',
-  },
   firecracker: {
     label: 'Firecracker',
     icon: Server,
@@ -173,7 +168,7 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
         { host: defaultPort1, container: 3000 },
         { host: defaultPort2, container: 5173 },
       ]);
-    } else if ((backend === 'firecracker' || backend === 'cloud-hypervisor') && ports.length === 0) {
+    } else if (backend === 'firecracker' && ports.length === 0) {
       // VMs just need quick access ports (container port = the port on the VM)
       setPorts([
         { host: 3000, container: 3000 },
@@ -189,9 +184,9 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
     }
   }, [backend]);
 
-  // Auto-select first VM base image when Firecracker/Cloud-Hypervisor is selected
+  // Auto-select first VM base image when Firecracker is selected
   useEffect(() => {
-    if ((backend === 'firecracker' || backend === 'cloud-hypervisor') && vmBaseImages && vmBaseImages.length > 0 && !image) {
+    if (backend === 'firecracker' && vmBaseImages && vmBaseImages.length > 0 && !image) {
       setImage(vmBaseImages[0].name);
     }
   }, [backend, vmBaseImages, image]);
@@ -258,7 +253,7 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
         dockerOptions: backend === 'docker' ? {
           volumes: selectedVolumes.length > 0 ? selectedVolumes : undefined,
         } : undefined,
-        vmOptions: (backend === 'cloud-hypervisor' || backend === 'firecracker') ? {
+        vmOptions: backend === 'firecracker' ? {
           hypervisor: backend,
         } : undefined,
         daytonaOptions: backend === 'daytona' ? {
@@ -441,7 +436,7 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
             )}
 
             {/* Base Image (VMs only) */}
-            {(backend === 'cloud-hypervisor' || backend === 'firecracker') && (
+            {backend === 'firecracker' && (
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
                   Base Image
@@ -470,7 +465,7 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
             )}
 
             {/* Resources (VMs only) */}
-            {(backend === 'cloud-hypervisor' || backend === 'firecracker') && (
+            {backend === 'firecracker' && (
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
@@ -831,7 +826,7 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
                   SSH port (22) is automatically mapped.
                 </p>
               </div>
-            ) : (backend === 'firecracker' || backend === 'cloud-hypervisor') && (
+            ) : backend === 'firecracker' && (
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--text-secondary))] uppercase tracking-wider mb-1.5">
                   Quick Access Ports
@@ -931,7 +926,7 @@ export function CreateSandboxForm({ onClose, initialBackend, initialImage }: Cre
                   createMutation.isPending ||
                   !name ||
                   (backend === 'daytona' && !image) ||
-                  ((backend === 'firecracker' || backend === 'cloud-hypervisor') && (!vmBaseImages || vmBaseImages.length === 0))
+                  (backend === 'firecracker' && (!vmBaseImages || vmBaseImages.length === 0))
                 }
                 className="flex items-center gap-2 px-4 py-2 text-xs font-medium bg-[hsl(var(--cyan))] text-white hover:bg-[hsl(var(--cyan-dim))] disabled:opacity-50 transition-colors"
               >

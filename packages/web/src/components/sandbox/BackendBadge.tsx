@@ -2,7 +2,7 @@
  * BackendBadge - Shows the backend type for a sandbox
  */
 
-import { Container, Cloud, Flame } from 'lucide-react';
+import { Container, Flame } from 'lucide-react';
 import type { SandboxBackend } from '../../api/client';
 
 interface BackendBadgeProps {
@@ -25,12 +25,6 @@ const BACKEND_CONFIG: Record<SandboxBackend, BackendConfigEntry> = {
     label: 'Docker',
     color: 'text-[hsl(var(--blue))]',
     bgColor: 'bg-[hsl(var(--blue)/0.1)]',
-  },
-  'cloud-hypervisor': {
-    icon: Cloud,
-    label: 'Cloud-Hypervisor',
-    color: 'text-[hsl(var(--cyan))]',
-    bgColor: 'bg-[hsl(var(--cyan)/0.1)]',
   },
   firecracker: {
     icon: Flame,
@@ -111,8 +105,6 @@ export function getBackendShortName(backend: SandboxBackend): string {
   switch (backend) {
     case 'docker':
       return 'Docker';
-    case 'cloud-hypervisor':
-      return 'CH';
     case 'firecracker':
       return 'FC';
     case 'daytona':

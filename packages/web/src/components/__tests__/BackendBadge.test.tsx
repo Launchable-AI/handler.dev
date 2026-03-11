@@ -5,7 +5,6 @@ import type { SandboxBackend } from '../../api/client';
 
 const ALL_BACKENDS: SandboxBackend[] = [
   'docker',
-  'cloud-hypervisor',
   'firecracker',
   'daytona',
   'aws',
@@ -16,7 +15,7 @@ const ALL_BACKENDS: SandboxBackend[] = [
 ];
 
 describe('BackendBadge', () => {
-  it('renders all 9 backends without crashing', () => {
+  it('renders all 8 backends without crashing', () => {
     for (const backend of ALL_BACKENDS) {
       const { unmount } = render(<BackendBadge backend={backend} />);
       unmount();
@@ -72,7 +71,6 @@ describe('BackendBadge', () => {
 describe('getBackendShortName', () => {
   const expected: Record<SandboxBackend, string> = {
     'docker': 'Docker',
-    'cloud-hypervisor': 'CH',
     'firecracker': 'FC',
     'daytona': 'Daytona',
     'aws': 'AWS',

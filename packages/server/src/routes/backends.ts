@@ -22,7 +22,6 @@ interface BackendInfo {
 
 interface BackendStatus {
   docker: BackendInfo;
-  cloudHypervisor: BackendInfo;
   firecracker: BackendInfo;
   daytona: BackendInfo;
   aws: BackendInfo;
@@ -93,40 +92,6 @@ async function getDockerStatus(): Promise<BackendInfo> {
     info.enabled = connected; // If Docker is running, it's enabled
   } catch (err) {
     info.error = err instanceof Error ? err.message : 'Failed to connect to Docker';
-  }
-
-  return info;
-}
-
-// Check Cloud-Hypervisor status
-async function getCloudHypervisorStatus(): Promise<BackendInfo> {
-  const info: BackendInfo = {
-    installed: false,
-    enabled: false,
-    running: false,
-  };
-
-  // Check if cloud-hypervisor binary exists
-  const chPath = await findBinary('cloud-hypervisor');
-  if (!chPath) {
-    return info;
-  }
-
-  info.installed = true;
-  info.version = await getBinaryVersion(chPath);
-
-  // Check KVM availability (required for cloud-hypervisor)
-  try {
-    if (existsSync('/dev/kvm')) {
-      info.enabled = true;
-      // Check if any cloud-hypervisor processes are running
-      const { stdout } = await execAsync('pgrep -f cloud-hypervisor 2>/dev/null || true');
-      info.running = stdout.trim().length > 0;
-    } else {
-      info.error = 'KVM not available - check virtualization support';
-    }
-  } catch {
-    info.enabled = existsSync('/dev/kvm');
   }
 
   return info;
@@ -267,9 +232,8 @@ async function getLinodeStatus(): Promise<BackendInfo> {
 
 // GET /backends/status - Get status of all backends
 backends.get('/status', async (c) => {
-  const [docker, cloudHypervisor, firecracker, daytona, aws, azure, gcp, digitalocean, linode] = await Promise.all([
+  const [docker, firecracker, daytona, aws, azure, gcp, digitalocean, linode] = await Promise.all([
     getDockerStatus(),
-    getCloudHypervisorStatus(),
     getFirecrackerStatus(),
     getDaytonaStatus(),
     getAwsStatus(),
@@ -281,7 +245,6 @@ backends.get('/status', async (c) => {
 
   const status: BackendStatus = {
     docker,
-    cloudHypervisor,
     firecracker,
     daytona,
     aws,
@@ -309,9 +272,8 @@ backends.post('/:backend/enable', async (c) => {
         return c.json({ success: false, message: 'Run: sudo systemctl start docker' }, 500);
       }
 
-    case 'cloud-hypervisor':
     case 'firecracker':
-      // These are just binary tools, enabling means ensuring KVM is accessible
+      // Firecracker is a binary tool, enabling means ensuring KVM is accessible
       if (existsSync('/dev/kvm')) {
         return c.json({ success: true, message: `${backend} is ready (KVM available)` });
       }
@@ -400,9 +362,8 @@ backends.post('/:backend/disable', async (c) => {
         return c.json({ success: false, message: 'Run: sudo systemctl stop docker' }, 500);
       }
 
-    case 'cloud-hypervisor':
     case 'firecracker':
-      // Can't really "disable" these - they're just binaries
+      // Can't really "disable" Firecracker - it's just a binary
       return c.json({ success: true, message: `${backend} doesn't require disabling` });
 
     case 'daytona':
@@ -487,26 +448,6 @@ backends.post('/:backend/install', async (c) => {
         return c.json({ success: false, message: 'Failed to install Docker. See https://docs.docker.com/engine/install/' }, 500);
       }
 
-    case 'cloud-hypervisor':
-      try {
-        // Use the install script if available
-        const scriptPath = `${process.cwd()}/scripts/install-cloud-hypervisor.sh`;
-        if (existsSync(scriptPath)) {
-          await execAsync(`bash ${scriptPath}`, { timeout: 300000 });
-        } else {
-          // Fallback: Download from releases
-          const arch = process.arch === 'x64' ? 'x86_64' : 'aarch64';
-          await execAsync(`
-            curl -sL https://github.com/cloud-hypervisor/cloud-hypervisor/releases/latest/download/cloud-hypervisor-static-${arch} -o /tmp/cloud-hypervisor &&
-            chmod +x /tmp/cloud-hypervisor &&
-            sudo -n mv /tmp/cloud-hypervisor /usr/local/bin/
-          `, { timeout: 120000 });
-        }
-        return c.json({ success: true, message: 'Cloud-Hypervisor installed' });
-      } catch (err) {
-        return c.json({ success: false, message: 'Run: sudo ./scripts/install-cloud-hypervisor.sh' }, 500);
-      }
-
     case 'firecracker':
       try {
         // Use the install script if available
@@ -562,14 +503,6 @@ backends.post('/:backend/uninstall', async (c) => {
         return c.json({ success: true, message: 'Docker uninstalled' });
       } catch (err) {
         return c.json({ success: false, message: 'Failed to uninstall Docker. See https://docs.docker.com/engine/install/' }, 500);
-      }
-
-    case 'cloud-hypervisor':
-      try {
-        await execAsync('sudo -n rm -f /usr/local/bin/cloud-hypervisor');
-        return c.json({ success: true, message: 'Cloud-Hypervisor uninstalled' });
-      } catch (err) {
-        return c.json({ success: false, message: 'Run: sudo rm -f /usr/local/bin/cloud-hypervisor' }, 500);
       }
 
     case 'firecracker':

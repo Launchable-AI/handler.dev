@@ -2,8 +2,8 @@
  * FirecrackerService - Firecracker MicroVM Management
  * Manages virtual machines using Firecracker for the Handler platform.
  *
- * Key difference from cloud-hypervisor: Uses MMDS (MicroVM Metadata Service) for
- * guest identity, enabling fast snapshot restore with dynamic network configuration.
+ * Uses MMDS (MicroVM Metadata Service) for guest identity,
+ * enabling fast snapshot restore with dynamic network configuration.
  */
 
 import { EventEmitter } from 'events';
@@ -70,7 +70,7 @@ export class FirecrackerService extends EventEmitter {
     // Check for firecracker binary
     await this.checkFirecrackerBinary();
 
-    // Ensure SSH keys exist (shared with cloud-hypervisor)
+    // Ensure SSH keys exist
     await this.ensureSshKeys();
 
     // Load existing VM states from disk
@@ -128,7 +128,7 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
-   * Ensure SSH keys exist (shared with cloud-hypervisor)
+   * Ensure SSH keys exist
    */
   private async ensureSshKeys(): Promise<void> {
     const privateKeyPath = path.join(this.config.sshKeysDir, 'id_ed25519');
@@ -2700,7 +2700,7 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
-   * List available base images (shared with cloud-hypervisor)
+   * List available base images
    * Includes both root base images (with rootfs.ext4) and layered images (with layer.ext4)
    */
   listBaseImages(): { name: string; hasFirecrackerImage: boolean; isLayered?: boolean; parent?: string; layerSizeMB?: number }[] {

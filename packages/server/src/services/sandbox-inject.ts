@@ -9,7 +9,6 @@ import * as path from 'path';
 import * as os from 'os';
 import { execFileSync } from 'child_process';
 import { getSandboxService, initializeSandboxService } from './sandbox/index.js';
-import { getCloudHypervisorService, initializeCloudHypervisorService } from './hypervisor.js';
 import { getFirecrackerService, initializeFirecrackerService } from './firecracker.js';
 import { getDaytonaService, initializeDaytonaService } from './daytona.js';
 import { getAwsService, initializeAwsService } from './aws.js';
@@ -36,13 +35,11 @@ export async function ensureSandboxService() {
   try {
     return getSandboxService();
   } catch {
-    let hypervisor, firecracker, daytona, aws;
-    try { await initializeCloudHypervisorService(); hypervisor = getCloudHypervisorService(); } catch {}
+    let firecracker, daytona, aws;
     try { await initializeFirecrackerService(); firecracker = getFirecrackerService(); } catch {}
     try { await initializeDaytonaService(); const d = getDaytonaService(); if (await d.isAvailable()) daytona = d; } catch {}
     try { await initializeAwsService(); const a = getAwsService(); if (await a.isAvailable()) aws = a; } catch {}
     await initializeSandboxService({
-      hypervisor: hypervisor ?? undefined,
       firecracker: firecracker ?? undefined,
       daytona: daytona ?? undefined,
       aws: aws ?? undefined,
@@ -63,7 +60,7 @@ function expandTilde(filePath: string, backend: string): string {
     : backend === 'gcp' ? '/home/handler'
     : backend === 'digitalocean' ? '/root'
     : backend === 'linode' ? '/root'
-    : '/home/agent'; // cloud-hypervisor, firecracker
+    : '/home/agent'; // firecracker
   return filePath.replace(/^~(?=\/|$)/, home);
 }
 
@@ -193,10 +190,8 @@ export async function injectFilesIntoSandbox(
     }
   }
 
-  if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
-    const vmService = sandbox.backend === 'cloud-hypervisor'
-      ? service.getHypervisorService()
-      : service.getFirecrackerService();
+  if (sandbox.backend === 'firecracker') {
+    const vmService = service.getFirecrackerService();
     const keyPath = vmService?.getSshKeyPath?.() || '';
     if (keyPath && sandbox.guestIp) {
       return injectViaTar({ keyPath, user: 'agent', ip: sandbox.guestIp, files: expanded });
@@ -262,10 +257,8 @@ export async function execInSandbox(
         timeout: timeoutMs,
       });
       return result.toString();
-    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
-      const vmService = sandbox.backend === 'cloud-hypervisor'
-        ? service.getHypervisorService()
-        : service.getFirecrackerService();
+    } else if (sandbox.backend === 'firecracker') {
+      const vmService = service.getFirecrackerService();
       const keyPath = vmService?.getSshKeyPath?.() || '';
       if (keyPath && sandbox.guestIp) {
         const result = execFileSync('ssh', ['-i', keyPath, ...SSH_OPTS, `agent@${sandbox.guestIp}`, command], {
@@ -301,10 +294,8 @@ export async function readFileFromSandbox(
       const result = execFileSync('docker', ['exec', containerId, 'cat', filePath], { stdio: 'pipe', timeout: 5000 });
       const content = result.toString();
       return content || null;
-    } else if (sandbox.backend === 'cloud-hypervisor' || sandbox.backend === 'firecracker') {
-      const vmService = sandbox.backend === 'cloud-hypervisor'
-        ? service.getHypervisorService()
-        : service.getFirecrackerService();
+    } else if (sandbox.backend === 'firecracker') {
+      const vmService = service.getFirecrackerService();
       const keyPath = vmService?.getSshKeyPath?.() || '';
       if (keyPath && sandbox.guestIp) {
         const result = execFileSync('ssh', ['-i', keyPath, ...SSH_OPTS, `agent@${sandbox.guestIp}`, 'cat', filePath], { stdio: 'pipe', timeout: 10000 });
