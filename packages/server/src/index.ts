@@ -652,21 +652,31 @@ async function main() {
       return;
     }
 
-    // Collect request body for non-GET/HEAD methods
-    let body: Buffer | undefined;
+    // Stream request body instead of buffering (supports large file uploads)
+    let body: ReadableStream<Uint8Array> | undefined;
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(chunk);
-      }
-      body = Buffer.concat(chunks);
+      body = new ReadableStream({
+        start(controller) {
+          req.on('data', (chunk: Buffer) => {
+            controller.enqueue(new Uint8Array(chunk));
+          });
+          req.on('end', () => {
+            controller.close();
+          });
+          req.on('error', (err) => {
+            controller.error(err);
+          });
+        },
+      });
     }
 
     // Handle Hono requests
     const request = new Request(`http://localhost:${port}${req.url}`, {
       method: req.method,
       headers: req.headers as HeadersInit,
-      body: body ? new Uint8Array(body) : undefined,
+      body,
+      // @ts-expect-error duplex is required for streaming request bodies in Node.js
+      duplex: 'half',
     });
 
     const response = await app.fetch(request);
