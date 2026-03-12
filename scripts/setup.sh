@@ -252,6 +252,14 @@ if ! command -v pnpm &> /dev/null && [ ! -f "$REAL_HOME/.local/share/pnpm/pnpm" 
     fi
 fi
 
+# Install project dependencies
+log "Installing project dependencies..."
+PNPM_CMD="pnpm"
+if [ -f "$REAL_HOME/.local/share/pnpm/pnpm" ]; then
+    PNPM_CMD="$REAL_HOME/.local/share/pnpm/pnpm"
+fi
+sudo -u "$REAL_USER" bash -c "cd '$PROJECT_ROOT' && '$PNPM_CMD' install"
+
 # On systems with mkisofs but not genisoimage (e.g., Arch with cdrtools),
 # create a wrapper so that code expecting 'genisoimage' still works
 if ! command -v genisoimage &> /dev/null && command -v mkisofs &> /dev/null; then
@@ -365,10 +373,9 @@ echo "============================================"
 echo ""
 echo "Next steps:"
 echo "  1. Reload your shell: source ~/.bashrc"
-echo "  2. Install dependencies: pnpm install"
-echo "  3. Start the server: pnpm dev"
-echo "  4. Open http://localhost:5173"
-echo "  5. Create a VM from the VMs tab"
+echo "  2. Start the server: pnpm dev"
+echo "  3. Open http://localhost:5173"
+echo "  4. Create a VM from the VMs tab"
 echo ""
 if groups "$REAL_USER" | grep -qw "$KVM_GROUP"; then
     :
