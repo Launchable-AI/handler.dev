@@ -233,6 +233,25 @@ if [ "$NEED_RUST" = true ]; then
     fi
 fi
 
+# Install Node.js 22+ if not present
+if ! command -v node &> /dev/null || [ "$(node -e 'console.log(parseInt(process.version.slice(1)))')" -lt 22 ] 2>/dev/null; then
+    log "Installing Node.js 22 via NodeSource..."
+    pkg_update
+    pkg_install curl
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    pkg_install nodejs
+fi
+
+# Install pnpm if not present
+if ! command -v pnpm &> /dev/null && [ ! -f "$REAL_HOME/.local/share/pnpm/pnpm" ]; then
+    log "Installing pnpm..."
+    sudo -u "$REAL_USER" bash -c 'curl -fsSL https://get.pnpm.io/install.sh | sh -'
+    if ! sudo -u "$REAL_USER" bash -c 'export PNPM_HOME="$HOME/.local/share/pnpm" && export PATH="$PNPM_HOME:$PATH" && command -v pnpm' &> /dev/null; then
+        echo "[ERROR] Failed to install pnpm"
+        exit 1
+    fi
+fi
+
 # On systems with mkisofs but not genisoimage (e.g., Arch with cdrtools),
 # create a wrapper so that code expecting 'genisoimage' still works
 if ! command -v genisoimage &> /dev/null && command -v mkisofs &> /dev/null; then
@@ -345,9 +364,11 @@ echo -e "${GREEN}  Setup Complete!${NC}"
 echo "============================================"
 echo ""
 echo "Next steps:"
-echo "  1. Start the server: pnpm dev"
-echo "  2. Open http://localhost:5173"
-echo "  3. Create a VM from the VMs tab"
+echo "  1. Reload your shell: source ~/.bashrc"
+echo "  2. Install dependencies: pnpm install"
+echo "  3. Start the server: pnpm dev"
+echo "  4. Open http://localhost:5173"
+echo "  5. Create a VM from the VMs tab"
 echo ""
 if groups "$REAL_USER" | grep -qw "$KVM_GROUP"; then
     :
