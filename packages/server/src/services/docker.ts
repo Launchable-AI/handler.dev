@@ -535,6 +535,22 @@ export async function testConnection(): Promise<boolean> {
   }
 }
 
+// Cached Docker availability check — avoids repeated socket errors when Docker is not installed.
+// Re-checks every 30s so it picks up Docker being installed/started without a restart.
+let _dockerAvailable: boolean | null = null;
+let _dockerCheckTime = 0;
+const DOCKER_CHECK_INTERVAL = 30_000;
+
+export async function isDockerAvailable(): Promise<boolean> {
+  const now = Date.now();
+  if (_dockerAvailable !== null && now - _dockerCheckTime < DOCKER_CHECK_INTERVAL) {
+    return _dockerAvailable;
+  }
+  _dockerAvailable = await testConnection();
+  _dockerCheckTime = now;
+  return _dockerAvailable;
+}
+
 function extractSshPort(ports: Docker.Port[]): number | null {
   const sshPort = ports.find((p) => p.PrivatePort === 22);
   return sshPort?.PublicPort || null;

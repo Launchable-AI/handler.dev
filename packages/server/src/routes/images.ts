@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import * as dockerService from '../services/docker.js';
+import { isDockerAvailable } from '../services/docker.js';
 import { PullImageSchema, BuildImageSchema } from '../types/index.js';
 
 const RenameImageSchema = z.object({
@@ -12,14 +13,13 @@ const images = new Hono();
 
 // List all images
 images.get('/', async (c) => {
+  if (!(await isDockerAvailable())) {
+    return c.json([]);
+  }
   try {
     const list = await dockerService.listImages();
     return c.json(list);
   } catch (error) {
-    // Return empty array if Docker is not available
-    if (error instanceof Error && error.message.includes('ENOENT')) {
-      return c.json([]);
-    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     return c.json({ error: message }, 500);
   }

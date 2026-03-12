@@ -10,6 +10,10 @@ const containers = new Hono();
 
 // List all containers (includes active/failed builds as pseudo-containers)
 containers.get('/', async (c) => {
+  if (!(await dockerService.isDockerAvailable())) {
+    return c.json([]);
+  }
+
   const [containerList, builds] = await Promise.all([
     dockerService.listContainers(),
     Promise.resolve(buildTracker.listBuilds()),
