@@ -43,8 +43,8 @@ export interface HelperStatus {
 
 // Default configuration
 const DEFAULT_BRIDGE_NAME = 'handler-br0';
-const DEFAULT_GATEWAY = '172.31.0.1';
-const DEFAULT_SUBNET_PREFIX = '172.31.0';
+const DEFAULT_GATEWAY = '192.168.127.1';
+const DEFAULT_SUBNET_PREFIX = '192.168.127';
 const HELPER_BINARY = 'handler-tap-helper';
 
 // Search paths for the helper binary

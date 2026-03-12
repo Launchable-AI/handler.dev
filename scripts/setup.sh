@@ -25,7 +25,7 @@ source "$SCRIPT_DIR/lib/os-utils.sh"
 
 # Configuration
 BRIDGE_NAME="handler-br0"
-BRIDGE_IP="172.31.0.1/24"
+BRIDGE_IP="192.168.127.1/24"
 
 # Handle sudo: use SUDO_USER's home if running as root via sudo
 if [ -n "$SUDO_USER" ]; then

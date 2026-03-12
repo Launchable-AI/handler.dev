@@ -299,8 +299,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   </p>
                   <code className="text-[10px] text-[hsl(var(--cyan))] block break-all font-mono">
                     {sshJumpHost && sshJumpHostKeyPath
-                      ? `ssh -o ProxyCommand="ssh -i ${sshJumpHostKeyPath} -W %h:%p ${sshJumpHost}" -i ${sshKeysDisplayPath || '~/.ssh'}/vm_id_ed25519 agent@172.31.0.2`
-                      : `ssh -i ${sshKeysDisplayPath || '~/.ssh'}/vm_id_ed25519 agent@${sshHost || '172.31.0.2'}`
+                      ? `ssh -o ProxyCommand="ssh -i ${sshJumpHostKeyPath} -W %h:%p ${sshJumpHost}" -i ${sshKeysDisplayPath || '~/.ssh'}/vm_id_ed25519 agent@192.168.127.2`
+                      : `ssh -i ${sshKeysDisplayPath || '~/.ssh'}/vm_id_ed25519 agent@${sshHost || '192.168.127.2'}`
                     }
                   </code>
                 </div>

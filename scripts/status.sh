@@ -105,7 +105,7 @@ if command -v nft &> /dev/null; then
         warn "NAT rules status unknown (run with sudo to verify)"
     fi
 elif command -v iptables &> /dev/null; then
-    if iptables -t nat -L POSTROUTING -n 2>/dev/null | grep -q "172.31.0.0"; then
+    if iptables -t nat -L POSTROUTING -n 2>/dev/null | grep -q "192.168.127.0"; then
         ok "NAT rules configured (iptables)"
     else
         warn "NAT rules may be missing (iptables)"

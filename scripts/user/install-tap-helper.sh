@@ -9,7 +9,7 @@
 # Options:
 #   --setup-bridge    Also set up the network bridge and NAT rules
 #   --bridge-name     Bridge name (default: handler-br0)
-#   --bridge-ip       Bridge IP in CIDR notation (default: 172.31.0.1/24)
+#   --bridge-ip       Bridge IP in CIDR notation (default: 192.168.127.1/24)
 
 set -e
 
@@ -26,8 +26,8 @@ source "$(dirname "$SCRIPT_DIR")/lib/os-utils.sh"
 # Default bridge settings
 SETUP_BRIDGE=false
 BRIDGE_NAME="handler-br0"
-BRIDGE_IP="172.31.0.1/24"
-BRIDGE_SUBNET="172.31.0.0/24"
+BRIDGE_IP="192.168.127.1/24"
+BRIDGE_SUBNET="192.168.127.0/24"
 
 # Colors
 RED='\033[0;31m'
@@ -58,7 +58,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --setup-bridge    Also set up the network bridge and NAT rules"
             echo "  --bridge-name     Bridge name (default: handler-br0)"
-            echo "  --bridge-ip       Bridge IP in CIDR notation (default: 172.31.0.1/24)"
+            echo "  --bridge-ip       Bridge IP in CIDR notation (default: 192.168.127.1/24)"
             echo ""
             exit 0
             ;;
