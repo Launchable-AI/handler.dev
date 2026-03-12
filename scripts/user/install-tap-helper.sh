@@ -108,24 +108,22 @@ if [ -f "$HELPER_DIR/target/release/$BINARY_NAME" ]; then
 fi
 
 if [ "$BUILD_NEEDED" = true ]; then
-    # Check for cargo in PATH or in user's rustup installation
+    # Check for cargo — prefer user's rustup installation (latest stable) over system package
     CARGO_CMD=""
-    if command -v cargo &> /dev/null; then
-        CARGO_CMD="cargo"
-    elif [ -f "$REAL_HOME/.cargo/bin/cargo" ]; then
+    if [ -f "$REAL_HOME/.cargo/bin/cargo" ]; then
         CARGO_CMD="$REAL_HOME/.cargo/bin/cargo"
+    elif command -v cargo &> /dev/null; then
+        CARGO_CMD="cargo"
     fi
 
-    # Install cargo if not found
+    # Install cargo if not found (use rustup for latest stable, distro packages are often too old)
     if [ -z "$CARGO_CMD" ]; then
-        echo -e "${YELLOW}Installing Rust/Cargo...${NC}"
-        pkg_update
-        pkg_install cargo
-        # After install, cargo should be in PATH
-        if command -v cargo &> /dev/null; then
-            CARGO_CMD="cargo"
+        echo -e "${YELLOW}Installing Rust/Cargo via rustup...${NC}"
+        sudo -u "$REAL_USER" bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --quiet'
+        if [ -f "$REAL_HOME/.cargo/bin/cargo" ]; then
+            CARGO_CMD="$REAL_HOME/.cargo/bin/cargo"
         else
-            echo -e "${RED}Error: Failed to install Rust/Cargo${NC}"
+            echo -e "${RED}Error: Failed to install Rust/Cargo via rustup${NC}"
             exit 1
         fi
     fi

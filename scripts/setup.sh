@@ -209,10 +209,11 @@ command -v genisoimage &> /dev/null || command -v mkisofs &> /dev/null || MISSIN
 
 # Check for Rust/Cargo (needed to build tap-helper if not pre-built)
 HELPER_BINARY="$PROJECT_ROOT/helpers/tap-helper/target/release/handler-tap-helper"
+NEED_RUST=false
 if [ ! -f "$HELPER_BINARY" ]; then
     # Check for cargo in PATH or in user's rustup installation
     if ! command -v cargo &> /dev/null && [ ! -f "$REAL_HOME/.cargo/bin/cargo" ]; then
-        MISSING_PKGS+=("cargo")
+        NEED_RUST=true
     fi
 fi
 
@@ -220,6 +221,16 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
     log "Installing required packages: ${MISSING_PKGS[*]} (using $PKG_MANAGER)"
     pkg_update
     pkg_install "${MISSING_PKGS[@]}"
+fi
+
+# Install Rust via rustup (distro packages are often too old for Cargo.lock v4)
+if [ "$NEED_RUST" = true ]; then
+    log "Installing Rust/Cargo via rustup..."
+    sudo -u "$REAL_USER" bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --quiet'
+    if [ ! -f "$REAL_HOME/.cargo/bin/cargo" ]; then
+        echo "[ERROR] Failed to install Rust/Cargo via rustup"
+        exit 1
+    fi
 fi
 
 # On systems with mkisofs but not genisoimage (e.g., Arch with cdrtools),
