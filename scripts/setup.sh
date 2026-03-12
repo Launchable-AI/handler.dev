@@ -206,6 +206,7 @@ command -v setcap &> /dev/null || MISSING_PKGS+=("libcap2-bin")
 command -v qemu-img &> /dev/null || MISSING_PKGS+=("qemu-utils")
 # genisoimage or mkisofs (cdrtools) - both work for creating cloud-init ISOs
 command -v genisoimage &> /dev/null || command -v mkisofs &> /dev/null || MISSING_PKGS+=("genisoimage")
+command -v zerofree &> /dev/null || MISSING_PKGS+=("zerofree")
 
 # Check for Rust/Cargo (needed to build tap-helper if not pre-built)
 HELPER_BINARY="$PROJECT_ROOT/helpers/tap-helper/target/release/handler-tap-helper"

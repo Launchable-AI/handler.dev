@@ -188,6 +188,15 @@ Key files:
 - `guest-init/overlay-init` — In-guest init that sets up overlayfs, Docker volume, containerd bind mount, and SSH
 - `packages/server/src/services/firecracker.ts` — VM creation with Docker volume allocation and ACPI-based boot
 
+### VM Disk Compaction
+
+Firecracker's virtio-blk doesn't support DISCARD, so deleted files inside a VM don't reclaim space on the host's sparse ext4 backing files (`overlay.ext4`, `docker-volume.ext4`). On VM stop, `compactVmDisks()` runs in the background (fire-and-forget) to reclaim space:
+
+1. `zerofree <file>` — zeros free blocks in the unmounted ext4 image (no root needed)
+2. `fallocate --dig-holes <file>` — converts zero-filled regions to sparse holes
+
+Before/after actual sizes are logged. Failures are warned but never block the stop flow. Requires `zerofree` on the host (installed by `scripts/setup.sh`).
+
 ### Security Hardening
 
 The server is hardened against malicious agents inside sandboxes attempting to exploit the control-plane API. Three layers of defense:

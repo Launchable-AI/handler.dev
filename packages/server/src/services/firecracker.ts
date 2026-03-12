@@ -1538,6 +1538,11 @@ export class FirecrackerService extends EventEmitter {
       vm.guestIp = undefined;
     }
 
+    // Compact disks in background (fire-and-forget) to reclaim sparse file space
+    this.compactVmDisks(id).catch(err =>
+      console.warn(`[FirecrackerService] Disk compaction failed for VM ${id}:`, err)
+    );
+
     vm.status = 'stopped';
     vm.pid = undefined;
     vm.stoppedAt = new Date().toISOString();
@@ -1548,6 +1553,48 @@ export class FirecrackerService extends EventEmitter {
     console.log(`[FirecrackerService] VM ${id} stopped`);
 
     return this.vmToInfo(vm);
+  }
+
+  /**
+   * Compact VM disk files by zeroing free blocks and punching sparse holes.
+   * Reclaims host disk space that was freed inside the guest but not returned
+   * to the sparse backing file (Firecracker's virtio-blk has no DISCARD support).
+   */
+  private async compactVmDisks(id: string): Promise<void> {
+    const vm = this.vms.get(id);
+    if (!vm) return;
+
+    const vmDir = path.join(this.config.dataDir, id);
+    const diskFiles = ['overlay.ext4', 'docker-volume.ext4'];
+
+    for (const diskFile of diskFiles) {
+      const diskPath = path.join(vmDir, diskFile);
+      if (!fs.existsSync(diskPath)) continue;
+
+      try {
+        // Get before size (actual blocks on disk, not apparent sparse size)
+        const beforeStat = fs.statSync(diskPath);
+        const beforeBytes = beforeStat.blocks * 512;
+
+        // zerofree: zeros free blocks in the ext4 filesystem (works on unmounted files, no root needed)
+        execFileSync('zerofree', [diskPath], { stdio: 'pipe', timeout: 120000 });
+
+        // fallocate --dig-holes: converts zero-filled regions to sparse holes
+        execFileSync('fallocate', ['--dig-holes', diskPath], { stdio: 'pipe', timeout: 120000 });
+
+        const afterStat = fs.statSync(diskPath);
+        const afterBytes = afterStat.blocks * 512;
+        const savedMb = ((beforeBytes - afterBytes) / 1024 / 1024).toFixed(1);
+
+        console.log(
+          `[FirecrackerService] Compacted ${diskFile} for VM ${id}: ` +
+          `${(beforeBytes / 1024 / 1024).toFixed(1)}MB → ${(afterBytes / 1024 / 1024).toFixed(1)}MB (saved ${savedMb}MB)`
+        );
+      } catch (err: any) {
+        // Best-effort — don't break the stop flow
+        console.warn(`[FirecrackerService] Failed to compact ${diskFile} for VM ${id}:`, err.message);
+      }
+    }
   }
 
   /**
