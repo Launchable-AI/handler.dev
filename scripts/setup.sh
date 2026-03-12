@@ -374,7 +374,7 @@ echo ""
 echo "Next steps:"
 echo "  1. Reload your shell: source ~/.bashrc"
 echo "  2. Start the server: pnpm dev"
-echo "  3. Open http://localhost:5173"
+echo "  3. Open http://localhost:4000"
 echo "  4. Create a VM from the VMs tab"
 echo ""
 if groups "$REAL_USER" | grep -qw "$KVM_GROUP"; then
