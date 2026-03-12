@@ -1,11 +1,24 @@
 // Server URL configuration
-// Uses SERVER_PORT env var at build time, or defaults to 4001
-// Always uses the same hostname as the frontend for remote access compatibility
-const SERVER_PORT = import.meta.env.VITE_SERVER_PORT || '4001';
+// In dev mode, Vite proxies /api and /ws to the backend, so use same origin.
+// In production or when VITE_SERVER_PORT is set, connect directly to the server port.
+const SERVER_PORT = import.meta.env.VITE_SERVER_PORT;
 
 function getServerUrl(): string {
+  // If no explicit server port, use same origin (works with Vite proxy and production)
+  if (!SERVER_PORT) {
+    return window.location.origin;
+  }
   const host = window.location.hostname || 'localhost';
   return `http://${host}:${SERVER_PORT}`;
+}
+
+export function getWsUrl(path: string = '/ws/terminal'): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (!SERVER_PORT) {
+    return `${protocol}//${window.location.host}${path}`;
+  }
+  const host = window.location.hostname || 'localhost';
+  return `${protocol}//${host}:${SERVER_PORT}${path}`;
 }
 
 export async function getApiBase(): Promise<string> {

@@ -13,5 +13,15 @@ export default defineConfig({
   server: {
     port: parseInt(process.env.CLIENT_PORT || '4000', 10),
     strictPort: true, // Don't auto-increment, fail if port in use
+    proxy: {
+      '/api': {
+        target: `http://127.0.0.1:${process.env.SERVER_PORT || '4001'}`,
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: `ws://127.0.0.1:${process.env.SERVER_PORT || '4001'}`,
+        ws: true,
+      },
+    },
   },
 });

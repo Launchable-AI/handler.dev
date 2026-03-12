@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { X, Maximize2, Minimize2, TerminalSquare, Loader2 } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
+import { getWsUrl as getWsUrlBase } from '@/api/client';
 
 interface TerminalProps {
   containerId: string;
@@ -23,9 +24,7 @@ export function Terminal({ containerId, containerName, onClose }: TerminalProps)
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const getWsUrl = useCallback(() => {
-    // Get the API URL from the same origin or port file
-    const apiPort = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
-    return `ws://localhost:${apiPort}/ws/terminal`;
+    return getWsUrlBase();
   }, []);
 
   useEffect(() => {

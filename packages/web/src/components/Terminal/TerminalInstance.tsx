@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import type { ShellPromptTheme } from '../../lib/prompt-themes';
 import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../../lib/terminal-themes';
 import { useTheme } from '../../hooks/useTheme';
+import { getWsUrl as getWsUrlBase } from '@/api/client';
 
 // Connection state type
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
@@ -77,10 +78,7 @@ export function TerminalInstance({
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const getWsUrl = useCallback(() => {
-    const apiPort = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
-    const hostname = window.location.hostname || 'localhost';
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${hostname}:${apiPort}/ws/terminal`;
+    return getWsUrlBase();
   }, []);
 
   // Stable callback refs to avoid re-running effect

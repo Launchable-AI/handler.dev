@@ -3,6 +3,7 @@ import { Moon, Sun, Check, Monitor } from 'lucide-react';
 import { useTheme, DARK_THEMES, LIGHT_THEMES, type Theme, type ThemeConfig } from '../../hooks/useTheme';
 import { PROMPT_THEMES, type ShellPromptTheme } from '../../lib/prompt-themes';
 import { getStoredTerminalThemeMode, setStoredTerminalThemeMode, getTerminalBgColor, type TerminalThemeMode } from '../../lib/terminal-themes';
+import { getApiBase } from '@/api/client';
 
 // Representative swatch colors per theme (hardcoded HSL strings for preview)
 const THEME_SWATCHES: Record<Theme, string[]> = {
@@ -64,15 +65,16 @@ export function AppearanceSettings() {
 
   // Load initial prompt theme from config
   useEffect(() => {
-    const port = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
-    fetch(`${window.location.protocol}//${window.location.hostname}:${port}/api/config`)
-      .then(r => r.json())
-      .then(config => {
-        if (config.shellPromptTheme) {
-          setActivePromptTheme(config.shellPromptTheme);
-        }
-      })
-      .catch(() => {});
+    getApiBase().then(apiBase => {
+      fetch(`${apiBase}/config`)
+        .then(r => r.json())
+        .then(config => {
+          if (config.shellPromptTheme) {
+            setActivePromptTheme(config.shellPromptTheme);
+          }
+        })
+        .catch(() => {});
+    });
   }, []);
 
   // Listen for theme changes from other sources
@@ -90,12 +92,13 @@ export function AppearanceSettings() {
     // Dispatch event to all terminal instances
     window.dispatchEvent(new CustomEvent('handler-prompt-theme', { detail: { theme } }));
     // Persist via API
-    const port = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
-    fetch(`${window.location.protocol}//${window.location.hostname}:${port}/api/config`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shellPromptTheme: theme }),
-    }).catch(() => {});
+    getApiBase().then(apiBase => {
+      fetch(`${apiBase}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shellPromptTheme: theme }),
+      }).catch(() => {});
+    });
   }, []);
 
   return (

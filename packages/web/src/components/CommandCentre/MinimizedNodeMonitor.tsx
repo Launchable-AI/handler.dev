@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import type { ShellState } from '../Terminal/TerminalInstance';
+import { getWsUrl } from '@/api/client';
 
 interface MinimizedNodeMonitorProps {
   sandboxId: string;
@@ -61,10 +62,7 @@ export function MinimizedNodeMonitor({ sandboxId, onShellState }: MinimizedNodeM
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const port = import.meta.env.VITE_SERVER_PORT || '4001';
-    const wsUrl = `${protocol}//${host}:${port}/ws/terminal`;
+    const wsUrl = getWsUrl();
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;

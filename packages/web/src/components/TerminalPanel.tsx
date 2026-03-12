@@ -17,6 +17,7 @@ import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type 
 import { useTheme } from '../hooks/useTheme';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { matchesCombo, getCombo } from '../lib/keyboard-shortcuts';
+import { getWsUrl as getWsUrlBase } from '@/api/client';
 
 // Types
 export type PanelPosition = 'right' | 'bottom';
@@ -651,11 +652,7 @@ function TerminalInstance({ tab, onStateChange, onClose }: TerminalInstanceProps
   const wasConnectedRef = useRef(false); // Track if we ever successfully connected
 
   const getWsUrl = useCallback(() => {
-    const apiPort = (window as unknown as { __API_PORT__?: number }).__API_PORT__ || 4001;
-    // Use same hostname as current page for remote access support
-    const hostname = window.location.hostname || 'localhost';
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${hostname}:${apiPort}/ws/terminal`;
+    return getWsUrlBase();
   }, []);
 
   // Stable callback refs to avoid re-running effect
