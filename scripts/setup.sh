@@ -235,19 +235,40 @@ if [ "$NEED_RUST" = true ]; then
 fi
 
 # Install Node.js 22+ if not present
-if ! command -v node &> /dev/null || [ "$(node -e 'console.log(parseInt(process.version.slice(1)))')" -lt 22 ] 2>/dev/null; then
-    log "Installing Node.js 22 via NodeSource..."
-    pkg_update
-    pkg_install curl
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-    pkg_install nodejs
+# Check the real user's node (nvm, fnm, system — whatever their login shell provides)
+NVM_DIR="$REAL_HOME/.nvm"
+USER_NODE_VERSION=$(sudo -u "$REAL_USER" bash -lc "node -e 'console.log(parseInt(process.version.slice(1)))'" 2>/dev/null || echo "")
+
+if [ -z "$USER_NODE_VERSION" ] || [ "$USER_NODE_VERSION" -lt 22 ] 2>/dev/null; then
+    log "Node.js 22+ not found, installing via nvm (does not touch system packages)..."
+    if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+        sudo -u "$REAL_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash'
+        if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+            echo "[ERROR] Failed to install nvm"
+            exit 1
+        fi
+    fi
+    sudo -u "$REAL_USER" bash -c "source '$NVM_DIR/nvm.sh' && nvm install 22 && nvm alias default 22"
+    if ! sudo -u "$REAL_USER" bash -c "source '$NVM_DIR/nvm.sh' && node --version" | grep -q '^v2[2-9]'; then
+        echo "[ERROR] Failed to install Node.js 22 via nvm"
+        exit 1
+    fi
+    log "Node.js 22 installed via nvm"
+else
+    log "Node.js $USER_NODE_VERSION already installed"
 fi
 
+# Helper: run a command as the real user with node/pnpm on PATH
+# Uses login shell (-l) to pick up nvm/fnm/system node, plus pnpm's standalone install path
+run_as_user() {
+    sudo -u "$REAL_USER" bash -lc "export PNPM_HOME=\"\$HOME/.local/share/pnpm\" && export PATH=\"\$PNPM_HOME:\$PATH\" && $1"
+}
+
 # Install pnpm if not present
-if ! command -v pnpm &> /dev/null && [ ! -f "$REAL_HOME/.local/share/pnpm/pnpm" ]; then
+if ! run_as_user "command -v pnpm" &> /dev/null; then
     log "Installing pnpm..."
-    sudo -u "$REAL_USER" bash -c 'curl -fsSL https://get.pnpm.io/install.sh | sh -'
-    if ! sudo -u "$REAL_USER" bash -c 'export PNPM_HOME="$HOME/.local/share/pnpm" && export PATH="$PNPM_HOME:$PATH" && command -v pnpm' &> /dev/null; then
+    run_as_user "curl -fsSL https://get.pnpm.io/install.sh | sh -"
+    if ! run_as_user "command -v pnpm" &> /dev/null; then
         echo "[ERROR] Failed to install pnpm"
         exit 1
     fi
@@ -255,11 +276,7 @@ fi
 
 # Install project dependencies
 log "Installing project dependencies..."
-PNPM_CMD="pnpm"
-if [ -f "$REAL_HOME/.local/share/pnpm/pnpm" ]; then
-    PNPM_CMD="$REAL_HOME/.local/share/pnpm/pnpm"
-fi
-sudo -u "$REAL_USER" bash -c "cd '$PROJECT_ROOT' && '$PNPM_CMD' install"
+run_as_user "cd '$PROJECT_ROOT' && pnpm install"
 
 # On systems with mkisofs but not genisoimage (e.g., Arch with cdrtools),
 # create a wrapper so that code expecting 'genisoimage' still works
