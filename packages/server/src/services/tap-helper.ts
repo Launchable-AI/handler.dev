@@ -68,9 +68,40 @@ export class TapHelper {
     subnetPrefix?: string;
   }) {
     this.bridgeName = options?.bridgeName || DEFAULT_BRIDGE_NAME;
-    this.gateway = options?.gateway || DEFAULT_GATEWAY;
-    this.subnetPrefix = options?.subnetPrefix || DEFAULT_SUBNET_PREFIX;
+
+    // Auto-detect gateway and subnet from the bridge's actual IP if not explicitly set
+    const detected = options?.gateway ? null : this.detectBridgeIp();
+    this.gateway = options?.gateway || detected?.gateway || DEFAULT_GATEWAY;
+    this.subnetPrefix = options?.subnetPrefix || detected?.subnetPrefix || DEFAULT_SUBNET_PREFIX;
     this.helperPath = this.findHelper();
+
+    if (detected) {
+      console.log(`[TapHelper] Auto-detected bridge ${this.bridgeName} subnet: ${this.subnetPrefix}.0/24 (gateway: ${this.gateway})`);
+    }
+  }
+
+  /**
+   * Detect the bridge's IP address from the system to avoid hardcoded subnet mismatches
+   */
+  private detectBridgeIp(): { gateway: string; subnetPrefix: string } | null {
+    try {
+      const output = execFileSync('ip', ['-4', 'addr', 'show', this.bridgeName], {
+        timeout: 3000,
+        encoding: 'utf-8',
+      });
+      const match = output.match(/inet (\d+\.\d+\.\d+\.\d+)/);
+      if (match) {
+        const ip = match[1];
+        const parts = ip.split('.');
+        return {
+          gateway: ip,
+          subnetPrefix: `${parts[0]}.${parts[1]}.${parts[2]}`,
+        };
+      }
+    } catch {
+      // Bridge may not exist yet
+    }
+    return null;
   }
 
   /**
