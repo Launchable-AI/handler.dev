@@ -36,7 +36,7 @@ else
     REAL_USER="$USER"
 fi
 
-DATA_DIR="$REAL_HOME/.local/share/handler"
+DATA_DIR="$PROJECT_ROOT/data"
 
 # Defaults
 INSTALL_FIRECRACKER=false
@@ -104,7 +104,7 @@ usage() {
     echo "  - Systemd service for persistence"
     echo "  - Base images (optional)"
     echo ""
-    echo "Data directory: \$HOME/.local/share/handler"
+    echo "Data directory: <project>/data"
     exit 0
 }
 
