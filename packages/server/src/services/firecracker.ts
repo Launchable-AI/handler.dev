@@ -2576,8 +2576,7 @@ export class FirecrackerService extends EventEmitter {
     const tmpFile = path.join(os.tmpdir(), `vm-download-${Date.now()}`);
 
     try {
-      const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=5 -o BatchMode=yes -P ${port} ${user}@${host}:"${filePath}" "${tmpFile}"`;
-      execSync(scpCmd, { timeout: 30000 });
+      execFileSync('scp', ['-i', sshKeyPath, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-o', 'IdentitiesOnly=yes', '-o', 'ConnectTimeout=5', '-o', 'BatchMode=yes', '-P', String(port), `${user}@${host}:'${filePath}'`, tmpFile], { timeout: 30000 });
 
       const content = fs.readFileSync(tmpFile);
       return content;

@@ -912,7 +912,7 @@ sandboxes.post('/:id/upload', async (c) => {
         } catch { /* ignore */ }
 
         // SCP file directly (no memory buffering)
-        execFileSync('scp', ['-i', keyPath, ...SSH_OPTS, tempPath, `agent@${sandbox.guestIp}:${destPath}/${filename}`], { stdio: 'pipe', timeout: 600000 });
+        execFileSync('scp', ['-i', keyPath, ...SSH_OPTS, tempPath, `agent@${sandbox.guestIp}:'${destPath}/${filename}'`], { stdio: 'pipe', timeout: 600000 });
       } finally {
         fs.rmSync(tempDir, { recursive: true });
       }
@@ -941,7 +941,7 @@ sandboxes.post('/:id/upload', async (c) => {
           execFileSync('ssh', ['-i', tempKeyPath, '-p', port, ...SSH_OPTS, `dev@${sandbox.guestIp}`, 'mkdir', '-p', destPath], { stdio: 'pipe', timeout: 60000 });
         } catch { /* ignore */ }
 
-        execFileSync('scp', ['-i', tempKeyPath, '-P', port, ...SSH_OPTS, tempPath, `dev@${sandbox.guestIp}:${destPath}/${filename}`], { stdio: 'pipe', timeout: 600000 });
+        execFileSync('scp', ['-i', tempKeyPath, '-P', port, ...SSH_OPTS, tempPath, `dev@${sandbox.guestIp}:'${destPath}/${filename}'`], { stdio: 'pipe', timeout: 600000 });
       } finally {
         fs.rmSync(tempDir, { recursive: true });
       }
@@ -974,7 +974,7 @@ sandboxes.post('/:id/upload', async (c) => {
           execFileSync('ssh', ['-i', tempKeyPath, ...SSH_OPTS, `ubuntu@${sandbox.guestIp}`, 'mkdir', '-p', destPath], { stdio: 'pipe', timeout: 60000 });
         } catch { /* ignore */ }
 
-        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, tempPath, `ubuntu@${sandbox.guestIp}:${destPath}/${filename}`], { stdio: 'pipe', timeout: 600000 });
+        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, tempPath, `ubuntu@${sandbox.guestIp}:'${destPath}/${filename}'`], { stdio: 'pipe', timeout: 600000 });
       } finally {
         fs.rmSync(tempDir, { recursive: true });
       }
@@ -1011,7 +1011,7 @@ sandboxes.post('/:id/upload', async (c) => {
           execFileSync('ssh', ['-i', tempKeyPath, ...SSH_OPTS, `${sshUser}@${sandbox.guestIp}`, 'mkdir', '-p', destPath], { stdio: 'pipe', timeout: 60000 });
         } catch { /* ignore */ }
 
-        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, tempPath, `${sshUser}@${sandbox.guestIp}:${destPath}/${filename}`], { stdio: 'pipe', timeout: 600000 });
+        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, tempPath, `${sshUser}@${sandbox.guestIp}:'${destPath}/${filename}'`], { stdio: 'pipe', timeout: 600000 });
       } finally {
         fs.rmSync(tempDir, { recursive: true });
       }
@@ -1489,7 +1489,7 @@ sandboxes.get('/:id/files/download', async (c) => {
 
       try {
         const port = String(daytonaMeta.sshPort || 22);
-        execFileSync('scp', ['-i', tempKeyPath, '-P', port, ...SSH_OPTS, `dev@${sandbox.guestIp}:${filePath}`, tmpFile], { stdio: 'pipe', timeout: 300000 });
+        execFileSync('scp', ['-i', tempKeyPath, '-P', port, ...SSH_OPTS, `dev@${sandbox.guestIp}:'${filePath}'`, tmpFile], { stdio: 'pipe', timeout: 300000 });
         const content = fs.readFileSync(tmpFile);
         return new Response(new Uint8Array(content), {
           headers: {
@@ -1522,7 +1522,7 @@ sandboxes.get('/:id/files/download', async (c) => {
       fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
 
       try {
-        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, `ubuntu@${sandbox.guestIp}:${filePath}`, tmpFile], { stdio: 'pipe', timeout: 300000 });
+        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, `ubuntu@${sandbox.guestIp}:'${filePath}'`, tmpFile], { stdio: 'pipe', timeout: 300000 });
         const content = fs.readFileSync(tmpFile);
         return new Response(new Uint8Array(content), {
           headers: {
@@ -1560,7 +1560,7 @@ sandboxes.get('/:id/files/download', async (c) => {
       fs.writeFileSync(tempKeyPath, sshPrivateKey, { mode: 0o600 });
 
       try {
-        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, `${sshUser}@${sandbox.guestIp}:${filePath}`, tmpFile], { stdio: 'pipe', timeout: 300000 });
+        execFileSync('scp', ['-i', tempKeyPath, ...SSH_OPTS, `${sshUser}@${sandbox.guestIp}:'${filePath}'`, tmpFile], { stdio: 'pipe', timeout: 300000 });
         const content = fs.readFileSync(tmpFile);
         return new Response(new Uint8Array(content), {
           headers: {

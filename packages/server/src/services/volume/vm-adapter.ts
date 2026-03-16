@@ -4,7 +4,7 @@
  * Wraps VM volume operations for the unified Volume abstraction.
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import type {
@@ -297,8 +297,7 @@ export class VmVolumeAdapter {
         execSync(mkdirCmd, { stdio: 'pipe', timeout: 10000 });
 
         // Upload file via SCP
-        const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes "${tmpFile}" agent@${guestIp}:"${remotePath}"`;
-        execSync(scpCmd, { stdio: 'pipe', timeout: 60000 });
+        execFileSync('scp', ['-i', sshKeyPath, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=5', '-o', 'IdentitiesOnly=yes', tmpFile, `agent@${guestIp}:'${remotePath}'`], { stdio: 'pipe', timeout: 60000 });
 
         console.log(`[VmVolumeAdapter] Uploaded ${filename} to VM ${fcVmId} at ${remotePath} via SSH`);
         return true;
@@ -368,8 +367,7 @@ export class VmVolumeAdapter {
 
       try {
         // Download file via SCP
-        const scpCmd = `scp -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o IdentitiesOnly=yes agent@${guestIp}:"${remotePath}" "${tmpFile}"`;
-        execSync(scpCmd, { stdio: 'pipe', timeout: 60000 });
+        execFileSync('scp', ['-i', sshKeyPath, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=5', '-o', 'IdentitiesOnly=yes', `agent@${guestIp}:'${remotePath}'`, tmpFile], { stdio: 'pipe', timeout: 60000 });
 
         const content = fs.readFileSync(tmpFile);
         return content;
