@@ -13,6 +13,7 @@ export interface MinimizedNodeInfo {
   sandboxId: string;
   branch: string;
   sandboxName?: string;
+  label?: string;
   backendType?: string;
   ip?: string;
   status: WorktreeNode['status'];
@@ -168,7 +169,7 @@ function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: Minimi
       className={`group hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer border-b border-[hsl(var(--border)/0.5)] ${
         collapsed ? 'px-2 py-2 flex items-center justify-center' : ''
       } ${needsInput ? 'bg-[hsl(var(--amber)/0.05)]' : ''}`}
-      title={collapsed ? `${node.sandboxName || node.sandboxId.slice(0, 12)} - Click to restore` : 'Click to restore'}
+      title={collapsed ? `${node.label || node.sandboxName || node.sandboxId.slice(0, 12)} - Click to restore` : 'Click to restore'}
     >
       {collapsed && (
         <>
@@ -190,7 +191,7 @@ function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: Minimi
             <div className={`w-2 h-2 rounded-full shrink-0 ${statusColors[node.status]}`} />
             <div className="flex-1 min-w-0">
               <div className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
-                {node.sandboxName || node.sandboxId.slice(0, 12)}
+                {node.label || node.sandboxName || node.sandboxId.slice(0, 12)}
               </div>
               <div className="flex items-center gap-1 text-[9px] text-[hsl(var(--text-muted))] truncate">
                 <GitBranch className="h-2.5 w-2.5 text-[hsl(var(--cyan))] shrink-0" />

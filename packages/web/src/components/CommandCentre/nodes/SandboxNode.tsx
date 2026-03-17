@@ -50,6 +50,8 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   }, [data.id, updateNode]);
   const [focusFontSize, setFocusFontSize] = useState(DEFAULT_FOCUS_FONT_SIZE);
   const [isFocused, setIsFocused] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
   const [currentCwd, setCurrentCwd] = useState<string>(data.cwd || '/home/agent');
   const [inGitRepo, setInGitRepo] = useState<boolean>(data.inGitRepo ?? false);
   const [claudeStatus, setClaudeStatus] = useState<'processing' | 'idle' | 'waiting' | 'off'>('off');
@@ -313,12 +315,12 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
               className="w-2 h-2 rounded-full shrink-0"
               style={{ backgroundColor: statusColor }}
             />
-            {data.sandboxName && (
+            {(data.label || data.sandboxName) && (
               <span className="text-[11px] font-medium text-[hsl(var(--text-primary))] shrink-0">
-                {data.sandboxName}
+                {data.label || data.sandboxName}
               </span>
             )}
-            {data.sandboxName && (
+            {(data.label || data.sandboxName) && (
               <span className="text-[9px] text-[hsl(var(--text-muted))]">/</span>
             )}
             {inGitRepo && (
@@ -403,12 +405,47 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
           style={{ backgroundColor: statusColor }}
           title={data.status}
         />
-        {data.sandboxName && (
-          <span className={`font-medium text-[hsl(var(--text-primary))] truncate ${slimToolbar ? 'text-[9px] max-w-[60px]' : 'text-[11px] max-w-[120px]'}`} title={data.sandboxName}>
-            {data.sandboxName}
-          </span>
+        {(data.label || data.sandboxName) && (
+          isRenaming ? (
+            <input
+              ref={(el) => { if (el) requestAnimationFrame(() => el.select()); }}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                  const trimmed = renameValue.trim();
+                  updateNode(data.id, { label: trimmed || undefined });
+                  setIsRenaming(false);
+                }
+                if (e.key === 'Escape') setIsRenaming(false);
+              }}
+              onBlur={() => {
+                const trimmed = renameValue.trim();
+                updateNode(data.id, { label: trimmed || undefined });
+                setIsRenaming(false);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              className={`font-medium bg-transparent border border-[hsl(var(--cyan)/0.5)] rounded px-1 text-[hsl(var(--text-primary))] focus:outline-none ${slimToolbar ? 'text-[9px] max-w-[60px]' : 'text-[11px] max-w-[120px]'}`}
+            />
+          ) : (
+            <span
+              className={`font-medium text-[hsl(var(--text-primary))] truncate ${slimToolbar ? 'text-[9px] max-w-[60px]' : 'text-[11px] max-w-[120px]'}`}
+              title={`${data.label || data.sandboxName} (double-click to rename)`}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setRenameValue(data.label || data.sandboxName || '');
+                setIsRenaming(true);
+              }}
+              onPointerDown={(e) => { if (e.detail >= 2) e.stopPropagation(); }}
+              onMouseDown={(e) => { if (e.detail >= 2) e.stopPropagation(); }}
+            >
+              {data.label || data.sandboxName}
+            </span>
+          )
         )}
-        {data.sandboxName && (
+        {(data.label || data.sandboxName) && (
           <span className={`text-[hsl(var(--text-muted))] ${slimToolbar ? 'text-[8px]' : 'text-[9px]'}`}>/</span>
         )}
         {inGitRepo && (

@@ -134,6 +134,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         sandboxId: n.sandboxId,
         branch: n.branch,
         sandboxName: n.sandboxName || sandboxNameMap.get(n.sandboxId),
+        label: n.label,
         backendType: n.backendType,
         ip: n.ip,
         status: n.status,
@@ -388,7 +389,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
                 <div className={`w-1.5 h-1.5 rounded-full shrink-0 self-start mt-1.5 ${statusDotColor[wn.status]}`} />
                 <div className="flex-1 min-w-0">
                   <div className="text-[11px] font-medium text-[hsl(var(--text-primary))] truncate">
-                    {sandboxNameMap.get(wn.sandboxId) || wn.sandboxId.slice(0, 12)}
+                    {wn.label || sandboxNameMap.get(wn.sandboxId) || wn.sandboxId.slice(0, 12)}
                   </div>
                   <div className="flex items-center justify-between gap-1">
                     <div className="text-[9px] text-[hsl(var(--text-muted))] truncate">

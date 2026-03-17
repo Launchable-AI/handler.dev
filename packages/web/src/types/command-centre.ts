@@ -56,6 +56,8 @@ export interface WorktreeNode {
   inGitRepo?: boolean;
   /** Terminal font size (persisted across focused-mode swaps) */
   nodeFontSize?: number;
+  /** User-defined label (overrides sandbox name in display) */
+  label?: string;
 }
 
 // Workspace for organizing canvas nodes
