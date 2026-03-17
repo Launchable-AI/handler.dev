@@ -31,7 +31,7 @@ export interface ShellState {
 export interface TerminalInstanceProps {
   target: TerminalTarget;
   onStateChange?: (state: ConnectionState, errorMessage?: string) => void;
-  onTmuxStateChange?: (tmuxState: 'connected' | 'detached' | 'unavailable') => void;
+  onTmuxStateChange?: (tmuxState: 'connected' | 'detached' | 'unavailable', tmuxSessionName?: string) => void;
   onShellState?: (state: ShellState) => void;
   onUrlsDetected?: (urls: string[]) => void;
   showStatusBar?: boolean;
@@ -62,6 +62,7 @@ export function TerminalInstance({
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [errorMessage, setErrorMessage] = useState<string>();
   const [isTmuxSession, setIsTmuxSession] = useState(false);
+  const tmuxSessionNameRef = useRef<string | undefined>(undefined);
   const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [dismissedUrls, setDismissedUrls] = useState<Set<string>>(new Set());
@@ -394,6 +395,7 @@ export function TerminalInstance({
             shell: '/bin/bash',
             cols: term.cols,
             rows: term.rows,
+            ...(target.sessionKey ? { sessionKey: target.sessionKey } : {}),
           }));
         } else {
           // Container terminal - start new session
@@ -417,7 +419,8 @@ export function TerminalInstance({
               updateState('connected');
               setIsTmuxSession(!!msg.tmuxSession);
               if (msg.tmuxSession) {
-                onTmuxStateChangeRef.current?.('connected');
+                tmuxSessionNameRef.current = msg.tmuxSession;
+                onTmuxStateChangeRef.current?.('connected', msg.tmuxSession);
               }
               term.focus();
               fitAndResize();
@@ -455,6 +458,7 @@ export function TerminalInstance({
                   shell: '/bin/bash',
                   cols: term.cols,
                   rows: term.rows,
+                  ...(target.sessionKey ? { sessionKey: target.sessionKey } : {}),
                 }));
               } else {
                 ws.send(JSON.stringify({
@@ -481,7 +485,7 @@ export function TerminalInstance({
               if (msg.tmuxState) {
                 const tmuxConnected = msg.tmuxState === 'connected';
                 setIsTmuxSession(tmuxConnected);
-                onTmuxStateChangeRef.current?.(msg.tmuxState);
+                onTmuxStateChangeRef.current?.(msg.tmuxState, tmuxSessionNameRef.current);
               }
               break;
             case 'error':

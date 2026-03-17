@@ -128,6 +128,8 @@ Key files:
 
 For tmux persistence to work, containers/VMs must have `tmux` installed (the default.dockerfile and Firecracker images include it). When `tmuxEnabled` is set to `false` in config, plain shell sessions are used instead. The tmux status bar can be toggled via `tmuxStatusBar` in config (default: `false` / hidden).
 
+**Multi-view tmux sessions (VMs)**: When multiple canvas nodes point to the same VM, each gets its own independent tmux session. The first node uses the primary session (`handler-{vmId}`), additional nodes get secondary sessions (`handler-{vmId}-2`, `-3`, etc.). Secondary sessions are killed inside the VM when their canvas node is closed. The `sessionKey` (canvas node ID) is sent in the `start-vm` WebSocket message and stored in the session store (`sessionKey` field on `PersistedSession`) so reconnection maps back to the correct tmux session. The tmux session name is visible in the connection badge tooltip on canvas nodes. The `resolveVmTmuxSession()` function in `vm-terminal.ts` handles the slot allocation logic.
+
 ### Terminal Theming
 
 Terminal background supports independent dark/light mode control (can differ from the system theme):

@@ -49,6 +49,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [tmuxSessionName, setTmuxSessionName] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileBrowserRef = useRef<HTMLDivElement>(null);
   const { data: metrics } = useSandboxMetrics(data.sandboxId, connState === 'connected');
@@ -85,6 +86,10 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
       removeNode(data.id);
     }
   }, [data.id, removeNode]);
+
+  const handleTmuxStateChange = useCallback((_tmuxState: 'connected' | 'detached' | 'unavailable', sessionName?: string) => {
+    if (sessionName) setTmuxSessionName(sessionName);
+  }, []);
 
   // Real-time shell state tracking via OSC 7337
   const handleShellState = useCallback((state: ShellState) => {
@@ -448,16 +453,19 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
                 ? 'bg-[hsl(var(--amber))]'
                 : 'bg-[hsl(var(--red))]'
             }`}
-            title={connState}
+            title={tmuxSessionName ? `${connState} (${tmuxSessionName})` : connState}
           />
         ) : (
-          <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 ${
-            connState === 'connected'
-              ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
-              : connState === 'connecting'
-              ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
-              : 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
-          }`}>
+          <span
+            className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 ${
+              connState === 'connected'
+                ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
+                : connState === 'connecting'
+                ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
+                : 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
+            }`}
+            title={tmuxSessionName || undefined}
+          >
             {connState}
           </span>
         )}
@@ -733,6 +741,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
                 ...(data.worktreePath && !isRoot ? { workdir: data.worktreePath } : {}),
               }}
               onStateChange={handleTerminalStateChange}
+              onTmuxStateChange={handleTmuxStateChange}
               onShellState={handleShellState}
               onUrlsDetected={handleUrlsDetected}
               showStatusBar={false}

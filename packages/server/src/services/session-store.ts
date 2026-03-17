@@ -21,6 +21,8 @@ export interface PersistedSession {
   vmId?: string;
   vmIp?: string;
   dataDir?: string;
+  /** Canvas node ID — tracks which view owns this tmux session */
+  sessionKey?: string;
 }
 
 let sessionsFile = path.join(DATA_DIR, 'terminal-sessions.json');

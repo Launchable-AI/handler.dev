@@ -29,9 +29,14 @@ const MAX_FONT_SIZE = 24;
 export function FocusedNodeView({ node, sandboxName }: FocusedNodeViewProps) {
   const [connState, setConnState] = useState<ConnectionState>('connecting');
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  const [tmuxSessionName, setTmuxSessionName] = useState<string | undefined>(undefined);
 
   const handleStateChange = useCallback((newState: ConnectionState) => {
     setConnState(newState);
+  }, []);
+
+  const handleTmuxStateChange = useCallback((_tmuxState: 'connected' | 'detached' | 'unavailable', sessionName?: string) => {
+    if (sessionName) setTmuxSessionName(sessionName);
   }, []);
 
   const isRoot = node.parentNodeId === null;
@@ -59,13 +64,16 @@ export function FocusedNodeView({ node, sandboxName }: FocusedNodeViewProps) {
 
         <div className="flex-1" />
 
-        <span className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 ${
-          connState === 'connected'
-            ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
-            : connState === 'connecting'
-            ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
-            : 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
-        }`}>
+        <span
+          className={`px-1.5 py-0.5 text-[9px] rounded shrink-0 ${
+            connState === 'connected'
+              ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
+              : connState === 'connecting'
+              ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
+              : 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
+          }`}
+          title={tmuxSessionName || undefined}
+        >
           {connState}
         </span>
 
@@ -104,6 +112,7 @@ export function FocusedNodeView({ node, sandboxName }: FocusedNodeViewProps) {
             ...(node.worktreePath && !isRoot ? { workdir: node.worktreePath } : {}),
           }}
           onStateChange={handleStateChange}
+          onTmuxStateChange={handleTmuxStateChange}
           showStatusBar={false}
           fontSize={fontSize}
           className="h-full"

@@ -28,6 +28,10 @@ interface VmTerminalSession {
   dataDir?: string;
   lastCols?: number;
   lastRows?: number;
+  /** Whether this is the primary (default) tmux session for the VM */
+  isPrimary?: boolean;
+  /** Canvas node ID that owns this session */
+  sessionKey?: string;
 }
 
 const sessions = new Map<string, VmTerminalSession>();
@@ -68,6 +72,38 @@ function getVmTmuxSessionName(vmId: string): string {
 }
 
 /**
+ * Resolve the tmux session name for a specific canvas node view.
+ * - First view for a VM gets the primary name: handler-{vmId}
+ * - Additional views get secondary names: handler-{vmId}-2, -3, etc.
+ * - If a sessionKey already has a persisted tmux session, reuse that name.
+ */
+function resolveVmTmuxSession(vmId: string, sessionKey?: string): { tmuxSession: string; isPrimary: boolean } {
+  const baseName = getVmTmuxSessionName(vmId);
+  const existing = listByVm(vmId);
+
+  // If we have a sessionKey, check for an existing session with that key
+  if (sessionKey) {
+    const match = existing.find(s => s.sessionKey === sessionKey);
+    if (match) {
+      return { tmuxSession: match.tmuxSession, isPrimary: match.tmuxSession === baseName };
+    }
+  }
+
+  // Check if the primary slot is available
+  const primaryTaken = existing.some(s => s.tmuxSession === baseName);
+  if (!primaryTaken) {
+    return { tmuxSession: baseName, isPrimary: true };
+  }
+
+  // Find next available slot for a secondary session
+  let slot = 2;
+  while (existing.some(s => s.tmuxSession === `${baseName}-${slot}`)) {
+    slot++;
+  }
+  return { tmuxSession: `${baseName}-${slot}`, isPrimary: false };
+}
+
+/**
  * Check if a tmux session exists in a VM
  */
 async function vmTmuxSessionExists(vmIp: string, dataDir: string, tmuxSession: string): Promise<boolean> {
@@ -98,7 +134,8 @@ export function createVmTerminalSession(
   dataDir: string,
   shell: string = '/bin/bash',
   cols: number = 80,
-  rows: number = 24
+  rows: number = 24,
+  sessionKey?: string
 ): string {
   const sessionId = `vm-${vmId}-${Date.now()}`;
   const sshKeyPath = getSshKeyPath(dataDir);
@@ -123,7 +160,7 @@ export function createVmTerminalSession(
       console.log(`[VM Terminal] tmux disabled in config, using bare shell`);
       startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
     } else {
-      startVmTmuxWithFallback(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows, config.tmuxStatusBar);
+      startVmTmuxWithFallback(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows, config.tmuxStatusBar, sessionKey);
     }
   }).catch(() => {
     startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
@@ -157,9 +194,10 @@ async function startVmTmuxWithFallback(
   shell: string,
   cols: number,
   rows: number,
-  tmuxStatusBar?: boolean
+  tmuxStatusBar?: boolean,
+  sessionKey?: string
 ): Promise<void> {
-  const tmuxSession = getVmTmuxSessionName(vmId);
+  const { tmuxSession, isPrimary } = resolveVmTmuxSession(vmId, sessionKey);
 
   // Get the shell init content and tmux theme to embed in the remote command
   const config = await getConfig();
@@ -207,11 +245,19 @@ async function startVmTmuxWithFallback(
   });
 
   // Don't pass tmuxSession yet — we'll detect it via the stderr marker
-  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, undefined, sshProcess, tmuxSession, cols, rows);
+  setupVmSessionHandlers(ws, sessionId, vmId, vmIp, dataDir, undefined, sshProcess, tmuxSession, cols, rows, isPrimary, sessionKey);
 
-  // Clean up old persisted sessions for this VM, then persist the new one
-  for (const old of listByVm(vmId)) {
-    deletePersistedSession(old.sessionId);
+  // Clean up the persisted session for this specific sessionKey (not all VM sessions)
+  if (sessionKey) {
+    const oldSession = listByVm(vmId).find(s => s.sessionKey === sessionKey);
+    if (oldSession) {
+      deletePersistedSession(oldSession.sessionId);
+    }
+  } else {
+    // No sessionKey: legacy behavior — clean up sessions without a key
+    for (const old of listByVm(vmId).filter(s => !s.sessionKey)) {
+      deletePersistedSession(old.sessionId);
+    }
   }
 
   setPersistedSession({
@@ -224,6 +270,7 @@ async function startVmTmuxWithFallback(
     vmId,
     vmIp,
     dataDir,
+    sessionKey,
   });
 
   console.log(`[VM Terminal] Started session (tmux with fallback): ${tmuxSession}`);
@@ -277,7 +324,9 @@ function setupVmSessionHandlers(
   sshProcess: ChildProcess,
   pendingTmuxSession?: string, // tmux session name to detect via stderr marker
   initialCols?: number,
-  initialRows?: number
+  initialRows?: number,
+  isPrimary?: boolean,
+  sessionKey?: string
 ): void {
   // SSH -tt merges stdout/stderr through the PTY, so all markers arrive on stdout
   sshProcess.stdout?.on('data', (data: Buffer) => {
@@ -345,6 +394,7 @@ function setupVmSessionHandlers(
   sessions.set(sessionId, {
     process: sshProcess, ws, vmId, tmuxSession, vmIp, dataDir,
     lastCols: initialCols, lastRows: initialRows,
+    isPrimary, sessionKey,
   });
 
   ws.send(JSON.stringify({
@@ -541,16 +591,31 @@ export function closeVmSessionByWebSocket(ws: WebSocket): void {
   for (const [id, session] of sessions.entries()) {
     if (session.ws === ws) {
       if (session.tmuxSession) {
-        // For tmux sessions: detach cleanly, the tmux session continues in the VM
-        if (session.process.stdin?.writable) {
-          session.process.stdin.write('\x02d'); // Ctrl+B followed by 'd' to detach
-        }
-        setTimeout(() => {
+        if (session.isPrimary !== false) {
+          // Primary session: detach cleanly, the tmux session continues in the VM
+          if (session.process.stdin?.writable) {
+            session.process.stdin.write('\x02d'); // Ctrl+B followed by 'd' to detach
+          }
+          setTimeout(() => {
+            if (!session.process.killed) {
+              session.process.kill('SIGTERM');
+            }
+          }, 100);
+          console.log(`[VM Terminal] Detached from tmux session ${session.tmuxSession} (session preserved for reconnection)`);
+        } else {
+          // Secondary session: kill the tmux session inside the VM, then clean up
+          if (session.vmIp && session.dataDir) {
+            const tmuxName = session.tmuxSession;
+            sshExec(session.vmIp, session.dataDir, `tmux kill-session -t ${tmuxName} 2>/dev/null`)
+              .then(() => console.log(`[VM Terminal] Killed secondary tmux session ${tmuxName}`))
+              .catch(() => console.log(`[VM Terminal] Secondary tmux session ${tmuxName} already gone`));
+          }
           if (!session.process.killed) {
             session.process.kill('SIGTERM');
           }
-        }, 100);
-        console.log(`[VM Terminal] Detached from tmux session ${session.tmuxSession} (session preserved for reconnection)`);
+          deletePersistedSession(id);
+          console.log(`[VM Terminal] Closed secondary session ${id} (tmux: ${session.tmuxSession})`);
+        }
       } else {
         // For non-tmux sessions: kill the process
         if (!session.process.killed) {

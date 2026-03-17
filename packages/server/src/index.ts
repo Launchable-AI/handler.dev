@@ -393,7 +393,8 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
                 dataDir,
                 msg.shell || '/bin/bash',
                 msg.cols || 80,
-                msg.rows || 24
+                msg.rows || 24,
+                msg.sessionKey
               );
               isVmSession = true;
             } else {
