@@ -1,8 +1,9 @@
 /**
  * MinimizedNodesSidebar - Right sidebar showing minimized canvas nodes
+ * Resizable via drag handle on the left edge.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, GitBranch, Maximize2, AlertCircle } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
 import { TerminalInstance } from '../Terminal/TerminalInstance';
@@ -31,20 +32,84 @@ const statusColors: Record<WorktreeNode['status'], string> = {
   error: 'bg-[hsl(var(--red))]',
 };
 
+const STORAGE_KEY = 'handler-minimized-sidebar-width';
+const MIN_WIDTH = 120;
+const MAX_WIDTH = 500;
+const DEFAULT_WIDTH = 224; // w-56
+const COLLAPSED_WIDTH = 40; // w-10
+
+function loadWidth(): number {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const w = parseInt(saved, 10);
+      if (w >= MIN_WIDTH && w <= MAX_WIDTH) return w;
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_WIDTH;
+}
+
 export function MinimizedNodesSidebar({ nodes, onRestore }: MinimizedNodesSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [width, setWidth] = useState(loadWidth);
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+
+  // Persist width on change
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, String(width)); } catch { /* ignore */ }
+  }, [width]);
+
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    startXRef.current = e.clientX;
+    startWidthRef.current = width;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      // Dragging left edge: moving left = wider, moving right = narrower
+      const delta = startXRef.current - ev.clientX;
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidthRef.current + delta));
+      setWidth(newWidth);
+    };
+
+    const onUp = () => {
+      isDraggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [width]);
 
   // Don't render if no minimized nodes
   if (nodes.length === 0) {
     return null;
   }
 
+  // Terminal preview height scales with sidebar width
+  const previewHeight = Math.max(40, Math.round((width - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH) * 160 + 48));
+
   return (
     <div
-      className={`relative z-10 bg-[hsl(var(--bg-surface))] border-l border-[hsl(var(--border))] flex flex-col transition-all duration-200 ${
-        collapsed ? 'w-10' : 'w-56'
-      } shrink-0`}
+      className="relative z-10 bg-[hsl(var(--bg-surface))] border-l border-[hsl(var(--border))] flex flex-col shrink-0"
+      style={{ width: collapsed ? COLLAPSED_WIDTH : width, transition: isDraggingRef.current ? 'none' : 'width 0.2s' }}
     >
+      {/* Resize handle — left edge */}
+      {!collapsed && (
+        <div
+          onMouseDown={onDragStart}
+          className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-20 hover:bg-[hsl(var(--cyan)/0.3)] active:bg-[hsl(var(--cyan)/0.5)] transition-colors"
+        />
+      )}
+
       {/* Toggle button */}
       <button
         onClick={() => setCollapsed(!collapsed)}
@@ -79,6 +144,7 @@ export function MinimizedNodesSidebar({ nodes, onRestore }: MinimizedNodesSideba
             node={node}
             collapsed={collapsed}
             onRestore={onRestore}
+            previewHeight={previewHeight}
           />
         ))}
       </div>
@@ -90,9 +156,10 @@ interface MinimizedNodeItemProps {
   node: MinimizedNodeInfo;
   collapsed: boolean;
   onRestore: (id: string) => void;
+  previewHeight: number;
 }
 
-function MinimizedNodeItem({ node, collapsed, onRestore }: MinimizedNodeItemProps) {
+function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: MinimizedNodeItemProps) {
   const needsInput = node.claudeStatus === 'waiting';
 
   return (
@@ -155,7 +222,10 @@ function MinimizedNodeItem({ node, collapsed, onRestore }: MinimizedNodeItemProp
 
           {/* Terminal preview */}
           {node.status === 'ready' && (
-            <div className="h-16 mx-1.5 mb-1.5 rounded overflow-hidden bg-[hsl(var(--bg-base))] pointer-events-none">
+            <div
+              className="mx-1.5 mb-1.5 rounded overflow-hidden bg-[hsl(var(--bg-base))] pointer-events-none"
+              style={{ height: previewHeight }}
+            >
               <TerminalInstance
                 target={{
                   type: node.backendType && node.backendType !== 'docker' ? 'vm' : 'container',
