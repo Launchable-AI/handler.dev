@@ -54,6 +54,8 @@ export interface WorktreeNode {
   cwd?: string;
   /** Whether a git repo with commits was detected (persisted across remounts) */
   inGitRepo?: boolean;
+  /** Terminal font size (persisted across focused-mode swaps) */
+  nodeFontSize?: number;
 }
 
 // Workspace for organizing canvas nodes

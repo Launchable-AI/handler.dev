@@ -21,7 +21,7 @@ const statusColors: Record<WorktreeNode['status'], string> = {
   error: 'hsl(var(--red))',
 };
 
-const DEFAULT_NODE_FONT_SIZE = 8;
+const DEFAULT_NODE_FONT_SIZE = 12;
 const DEFAULT_FOCUS_FONT_SIZE = 13;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
@@ -40,7 +40,14 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [connState, setConnState] = useState<ConnectionState>('connecting');
   const [termReady, setTermReady] = useState(false);
-  const [nodeFontSize, setNodeFontSize] = useState(DEFAULT_NODE_FONT_SIZE);
+  const [nodeFontSize, setNodeFontSizeRaw] = useState(data.nodeFontSize ?? DEFAULT_NODE_FONT_SIZE);
+  const setNodeFontSize: typeof setNodeFontSizeRaw = useCallback((action) => {
+    setNodeFontSizeRaw(prev => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      if (next !== prev) updateNode(data.id, { nodeFontSize: next });
+      return next;
+    });
+  }, [data.id, updateNode]);
   const [focusFontSize, setFocusFontSize] = useState(DEFAULT_FOCUS_FONT_SIZE);
   const [isFocused, setIsFocused] = useState(false);
   const [currentCwd, setCurrentCwd] = useState<string>(data.cwd || '/home/agent');

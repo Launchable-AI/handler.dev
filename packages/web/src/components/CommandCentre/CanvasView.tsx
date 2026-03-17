@@ -320,8 +320,8 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         if (node && !preFocusSizesRef.current.has(effectiveFocusedId)) {
           preFocusSizesRef.current.set(effectiveFocusedId, { ...node.size });
         }
-        const w = Math.round(rect.width * 0.8);
-        const h = Math.round(rect.height * 0.8);
+        const w = Math.round(rect.width * 0.65);
+        const h = Math.round(rect.height * 0.65);
         updateSize(effectiveFocusedId, { width: w, height: h });
         updatePosition(effectiveFocusedId, { x: 0, y: 0 });
       }
@@ -450,11 +450,13 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
           <Controls
             className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))] !shadow-lg [&>button]:!bg-[hsl(var(--bg-elevated))] [&>button]:!border-[hsl(var(--border))] [&>button]:!text-[hsl(var(--text-secondary))] [&>button:hover]:!bg-[hsl(var(--bg-overlay))]"
           />
-          <MiniMap
-            className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))]"
-            nodeColor="hsl(var(--cyan))"
-            maskColor="hsla(var(--bg-base), 0.7)"
-          />
+          {!state.focusedLayout && (
+            <MiniMap
+              className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))]"
+              nodeColor="hsl(var(--cyan))"
+              maskColor="hsla(var(--bg-base), 0.7)"
+            />
+          )}
         </ReactFlow>
 
         {/* Canvas controls */}
