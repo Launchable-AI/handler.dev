@@ -350,10 +350,10 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
 
   return (
     <div className={`relative flex ${className}`}>
-      {/* Node list panel */}
+      {/* Node list panel (hidden in focused mode — right sidebar serves this role) */}
       <div
         className={`relative z-10 bg-[hsl(var(--bg-surface))] border-r border-[hsl(var(--border))] flex flex-col transition-all duration-200 ${
-          panelOpen ? 'w-56' : 'w-0'
+          state.focusedLayout ? 'w-0' : panelOpen ? 'w-56' : 'w-0'
         } overflow-hidden shrink-0`}
       >
         <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))] shrink-0">
@@ -422,15 +422,17 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         </div>
       </div>
 
-      {/* Panel toggle */}
-      <button
-        onClick={() => setPanelOpen(!panelOpen)}
-        className="absolute top-3 left-3 z-20 p-1.5 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded shadow-lg text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors"
-        style={{ left: panelOpen ? 'calc(14rem + 0.75rem)' : '0.75rem' }}
-        title={panelOpen ? 'Collapse panel' : 'Expand panel'}
-      >
-        {panelOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
-      </button>
+      {/* Panel toggle (hidden in focused mode) */}
+      {!state.focusedLayout && (
+        <button
+          onClick={() => setPanelOpen(!panelOpen)}
+          className="absolute top-3 left-3 z-20 p-1.5 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded shadow-lg text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors"
+          style={{ left: panelOpen ? 'calc(14rem + 0.75rem)' : '0.75rem' }}
+          title={panelOpen ? 'Collapse panel' : 'Expand panel'}
+        >
+          {panelOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
+        </button>
+      )}
 
       {/* ReactFlow canvas */}
       <div ref={canvasContainerRef} className="flex-1 relative">
