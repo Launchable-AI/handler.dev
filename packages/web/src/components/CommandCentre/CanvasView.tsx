@@ -309,7 +309,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     setTimeout(() => fitView({ duration: 300 }), 50);
   }, [visibleWorktreeNodes, state.minimizedNodeIds, state.focusedLayout, updatePosition, fitView, setFocusedLayout]);
 
-  // Resize the focused node to ~80% of the canvas and fit the view
+  // Resize the focused node to fill the canvas and center it at zoom 1
   useEffect(() => {
     if (state.focusedLayout && effectiveFocusedId) {
       const container = canvasContainerRef.current;
@@ -320,12 +320,16 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         if (node && !preFocusSizesRef.current.has(effectiveFocusedId)) {
           preFocusSizesRef.current.set(effectiveFocusedId, { ...node.size });
         }
+        // Size to 65% of canvas — leave room for controls and sidebar
         const w = Math.round(rect.width * 0.65);
         const h = Math.round(rect.height * 0.65);
         updateSize(effectiveFocusedId, { width: w, height: h });
         updatePosition(effectiveFocusedId, { x: 0, y: 0 });
+        // Center the node at zoom 1 (no zoom scaling — node is already the right pixel size)
+        setTimeout(() => {
+          setCenter(w / 2, h / 2, { zoom: 1, duration: 300 });
+        }, 100);
       }
-      setTimeout(() => fitView({ padding: 0.05, duration: 300 }), 100);
     } else if (!state.focusedLayout) {
       // Restore original sizes when exiting focused mode
       for (const [id, size] of preFocusSizesRef.current) {
