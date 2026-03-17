@@ -42,6 +42,9 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
   const { setCenter, fitView } = useReactFlow();
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  // Save original node sizes so we can restore them when exiting focused mode
+  const preFocusSizesRef = useRef<Map<string, { width: number; height: number }>>(new Map());
   const [activeGitPanel, setActiveGitPanel] = useState<{ nodeId: string; sandboxId: string; cwd?: string } | null>(null);
 
   // Auto-close node list panel when Command Centre enters fullscreen
@@ -306,12 +309,32 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     setTimeout(() => fitView({ duration: 300 }), 50);
   }, [visibleWorktreeNodes, state.minimizedNodeIds, state.focusedLayout, updatePosition, fitView, setFocusedLayout]);
 
-  // Auto-fit the focused node on the canvas when focused mode is active
+  // Resize the focused node to ~80% of the canvas and fit the view
   useEffect(() => {
     if (state.focusedLayout && effectiveFocusedId) {
-      setTimeout(() => fitView({ padding: 0.1, duration: 300 }), 50);
+      const container = canvasContainerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        // Save original size before resizing (only if not already saved)
+        const node = state.worktreeNodes.find(n => n.id === effectiveFocusedId);
+        if (node && !preFocusSizesRef.current.has(effectiveFocusedId)) {
+          preFocusSizesRef.current.set(effectiveFocusedId, { ...node.size });
+        }
+        const w = Math.round(rect.width * 0.8);
+        const h = Math.round(rect.height * 0.8);
+        updateSize(effectiveFocusedId, { width: w, height: h });
+        updatePosition(effectiveFocusedId, { x: 0, y: 0 });
+      }
+      setTimeout(() => fitView({ padding: 0.05, duration: 300 }), 100);
+    } else if (!state.focusedLayout) {
+      // Restore original sizes when exiting focused mode
+      for (const [id, size] of preFocusSizesRef.current) {
+        updateSize(id, size);
+      }
+      preFocusSizesRef.current.clear();
+      setTimeout(() => fitView({ duration: 300 }), 100);
     }
-  }, [state.focusedLayout, effectiveFocusedId, fitView]);
+  }, [state.focusedLayout, effectiveFocusedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusDotColor: Record<WorktreeNode['status'], string> = {
     creating: 'bg-[hsl(var(--amber))]',
@@ -406,7 +429,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       </button>
 
       {/* ReactFlow canvas */}
-      <div className="flex-1 relative">
+      <div ref={canvasContainerRef} className="flex-1 relative">
         <ReactFlow
           nodes={localNodes}
           edges={edges}
