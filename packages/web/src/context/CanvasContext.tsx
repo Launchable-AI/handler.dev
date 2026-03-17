@@ -8,6 +8,8 @@ interface CanvasState {
   activeWorkspaceId: string;
   slimToolbar: boolean;
   minimizedNodeIds: string[];
+  focusedLayout: boolean;
+  focusedNodeId: string | null;
 }
 
 interface CanvasContextValue {
@@ -31,6 +33,8 @@ interface CanvasContextValue {
   minimizeNode: (id: string) => void;
   restoreNode: (id: string) => void;
   isNodeMinimized: (id: string) => boolean;
+  setFocusedLayout: (active: boolean) => void;
+  setFocusedNodeId: (id: string | null) => void;
 }
 
 const DEFAULT_WORKSPACE_ID = 'default';
@@ -41,20 +45,24 @@ type Action =
   | { type: 'UPDATE_NODE'; payload: { id: string; updates: Partial<WorktreeNode> } }
   | { type: 'UPDATE_POSITION'; payload: { id: string; position: { x: number; y: number } } }
   | { type: 'UPDATE_SIZE'; payload: { id: string; size: { width: number; height: number } } }
-  | { type: 'LOAD_STATE'; payload: { nodes: WorktreeNode[]; workspaces: Workspace[]; activeWorkspaceId: string; slimToolbar: boolean; minimizedNodeIds: string[] } }
+  | { type: 'LOAD_STATE'; payload: { nodes: WorktreeNode[]; workspaces: Workspace[]; activeWorkspaceId: string; slimToolbar: boolean; minimizedNodeIds: string[]; focusedLayout: boolean; focusedNodeId: string | null } }
   | { type: 'CREATE_WORKSPACE'; payload: Workspace }
   | { type: 'RENAME_WORKSPACE'; payload: { id: string; name: string } }
   | { type: 'DELETE_WORKSPACE'; payload: string }
   | { type: 'SET_ACTIVE_WORKSPACE'; payload: string }
   | { type: 'TOGGLE_SLIM_TOOLBAR' }
   | { type: 'MINIMIZE_NODE'; payload: string }
-  | { type: 'RESTORE_NODE'; payload: string };
+  | { type: 'RESTORE_NODE'; payload: string }
+  | { type: 'SET_FOCUSED_LAYOUT'; payload: boolean }
+  | { type: 'SET_FOCUSED_NODE'; payload: string | null };
 
 const STORAGE_KEY = 'handler-canvas-nodes';
 const WORKSPACES_KEY = 'handler-canvas-workspaces';
 const ACTIVE_WS_KEY = 'handler-canvas-active-workspace';
 const SLIM_TOOLBAR_KEY = 'handler-canvas-slim-toolbar';
 const MINIMIZED_KEY = 'handler-canvas-minimized';
+const FOCUSED_LAYOUT_KEY = 'handler-canvas-focused-layout';
+const FOCUSED_NODE_KEY = 'handler-canvas-focused-node';
 
 function loadPersistedNodes(): WorktreeNode[] {
   try {
@@ -106,12 +114,30 @@ function loadMinimizedNodeIds(): string[] {
   }
 }
 
+function loadFocusedLayout(): boolean {
+  try {
+    return localStorage.getItem(FOCUSED_LAYOUT_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function loadFocusedNodeId(): string | null {
+  try {
+    return localStorage.getItem(FOCUSED_NODE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
 function persistState(state: CanvasState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.worktreeNodes));
   localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces));
   localStorage.setItem(ACTIVE_WS_KEY, state.activeWorkspaceId);
   localStorage.setItem(SLIM_TOOLBAR_KEY, String(state.slimToolbar));
   localStorage.setItem(MINIMIZED_KEY, JSON.stringify(state.minimizedNodeIds));
+  localStorage.setItem(FOCUSED_LAYOUT_KEY, String(state.focusedLayout));
+  localStorage.setItem(FOCUSED_NODE_KEY, state.focusedNodeId || '');
 }
 
 function canvasReducer(state: CanvasState, action: Action): CanvasState {
@@ -176,6 +202,8 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
         activeWorkspaceId: action.payload.activeWorkspaceId,
         slimToolbar: action.payload.slimToolbar,
         minimizedNodeIds: action.payload.minimizedNodeIds || [],
+        focusedLayout: action.payload.focusedLayout ?? false,
+        focusedNodeId: action.payload.focusedNodeId ?? null,
       };
       break;
     case 'CREATE_WORKSPACE':
@@ -221,6 +249,12 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
         minimizedNodeIds: state.minimizedNodeIds.filter(id => id !== action.payload),
       };
       break;
+    case 'SET_FOCUSED_LAYOUT':
+      newState = { ...state, focusedLayout: action.payload };
+      break;
+    case 'SET_FOCUSED_NODE':
+      newState = { ...state, focusedNodeId: action.payload };
+      break;
     default:
       return state;
   }
@@ -264,6 +298,8 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     activeWorkspaceId: DEFAULT_WORKSPACE_ID,
     slimToolbar: false,
     minimizedNodeIds: [],
+    focusedLayout: false,
+    focusedNodeId: null,
   });
 
   // Load persisted state on mount
@@ -273,6 +309,8 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     const savedActiveWs = loadActiveWorkspaceId();
     const savedSlimToolbar = loadSlimToolbar();
     const savedMinimizedIds = loadMinimizedNodeIds();
+    const savedFocusedLayout = loadFocusedLayout();
+    const savedFocusedNodeId = loadFocusedNodeId();
 
     // Ensure default workspace exists
     if (savedWorkspaces.length === 0) {
@@ -281,7 +319,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
 
     dispatch({
       type: 'LOAD_STATE',
-      payload: { nodes: savedNodes, workspaces: savedWorkspaces, activeWorkspaceId: savedActiveWs, slimToolbar: savedSlimToolbar, minimizedNodeIds: savedMinimizedIds },
+      payload: { nodes: savedNodes, workspaces: savedWorkspaces, activeWorkspaceId: savedActiveWs, slimToolbar: savedSlimToolbar, minimizedNodeIds: savedMinimizedIds, focusedLayout: savedFocusedLayout, focusedNodeId: savedFocusedNodeId },
     });
   }, []);
 
@@ -344,6 +382,14 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     return state.minimizedNodeIds.includes(id);
   }, [state.minimizedNodeIds]);
 
+  const setFocusedLayout = useCallback((active: boolean) => {
+    dispatch({ type: 'SET_FOCUSED_LAYOUT', payload: active });
+  }, []);
+
+  const setFocusedNodeId = useCallback((id: string | null) => {
+    dispatch({ type: 'SET_FOCUSED_NODE', payload: id });
+  }, []);
+
   const nodes = buildReactFlowNodes(state.worktreeNodes, visibleIds, minimizedIds);
   const edges = buildReactFlowEdges(state.worktreeNodes, visibleIds);
 
@@ -365,6 +411,8 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     minimizeNode,
     restoreNode,
     isNodeMinimized,
+    setFocusedLayout,
+    setFocusedNodeId,
   };
 
   return (

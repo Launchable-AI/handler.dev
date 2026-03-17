@@ -19,7 +19,8 @@ import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
 import { GitLogPanel } from './GitLogPanel';
 import { MinimizedNodesSidebar, type MinimizedNodeInfo } from './MinimizedNodesSidebar';
-import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween, LayoutGrid, Columns3, Rows3 } from 'lucide-react';
+import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween, LayoutGrid, Columns3, Rows3, LayoutPanelLeft } from 'lucide-react';
+import { FocusedNodeView } from './FocusedNodeView';
 import type { WorktreeNode } from '../../types/command-centre';
 
 const nodeTypes = {
@@ -36,7 +37,7 @@ interface CanvasViewProps {
 
 // Inner component that has access to useReactFlow
 function CanvasViewInner({ className = '' }: CanvasViewProps) {
-  const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar, restoreNode } = useCanvas();
+  const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar, restoreNode, setFocusedLayout, setFocusedNodeId } = useCanvas();
   const { data: sandboxData } = useSandboxes();
   const { state: ccState } = useCommandCentre();
   const { setCenter, fitView } = useReactFlow();
@@ -99,6 +100,28 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     for (const s of sandboxes || []) map.set(s.id, s.name);
     return map;
   }, [sandboxes]);
+
+  // Focused layout: resolve the effective focused node ID
+  const effectiveFocusedId = useMemo(() => {
+    if (!state.focusedLayout) return null;
+    const minimizedSet = new Set(state.minimizedNodeIds);
+    const candidates = visibleWorktreeNodes.filter(n => !minimizedSet.has(n.id));
+    if (state.focusedNodeId && candidates.some(n => n.id === state.focusedNodeId)) {
+      return state.focusedNodeId;
+    }
+    return candidates[0]?.id || null;
+  }, [state.focusedLayout, state.focusedNodeId, state.minimizedNodeIds, visibleWorktreeNodes]);
+
+  const focusedNode = useMemo(
+    () => visibleWorktreeNodes.find(n => n.id === effectiveFocusedId),
+    [visibleWorktreeNodes, effectiveFocusedId]
+  );
+
+  // Nodes to show in the left panel: all nodes normally, or non-focused nodes in focused mode
+  const panelNodes = useMemo(() => {
+    if (!state.focusedLayout) return visibleWorktreeNodes;
+    return visibleWorktreeNodes.filter(n => n.id !== effectiveFocusedId);
+  }, [state.focusedLayout, visibleWorktreeNodes, effectiveFocusedId]);
 
   // Minimized nodes info for the sidebar
   const minimizedNodesInfo = useMemo((): MinimizedNodeInfo[] => {
@@ -239,6 +262,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
   };
 
   const arrangeNodes = useCallback((layout: 'grid' | 'vertical' | 'horizontal') => {
+    if (state.focusedLayout) setFocusedLayout(false);
     const minimizedSet = new Set(state.minimizedNodeIds);
     const visible = visibleWorktreeNodes.filter(n => !minimizedSet.has(n.id));
     if (visible.length < 2) return;
@@ -283,7 +307,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     }
 
     setTimeout(() => fitView({ duration: 300 }), 50);
-  }, [visibleWorktreeNodes, state.minimizedNodeIds, updatePosition, fitView]);
+  }, [visibleWorktreeNodes, state.minimizedNodeIds, state.focusedLayout, updatePosition, fitView, setFocusedLayout]);
 
   const statusDotColor: Record<WorktreeNode['status'], string> = {
     creating: 'bg-[hsl(var(--amber))]',
@@ -303,24 +327,24 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       >
         <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))] shrink-0">
           <span className="text-[10px] font-medium text-[hsl(var(--text-muted))] uppercase tracking-wider">
-            Nodes
+            {state.focusedLayout ? 'Windows' : 'Nodes'}
           </span>
           <span className="text-[10px] text-[hsl(var(--text-muted))]">
-            {visibleWorktreeNodes.length}
+            {panelNodes.length}
           </span>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {visibleWorktreeNodes.length === 0 ? (
+          {panelNodes.length === 0 ? (
             <div className="px-3 py-4 text-[10px] text-[hsl(var(--text-muted))] text-center">
-              No nodes in workspace
+              {state.focusedLayout ? 'No other windows' : 'No nodes in workspace'}
             </div>
           ) : (
-            visibleWorktreeNodes.map(wn => (
+            panelNodes.map(wn => (
               <div
                 key={wn.id}
                 className="group flex items-center gap-2 px-3 py-2 hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer border-b border-[hsl(var(--border)/0.5)]"
-                onClick={() => handleFocusNode(wn)}
+                onClick={() => state.focusedLayout ? setFocusedNodeId(wn.id) : handleFocusNode(wn)}
               >
                 <div className={`w-1.5 h-1.5 rounded-full shrink-0 self-start mt-1.5 ${statusDotColor[wn.status]}`} />
                 <div className="flex-1 min-w-0">
@@ -369,34 +393,42 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         {panelOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
       </button>
 
-      {/* ReactFlow canvas */}
+      {/* Main content area: ReactFlow canvas or focused view */}
       <div className="flex-1 relative">
-        <ReactFlow
-          nodes={localNodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onNodeDragStart={onNodeDragStart}
-          onNodeDrag={onNodeDrag}
-          onNodeDragStop={onNodeDragStop}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          fitView
-          minZoom={0.2}
-          maxZoom={2}
-          defaultEdgeOptions={{ type: 'worktree' }}
-          proOptions={{ hideAttribution: true }}
-          selectNodesOnDrag={false}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
-          <Controls
-            className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))] !shadow-lg [&>button]:!bg-[hsl(var(--bg-elevated))] [&>button]:!border-[hsl(var(--border))] [&>button]:!text-[hsl(var(--text-secondary))] [&>button:hover]:!bg-[hsl(var(--bg-overlay))]"
+        {state.focusedLayout && focusedNode ? (
+          <FocusedNodeView
+            key={focusedNode.id}
+            node={focusedNode}
+            sandboxName={sandboxNameMap.get(focusedNode.sandboxId) || focusedNode.sandboxName}
           />
-          <MiniMap
-            className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))]"
-            nodeColor="hsl(var(--cyan))"
-            maskColor="hsla(var(--bg-base), 0.7)"
-          />
-        </ReactFlow>
+        ) : (
+          <ReactFlow
+            nodes={localNodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDrag={onNodeDrag}
+            onNodeDragStop={onNodeDragStop}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            fitView
+            minZoom={0.2}
+            maxZoom={2}
+            defaultEdgeOptions={{ type: 'worktree' }}
+            proOptions={{ hideAttribution: true }}
+            selectNodesOnDrag={false}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
+            <Controls
+              className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))] !shadow-lg [&>button]:!bg-[hsl(var(--bg-elevated))] [&>button]:!border-[hsl(var(--border))] [&>button]:!text-[hsl(var(--text-secondary))] [&>button:hover]:!bg-[hsl(var(--bg-overlay))]"
+            />
+            <MiniMap
+              className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))]"
+              nodeColor="hsl(var(--cyan))"
+              maskColor="hsla(var(--bg-base), 0.7)"
+            />
+          </ReactFlow>
+        )}
 
         {/* Canvas controls */}
         <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
@@ -418,7 +450,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
           </button>
 
           {/* Layout arrange buttons */}
-          {visibleWorktreeNodes.filter(n => !state.minimizedNodeIds.includes(n.id)).length >= 2 && (
+          {visibleWorktreeNodes.filter(n => !state.minimizedNodeIds.includes(n.id)).length >= 1 && (
             <div className="flex items-center bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] rounded shadow-lg overflow-hidden">
               <button
                 onClick={() => arrangeNodes('grid')}
@@ -440,6 +472,17 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
                 title="Arrange as row"
               >
                 <Columns3 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setFocusedLayout(!state.focusedLayout)}
+                className={`p-1.5 transition-colors border-l border-[hsl(var(--border))] ${
+                  state.focusedLayout
+                    ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]'
+                    : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))]'
+                }`}
+                title="Focused window"
+              >
+                <LayoutPanelLeft className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
@@ -504,7 +547,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         )}
 
         {/* Empty state */}
-        {localNodes.length === 0 && (
+        {!state.focusedLayout && localNodes.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center space-y-3">
               <GitBranch className="h-12 w-12 text-[hsl(var(--text-muted))] mx-auto opacity-30" />
@@ -519,11 +562,13 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         )}
       </div>
 
-      {/* Minimized nodes sidebar */}
-      <MinimizedNodesSidebar
-        nodes={minimizedNodesInfo}
-        onRestore={restoreNode}
-      />
+      {/* Minimized nodes sidebar (hidden in focused layout) */}
+      {!state.focusedLayout && (
+        <MinimizedNodesSidebar
+          nodes={minimizedNodesInfo}
+          onRestore={restoreNode}
+        />
+      )}
     </div>
   );
 }

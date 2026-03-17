@@ -363,6 +363,20 @@ Key files:
 - `packages/web/src/api/worktrees.ts` — Client types (`ForkWorktreeResponse`, `CloneSandboxResponse`) and API functions
 - `packages/web/src/components/CommandCentre/nodes/SandboxNode.tsx` — Fork and Clone buttons with separate UI flows
 
+### Canvas Focused Layout
+
+A "focused window" layout mode for the canvas view. When active, one node's terminal fills the main area while the remaining nodes are listed in the left sidebar panel. Clicking a sidebar node swaps it into focus (the previously focused node moves to the sidebar).
+
+- **Toggle**: LayoutPanelLeft icon button in the arrangement button group (Grid | Vertical | Horizontal | Focused)
+- **State**: `focusedLayout` (boolean) and `focusedNodeId` (string | null) in `CanvasState`, persisted to localStorage
+- **Behavior**: Clicking Grid/Vertical/Horizontal exits focused mode and arranges nodes on the ReactFlow canvas. The MinimizedNodesSidebar is hidden in focused mode.
+- **Auto-selection**: If no focused node is set or the current one is invalid, the first visible non-minimized node is automatically selected.
+
+Key files:
+- `packages/web/src/context/CanvasContext.tsx` — `focusedLayout`/`focusedNodeId` state, `setFocusedLayout`/`setFocusedNodeId` actions
+- `packages/web/src/components/CommandCentre/FocusedNodeView.tsx` — Standalone terminal view with title bar (status, name, branch, connection, font size controls)
+- `packages/web/src/components/CommandCentre/CanvasView.tsx` — Conditional rendering: FocusedNodeView replaces ReactFlow when focused mode is active
+
 ### Key tech choices
 
 - Tailwind CSS v4 (beta) for styling
