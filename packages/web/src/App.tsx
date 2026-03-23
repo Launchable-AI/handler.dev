@@ -141,6 +141,55 @@ function TerminalAwareContent({ activeTab, onCreateClick, highlightedSandboxId }
   );
 }
 
+// ============================================================================
+// Logo — H command glyph: geometric H as targeting reticle / control symbol
+// ============================================================================
+
+function HGlyph({ size = 26 }: { size?: number }) {
+  const c = 'hsl(var(--cyan))';
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+      {/* Outer reticle ring */}
+      <circle cx="16" cy="16" r="14" stroke={c} strokeWidth="1.2" opacity="0.25" />
+
+      {/* Crosshair tick marks — targeting reticle feel */}
+      <line x1="16" y1="0.5" x2="16" y2="4.5" stroke={c} strokeWidth="1.2" strokeLinecap="round" opacity="0.5" />
+      <line x1="16" y1="27.5" x2="16" y2="31.5" stroke={c} strokeWidth="1.2" strokeLinecap="round" opacity="0.5" />
+      <line x1="0.5" y1="16" x2="4.5" y2="16" stroke={c} strokeWidth="1.2" strokeLinecap="round" opacity="0.5" />
+      <line x1="27.5" y1="16" x2="31.5" y2="16" stroke={c} strokeWidth="1.2" strokeLinecap="round" opacity="0.5" />
+
+      {/* H monogram — sharp, geometric, heavy weight */}
+      <line x1="10" y1="8" x2="10" y2="24" stroke={c} strokeWidth="2.4" strokeLinecap="round" />
+      <line x1="22" y1="8" x2="22" y2="24" stroke={c} strokeWidth="2.4" strokeLinecap="round" />
+      <line x1="10" y1="16" x2="22" y2="16" stroke={c} strokeWidth="2.4" strokeLinecap="round" />
+
+      {/* Corner brackets — control panel / HUD framing */}
+      <path d="M5 9V5H9" stroke={c} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
+      <path d="M27 9V5H23" stroke={c} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
+      <path d="M5 23V27H9" stroke={c} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
+      <path d="M27 23V27H23" stroke={c} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
+    </svg>
+  );
+}
+
+function LogoBrand() {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-4 border-b border-[hsl(var(--border))]">
+      <div className="flex-shrink-0">
+        <HGlyph size={26} />
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-[hsl(var(--text-primary))]">
+          Handler
+        </span>
+        <span className="text-[8px] tracking-[0.12em] uppercase text-[hsl(var(--cyan))] -mt-0.5 opacity-60">
+          Control Plane
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createFormInitial, setCreateFormInitial] = useState<{ backend?: string; image?: string }>({});
@@ -445,18 +494,7 @@ function App() {
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
       <aside className="w-52 flex flex-col border-r border-[hsl(var(--border))] bg-[hsl(var(--bg-surface))]">
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 px-4 py-4 border-b border-[hsl(var(--border))]">
-          <div className="relative">
-            <img src="/logo.png" alt="Handler" className="h-7 w-7" />
-            <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[hsl(var(--green))] animate-pulse-glow" />
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold text-[hsl(var(--text-primary))] tracking-tight">
-              Handler
-            </h1>
-          </div>
-        </div>
+        <LogoBrand />
 
         {/* Navigation */}
         <nav className="flex-1 py-3 px-2 overflow-y-auto flex flex-col">
