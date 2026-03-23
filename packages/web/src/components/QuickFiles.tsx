@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Plus, X, Loader2, Trash2, Edit3, Send, Star, FileText, Upload, EyeOff, Eye } from 'lucide-react';
+import { Plus, X, Loader2, Trash2, Edit3, Send, Star, FileText, Upload, EyeOff, Eye, Clipboard, Check } from 'lucide-react';
 import { useQuickFiles, useCreateQuickFile, useUpdateQuickFile, useDeleteQuickFile, useCopyQuickFileToSandbox } from '../hooks/useQuickFiles';
 import { useSandboxes } from '../hooks/useSandboxes';
 import type { QuickFile } from '../api/client';
@@ -352,6 +352,7 @@ export function QuickFiles() {
   const [editingFile, setEditingFile] = useState<QuickFile | null>(null);
   const [uploadInitialData, setUploadInitialData] = useState<{ name: string; destPath: string; content: string } | null>(null);
   const [copyingFile, setCopyingFile] = useState<QuickFile | null>(null);
+  const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const files = data?.files || [];
@@ -513,6 +514,21 @@ export function QuickFiles() {
                       )}
                     </div>
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(file.content);
+                          setCopiedFileId(file.id);
+                          setTimeout(() => setCopiedFileId(null), 2000);
+                        }}
+                        className={`p-1.5 hover:bg-[hsl(var(--bg-base))] transition-colors ${
+                          copiedFileId === file.id
+                            ? 'text-[hsl(var(--green))] opacity-100'
+                            : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] opacity-0 group-hover:opacity-100'
+                        }`}
+                        title="Copy to clipboard"
+                      >
+                        {copiedFileId === file.id ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+                      </button>
                       <button
                         onClick={() => setCopyingFile(file)}
                         className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-base))] transition-colors opacity-0 group-hover:opacity-100"
