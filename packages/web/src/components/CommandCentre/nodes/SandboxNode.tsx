@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { type NodeProps, useStore } from 'reactflow';
 import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
-import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, Copy, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive, Upload, Download, Check, Activity } from 'lucide-react';
+import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, Copy, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive, Upload, FolderUp, Download, Check, Activity } from 'lucide-react';
 import type { WorktreeNode } from '../../../types/command-centre';
 import { useCanvas } from '../../../context/CanvasContext';
 import { useSandboxMetrics } from '../../../hooks/useSandboxes';
@@ -60,6 +60,8 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [tmuxSessionName, setTmuxSessionName] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<(() => void) | null>(null);
   const fileBrowserRef = useRef<HTMLDivElement>(null);
   const { data: metrics } = useSandboxMetrics(data.sandboxId, connState === 'connected');
   const prevHasUrlsRef = useRef(false);
@@ -129,21 +131,50 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
     prevHasUrlsRef.current = has;
   }, [data.id, data.size.width, data.size.height, updateSize]);
 
-  const handleUploadClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    fileInputRef.current?.click();
-  }, []);
+  const getDefaultWorkspacePath = useCallback(() => {
+    if (!data.backendType || data.backendType === 'docker') return '/home/dev/workspace';
+    if (data.backendType === 'daytona') return '/home/daytona';
+    if (data.backendType === 'aws') return '/home/ubuntu';
+    return '/home/agent';
+  }, [data.backendType]);
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleUploadToSandbox = useCallback(async (e: React.ChangeEvent<HTMLInputElement>, isFolder = false) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
     setIsUploading(true);
     setUploadSuccess(false);
+    const fileList = Array.from(files);
+
+    // Filter out common large/unnecessary directories for folder uploads
+    const EXCLUDED_DIRS = /^[^/]+\/(node_modules|\.git|\.next|\.nuxt|dist|build|\.cache|\.turbo|__pycache__|\.venv|venv|target)\//;
+    const effectiveList = isFolder
+      ? fileList.filter(file => !EXCLUDED_DIRS.test(file.webkitRelativePath))
+      : fileList;
+
+    if (effectiveList.length === 0) {
+      console.warn('No files remaining after filtering');
+      setIsUploading(false);
+      return;
+    }
+
+    const destPath = getDefaultWorkspacePath();
+
     try {
-      if (data.backendType && data.backendType !== 'docker') {
-        await api.uploadFileToVm(data.sandboxId, file, '/home/agent');
+      if (isFolder) {
+        const filesWithPaths = effectiveList.map(file => ({
+          file,
+          relativePath: file.webkitRelativePath || file.name,
+        }));
+        const upload = api.uploadDirectoryToSandbox(data.sandboxId, filesWithPaths, destPath);
+        uploadAbortRef.current = upload.abort;
+        await upload.promise;
       } else {
-        await api.uploadFileToSandbox(data.sandboxId, file, '/home/dev/workspace').promise;
+        for (const file of fileList) {
+          const upload = api.uploadFileToSandbox(data.sandboxId, file, destPath);
+          uploadAbortRef.current = upload.abort;
+          await upload.promise;
+        }
       }
       setUploadSuccess(true);
       setTimeout(() => setUploadSuccess(false), 2000);
@@ -151,9 +182,11 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
       console.error('Upload failed:', err);
     } finally {
       setIsUploading(false);
+      uploadAbortRef.current = null;
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (folderInputRef.current) folderInputRef.current.value = '';
     }
-  }, [data.sandboxId, data.backendType]);
+  }, [data.sandboxId, getDefaultWorkspacePath]);
 
   // Close file browser on click outside
   useEffect(() => {
@@ -617,28 +650,52 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
             <PanelBottomClose className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
           </button>
 
-          {/* Upload file */}
+          {/* Upload files/folder */}
           {connState === 'connected' && (
-            <button
-              onClick={handleUploadClick}
-              onPointerDown={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-              disabled={isUploading}
-              className={`transition-colors ${slimToolbar ? 'p-0.5' : 'p-1'} ${
-                uploadSuccess
-                  ? 'text-[hsl(var(--green))]'
-                  : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))]'
-              } rounded`}
-              title="Upload file"
-            >
-              {isUploading ? (
-                <Loader2 className={`animate-spin ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
-              ) : uploadSuccess ? (
-                <Check className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
-              ) : (
-                <Upload className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
-              )}
-            </button>
+            <div className="relative group/upload" onPointerDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+              <button
+                disabled={isUploading}
+                className={`transition-colors ${slimToolbar ? 'p-0.5' : 'p-1'} ${
+                  uploadSuccess
+                    ? 'text-[hsl(var(--green))]'
+                    : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--cyan))] hover:bg-[hsl(var(--bg-overlay))]'
+                } rounded`}
+                title="Upload files"
+              >
+                {isUploading ? (
+                  <Loader2 className={`animate-spin ${slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'}`} />
+                ) : uploadSuccess ? (
+                  <Check className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+                ) : (
+                  <Upload className={slimToolbar ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+                )}
+              </button>
+              <div className="absolute right-0 top-full mt-1 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg z-10 opacity-0 invisible group-hover/upload:opacity-100 group-hover/upload:visible transition-all rounded">
+                <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] cursor-pointer whitespace-nowrap">
+                  <Upload className="h-3 w-3" />
+                  Files
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    onChange={(e) => handleUploadToSandbox(e, false)}
+                    className="hidden"
+                  />
+                </label>
+                <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[hsl(var(--text-secondary))] hover:bg-[hsl(var(--bg-elevated))] cursor-pointer whitespace-nowrap">
+                  <FolderUp className="h-3 w-3" />
+                  Folder
+                  <input
+                    ref={folderInputRef}
+                    type="file"
+                    // @ts-expect-error webkitdirectory is not in the standard types
+                    webkitdirectory="true"
+                    onChange={(e) => handleUploadToSandbox(e, true)}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
           )}
 
           {/* Download/browse files */}
@@ -797,13 +854,6 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         )}
       </div>
 
-      {/* Hidden file input for uploads */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        className="hidden"
-        onChange={handleFileSelect}
-      />
     </div>
     </>
   );
