@@ -65,7 +65,8 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const uploadAbortRef = useRef<(() => void) | null>(null);
   const fileBrowserRef = useRef<HTMLDivElement>(null);
   const { data: metrics } = useSandboxMetrics(data.sandboxId, connState === 'connected');
-  const { data: summaryData } = useTerminalSummary(data.sandboxId, connState === 'connected');
+  // Summary is fetched server-side via tmux capture — doesn't depend on WebSocket connection
+  const { data: summaryData } = useTerminalSummary(data.sandboxId);
   const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termWrapperRef = useRef<HTMLDivElement>(null);
