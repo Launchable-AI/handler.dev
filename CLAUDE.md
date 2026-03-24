@@ -130,6 +130,14 @@ For tmux persistence to work, containers/VMs must have `tmux` installed (the def
 
 **Multi-view tmux sessions (VMs)**: When multiple canvas nodes point to the same VM, each gets its own independent tmux session. The first node uses the primary session (`handler-{vmId}`), additional nodes get secondary sessions (`handler-{vmId}-2`, `-3`, etc.). Secondary sessions are killed inside the VM when their canvas node is closed. The `sessionKey` (canvas node ID) is sent in the `start-vm` WebSocket message and stored in the session store (`sessionKey` field on `PersistedSession`) so reconnection maps back to the correct tmux session. The tmux session name is visible in the connection badge tooltip on canvas nodes. The `resolveVmTmuxSession()` function in `vm-terminal.ts` handles the slot allocation logic.
 
+**Session picker (attach to existing tmux session)**: When adding a sandbox to the canvas via the "Add to Canvas" menu, if the sandbox has existing tmux sessions, a session picker appears with two choices: "New session" (creates a fresh tmux session — default behavior) or attach to one of the listed existing sessions. If no tmux sessions exist, the sandbox is added directly without the picker.
+
+- `GET /api/sandboxes/:id/tmux-sessions` — Lists tmux sessions inside a sandbox (`tmux list-sessions`) via `execInSandbox`
+- `attachTmuxSession` field on `WorktreeNode` and `TerminalTarget` — propagated through the `start` / `start-vm` WebSocket message to the server
+- Docker: `startAttachTmuxSession()` in `terminal.ts` uses `tmux attach-session -t` for clean attachment
+- VMs: `startVmTmuxWithFallback()` in `vm-terminal.ts` uses `tmux new-session -A -s` which handles both create and attach
+- Frontend: `listTmuxSessions()` in `client.ts`, session picker UI in `CanvasView.tsx`
+
 ### Terminal Theming
 
 Terminal background supports independent dark/light mode control (can differ from the system theme):

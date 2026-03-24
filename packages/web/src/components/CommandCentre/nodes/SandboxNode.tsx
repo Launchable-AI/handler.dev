@@ -840,6 +840,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
                 sessionKey: data.id,
                 ...(data.ip ? { ip: data.ip } : {}),
                 ...(data.worktreePath && !isRoot ? { workdir: data.worktreePath } : {}),
+                ...(data.attachTmuxSession ? { attachTmuxSession: data.attachTmuxSession } : {}),
               }}
               onStateChange={handleTerminalStateChange}
               onTmuxStateChange={handleTmuxStateChange}

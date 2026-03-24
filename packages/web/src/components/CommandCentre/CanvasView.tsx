@@ -19,8 +19,9 @@ import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
 import { GitLogPanel } from './GitLogPanel';
 import { MinimizedNodesSidebar, type MinimizedNodeInfo } from './MinimizedNodesSidebar';
-import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween, LayoutGrid, Columns3, Rows3, LayoutPanelLeft } from 'lucide-react';
+import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween, LayoutGrid, Columns3, Rows3, LayoutPanelLeft, Terminal, Loader2 } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
+import { listTmuxSessions, type TmuxSessionInfo } from '../../api/client';
 
 const nodeTypes = {
   sandbox: SandboxNode,
@@ -46,6 +47,10 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
   // Save original node sizes so we can restore them when exiting focused mode
   const preFocusSizesRef = useRef<Map<string, { width: number; height: number }>>(new Map());
   const [activeGitPanel, setActiveGitPanel] = useState<{ nodeId: string; sandboxId: string; cwd?: string } | null>(null);
+  // Session picker state for "Add to Canvas"
+  const [expandedSandboxId, setExpandedSandboxId] = useState<string | null>(null);
+  const [tmuxSessions, setTmuxSessions] = useState<TmuxSessionInfo[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
 
   // Auto-close node list panel when Command Centre enters fullscreen
   useEffect(() => {
@@ -232,7 +237,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     dragDeltaRef.current = { dx: 0, dy: 0 };
   }, [updatePosition, getDescendantIds, state.worktreeNodes]);
 
-  const handleAddToCanvas = (sandbox: { id: string; name: string; backend: string; guestIp?: string }) => {
+  const addSandboxToCanvas = (sandbox: { id: string; name: string; backend: string; guestIp?: string }, attachTmuxSession?: string) => {
     const nodeId = `wt-${sandbox.id}-${Date.now()}`;
     const newNode: WorktreeNode = {
       id: nodeId,
@@ -247,9 +252,39 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       backendType: sandbox.backend as WorktreeNode['backendType'],
       ip: sandbox.guestIp,
       sandboxName: sandbox.name,
+      ...(attachTmuxSession ? { attachTmuxSession } : {}),
     };
     addNode(newNode);
     setShowAddMenu(false);
+    setExpandedSandboxId(null);
+    setTmuxSessions([]);
+  };
+
+  const handleSandboxClick = async (sandbox: { id: string; name: string; backend: string; guestIp?: string }) => {
+    // If already expanded, collapse
+    if (expandedSandboxId === sandbox.id) {
+      setExpandedSandboxId(null);
+      setTmuxSessions([]);
+      return;
+    }
+
+    // Fetch tmux sessions for this sandbox
+    setExpandedSandboxId(sandbox.id);
+    setLoadingSessions(true);
+    setTmuxSessions([]);
+    try {
+      const sessions = await listTmuxSessions(sandbox.id);
+      if (sessions.length > 0) {
+        setTmuxSessions(sessions);
+        setLoadingSessions(false);
+      } else {
+        // No existing sessions — add directly with a new session
+        addSandboxToCanvas(sandbox);
+      }
+    } catch {
+      // Error fetching — add directly
+      addSandboxToCanvas(sandbox);
+    }
   };
 
   const handleFocusNode = (node: WorktreeNode) => {
@@ -535,7 +570,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
 
             {showAddMenu && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowAddMenu(false)} />
+                <div className="fixed inset-0 z-40" onClick={() => { setShowAddMenu(false); setExpandedSandboxId(null); setTmuxSessions([]); }} />
                 <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg rounded max-h-[300px] overflow-y-auto">
                   {availableSandboxes.length === 0 ? (
                     <div className="px-4 py-3 text-xs text-[hsl(var(--text-muted))]">
@@ -549,22 +584,52 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
                     </div>
                   ) : (
                     availableSandboxes.map(sandbox => (
-                      <button
-                        key={sandbox.id}
-                        onClick={() => handleAddToCanvas(sandbox)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[hsl(var(--bg-elevated))] transition-colors"
-                      >
-                        <GitBranch className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-[hsl(var(--text-primary))] truncate">
-                            {sandbox.name}
+                      <div key={sandbox.id}>
+                        <button
+                          onClick={() => handleSandboxClick(sandbox)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[hsl(var(--bg-elevated))] transition-colors ${
+                            expandedSandboxId === sandbox.id ? 'bg-[hsl(var(--bg-elevated))]' : ''
+                          }`}
+                        >
+                          <GitBranch className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-[hsl(var(--text-primary))] truncate">
+                              {sandbox.name}
+                            </div>
+                            <div className="text-[10px] text-[hsl(var(--text-muted))] truncate">
+                              {sandbox.image}
+                              <span className="ml-1 opacity-60">{sandbox.backend}</span>
+                            </div>
                           </div>
-                          <div className="text-[10px] text-[hsl(var(--text-muted))] truncate">
-                            {sandbox.image}
-                            <span className="ml-1 opacity-60">{sandbox.backend}</span>
+                          {expandedSandboxId === sandbox.id && loadingSessions && (
+                            <Loader2 className="h-3 w-3 text-[hsl(var(--text-muted))] animate-spin" />
+                          )}
+                        </button>
+
+                        {/* Session picker — shown when this sandbox is expanded */}
+                        {expandedSandboxId === sandbox.id && !loadingSessions && tmuxSessions.length > 0 && (
+                          <div className="border-t border-[hsl(var(--border)/0.5)] bg-[hsl(var(--bg-elevated)/0.5)]">
+                            <button
+                              onClick={() => addSandboxToCanvas(sandbox)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 pl-8 text-xs text-left hover:bg-[hsl(var(--bg-overlay))] transition-colors text-[hsl(var(--green))]"
+                            >
+                              <Plus className="h-3 w-3" />
+                              New session
+                            </button>
+                            {tmuxSessions.map(session => (
+                              <button
+                                key={session.name}
+                                onClick={() => addSandboxToCanvas(sandbox, session.name)}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 pl-8 text-xs text-left hover:bg-[hsl(var(--bg-overlay))] transition-colors text-[hsl(var(--text-secondary))]"
+                              >
+                                <Terminal className="h-3 w-3 text-[hsl(var(--cyan))]" />
+                                <span className="truncate">{session.name}</span>
+                                <span className="text-[10px] text-[hsl(var(--text-muted))] ml-auto">{session.windows}w</span>
+                              </button>
+                            ))}
                           </div>
-                        </div>
-                      </button>
+                        )}
+                      </div>
                     ))
                   )}
                 </div>

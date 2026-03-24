@@ -305,7 +305,8 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
                 msg.shell || '/bin/bash',
                 msg.cols || 80,
                 msg.rows || 24,
-                msg.workdir
+                msg.workdir,
+                msg.attachTmuxSession
               );
               isVmSession = false;
             } else {
@@ -394,7 +395,8 @@ function setupWebSocketServer(server: ReturnType<typeof createServer>) {
                 msg.shell || '/bin/bash',
                 msg.cols || 80,
                 msg.rows || 24,
-                msg.sessionKey
+                msg.sessionKey,
+                msg.attachTmuxSession
               );
               isVmSession = true;
             } else {

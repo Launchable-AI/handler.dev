@@ -3913,6 +3913,19 @@ export async function getSandboxMetrics(id: string): Promise<GuestMetrics | null
   return result.metrics;
 }
 
+// ============ Tmux Sessions ============
+
+export interface TmuxSessionInfo {
+  name: string;
+  windows: number;
+  created: number;
+}
+
+export async function listTmuxSessions(id: string): Promise<TmuxSessionInfo[]> {
+  const result = await fetchAPI<{ sessions: TmuxSessionInfo[] }>(`/sandboxes/${encodeURIComponent(id)}/tmux-sessions`);
+  return result.sessions;
+}
+
 // ============ Image Builder (dev-mode only) ============
 
 export interface ImageBuilderDetail {

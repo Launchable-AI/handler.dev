@@ -20,6 +20,8 @@ export interface TerminalTarget {
   workdir?: string;
   /** Unique key for session storage — allows multiple independent sessions for the same target */
   sessionKey?: string;
+  /** If set, attach to this existing tmux session instead of creating a new one */
+  attachTmuxSession?: string;
 }
 
 export interface ShellState {
@@ -396,6 +398,7 @@ export function TerminalInstance({
             cols: term.cols,
             rows: term.rows,
             ...(target.sessionKey ? { sessionKey: target.sessionKey } : {}),
+            ...(target.attachTmuxSession ? { attachTmuxSession: target.attachTmuxSession } : {}),
           }));
         } else {
           // Container terminal - start new session
@@ -406,6 +409,7 @@ export function TerminalInstance({
             cols: term.cols,
             rows: term.rows,
             ...(target.workdir ? { workdir: target.workdir } : {}),
+            ...(target.attachTmuxSession ? { attachTmuxSession: target.attachTmuxSession } : {}),
           }));
         }
       };

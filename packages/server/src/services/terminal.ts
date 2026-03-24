@@ -82,12 +82,13 @@ export function createTerminalSession(
   shell: string = '/bin/bash',
   cols: number = 80,
   rows: number = 24,
-  customWorkdir?: string
+  customWorkdir?: string,
+  attachTmuxSession?: string
 ): string {
   const sessionId = `${containerId}-${Date.now()}`;
-  const tmuxSession = generateTmuxSessionName(containerId);
+  const tmuxSession = attachTmuxSession || generateTmuxSessionName(containerId);
 
-  console.log(`🔧 Creating terminal session: ${sessionId} (tmux: ${tmuxSession}, workdir: ${customWorkdir || 'default'})`);
+  console.log(`🔧 Creating terminal session: ${sessionId} (tmux: ${tmuxSession}, attach: ${!!attachTmuxSession}, workdir: ${customWorkdir || 'default'})`);
 
   // Check if tmux is enabled in config and available in container
   getConfig().then(config => {
@@ -97,9 +98,20 @@ export function createTerminalSession(
       return;
     }
 
-    return hasTmux(containerId).then(useTmux => {
+    return hasTmux(containerId).then(async useTmux => {
       if (useTmux) {
-        startTmuxSession(ws, sessionId, containerId, tmuxSession, customWorkdir, shell, cols, rows);
+        if (attachTmuxSession) {
+          // Verify the target tmux session exists before attaching
+          const exists = await tmuxSessionExists(containerId, attachTmuxSession);
+          if (exists) {
+            startAttachTmuxSession(ws, sessionId, containerId, attachTmuxSession, cols, rows);
+          } else {
+            console.log(`[Terminal] Requested tmux session ${attachTmuxSession} not found, creating new`);
+            startTmuxSession(ws, sessionId, containerId, tmuxSession, customWorkdir, shell, cols, rows);
+          }
+        } else {
+          startTmuxSession(ws, sessionId, containerId, tmuxSession, customWorkdir, shell, cols, rows);
+        }
       } else {
         console.log(`[Terminal] tmux not available in ${containerId}, falling back to script`);
         startScriptSession(ws, sessionId, containerId, customWorkdir, shell, cols, rows);
@@ -156,6 +168,42 @@ async function startTmuxSession(
   ];
 
   const process = spawn('docker', args);
+
+  setupSessionHandlers(ws, sessionId, containerId, tmuxSession, process, true, cols, rows);
+}
+
+/**
+ * Attach to an existing tmux session in a Docker container.
+ * Similar to resumeTerminalSession but takes a tmux session name directly
+ * (used when the user picks an existing session from the session picker).
+ */
+async function startAttachTmuxSession(
+  ws: WebSocket,
+  sessionId: string,
+  containerId: string,
+  tmuxSession: string,
+  cols: number,
+  rows: number
+): Promise<void> {
+  const config = await getConfig();
+  const showStatusBar = config.tmuxStatusBar === true;
+  const theme = config.shellPromptTheme || 'minimal';
+  const tmuxThemeContent = getTmuxThemeContent(theme, showStatusBar);
+
+  const setupAndAttach = `mkdir -p ~/.config/handler && cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF\ntmux attach-session -t ${tmuxSession} \\; source-file ~/.config/handler/tmux-theme.conf \\; resize-window -x ${cols} -y ${rows}`;
+
+  const process = spawn('docker', [
+    'exec',
+    '-i',
+    '-e', 'TERM=xterm-256color',
+    '-e', `COLUMNS=${cols}`,
+    '-e', `LINES=${rows}`,
+    containerId,
+    'script',
+    '-qec',
+    setupAndAttach,
+    '/dev/null',
+  ]);
 
   setupSessionHandlers(ws, sessionId, containerId, tmuxSession, process, true, cols, rows);
 }

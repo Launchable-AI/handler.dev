@@ -58,6 +58,8 @@ export interface WorktreeNode {
   nodeFontSize?: number;
   /** User-defined label (overrides sandbox name in display) */
   label?: string;
+  /** If set, attach to this existing tmux session instead of creating a new one */
+  attachTmuxSession?: string;
 }
 
 // Workspace for organizing canvas nodes

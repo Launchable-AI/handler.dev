@@ -1692,6 +1692,63 @@ sandboxes.get('/:id/agents', async (c) => {
   }
 });
 
+// ============ Tmux Session Listing ============
+
+/**
+ * GET /api/sandboxes/:id/tmux-sessions
+ * List tmux sessions running inside a sandbox.
+ * Returns { sessions: [{ name, windows, created }] }
+ */
+sandboxes.get('/:id/tmux-sessions', async (c) => {
+  try {
+    const id = c.req.param('id');
+    if (!validateSandboxId(id)) {
+      return c.json({ error: 'Invalid sandbox ID' }, 400);
+    }
+
+    const service = await ensureSandboxServiceInitialized();
+    const sandbox = await service.get(id);
+
+    if (!sandbox) {
+      return c.json({ error: 'Sandbox not found' }, 404);
+    }
+
+    if (sandbox.status !== 'running') {
+      return c.json({ sessions: [] });
+    }
+
+    // Run tmux list-sessions inside the sandbox
+    // Format: session_name<TAB>window_count<TAB>created_epoch
+    const cmd = `tmux list-sessions -F '#{session_name}\t#{session_windows}\t#{session_created}' 2>/dev/null || true`;
+    let output = '';
+    try {
+      output = await execInSandbox(sandbox, cmd, { timeout: 5000 });
+    } catch {
+      // tmux not installed or no sessions — return empty
+      return c.json({ sessions: [] });
+    }
+
+    const sessions = output
+      .trim()
+      .split('\n')
+      .filter(line => line.trim().length > 0)
+      .map(line => {
+        const [name, windows, created] = line.split('\t');
+        return {
+          name: name || '',
+          windows: parseInt(windows || '0', 10),
+          created: parseInt(created || '0', 10),
+        };
+      })
+      .filter(s => s.name.length > 0);
+
+    return c.json({ sessions });
+  } catch (error) {
+    console.error('[SandboxRoutes] Tmux session listing error:', error);
+    return c.json({ sessions: [] });
+  }
+});
+
 // ============ Git Operations (backend-agnostic) ============
 
 /**

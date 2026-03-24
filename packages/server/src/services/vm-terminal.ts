@@ -135,12 +135,13 @@ export function createVmTerminalSession(
   shell: string = '/bin/bash',
   cols: number = 80,
   rows: number = 24,
-  sessionKey?: string
+  sessionKey?: string,
+  attachTmuxSession?: string
 ): string {
   const sessionId = `vm-${vmId}-${Date.now()}`;
   const sshKeyPath = getSshKeyPath(dataDir);
 
-  console.log(`[VM Terminal] Creating session: ${sessionId} for VM ${vmId} at ${vmIp}`);
+  console.log(`[VM Terminal] Creating session: ${sessionId} for VM ${vmId} at ${vmIp} (attach: ${attachTmuxSession || 'none'})`);
   console.log(`[VM Terminal] SSH key path: ${sshKeyPath}`);
   console.log(`[VM Terminal] Data dir: ${dataDir}`);
 
@@ -160,7 +161,7 @@ export function createVmTerminalSession(
       console.log(`[VM Terminal] tmux disabled in config, using bare shell`);
       startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
     } else {
-      startVmTmuxWithFallback(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows, config.tmuxStatusBar, sessionKey);
+      startVmTmuxWithFallback(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows, config.tmuxStatusBar, sessionKey, attachTmuxSession);
     }
   }).catch(() => {
     startVmBareSession(ws, sessionId, vmId, vmIp, dataDir, sshKeyPath, shell, cols, rows);
@@ -195,9 +196,14 @@ async function startVmTmuxWithFallback(
   cols: number,
   rows: number,
   tmuxStatusBar?: boolean,
-  sessionKey?: string
+  sessionKey?: string,
+  attachTmuxSession?: string
 ): Promise<void> {
-  const { tmuxSession, isPrimary } = resolveVmTmuxSession(vmId, sessionKey);
+  // If attaching to an existing session, use that name; otherwise resolve a new slot
+  const resolved = attachTmuxSession
+    ? { tmuxSession: attachTmuxSession, isPrimary: attachTmuxSession === getVmTmuxSessionName(vmId) }
+    : resolveVmTmuxSession(vmId, sessionKey);
+  const { tmuxSession, isPrimary } = resolved;
 
   // Get the shell init content and tmux theme to embed in the remote command
   const config = await getConfig();
