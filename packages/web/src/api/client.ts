@@ -3926,6 +3926,17 @@ export async function listTmuxSessions(id: string): Promise<TmuxSessionInfo[]> {
   return result.sessions;
 }
 
+// ============ Terminal Summary (AI-powered) ============
+
+export interface TerminalSummaryResult {
+  summary: string | null;
+  updatedAt?: number;
+}
+
+export async function getTerminalSummary(id: string): Promise<TerminalSummaryResult> {
+  return fetchAPI<TerminalSummaryResult>(`/sandboxes/${encodeURIComponent(id)}/terminal-summary`);
+}
+
 // ============ Image Builder (dev-mode only) ============
 
 export interface ImageBuilderDetail {

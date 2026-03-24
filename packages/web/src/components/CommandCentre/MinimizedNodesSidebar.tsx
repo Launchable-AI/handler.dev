@@ -7,6 +7,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, GitBranch, Maximize2, AlertCircle } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
 import { TerminalInstance } from '../Terminal/TerminalInstance';
+import { useTerminalSummary } from '../../hooks/useSandboxes';
 
 export interface MinimizedNodeInfo {
   id: string;
@@ -162,6 +163,7 @@ interface MinimizedNodeItemProps {
 
 function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: MinimizedNodeItemProps) {
   const needsInput = node.claudeStatus === 'waiting';
+  const { data: summaryData } = useTerminalSummary(node.sandboxId, node.status === 'ready');
 
   return (
     <div
@@ -220,6 +222,15 @@ function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: Minimi
               <Maximize2 className="h-3 w-3 text-[hsl(var(--cyan))]" />
             </div>
           </div>
+
+          {/* AI terminal activity summary */}
+          {summaryData?.summary && summaryData.summary !== 'idle' && (
+            <div className="px-3 pb-1">
+              <span className="text-[9px] italic text-[hsl(var(--text-muted))] truncate block">
+                {summaryData.summary}
+              </span>
+            </div>
+          )}
 
           {/* Terminal preview */}
           {node.status === 'ready' && (

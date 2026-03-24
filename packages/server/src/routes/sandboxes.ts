@@ -27,6 +27,7 @@ import { execFileSync } from 'child_process';
 import { validateSandboxId, validatePath, validateFilename } from '../lib/validation.js';
 import { safeExec } from '../lib/safe-exec.js';
 import { execInSandbox, SSH_OPTS } from '../lib/exec-in-sandbox.js';
+import { getTerminalSummary } from '../services/terminal-summary.js';
 
 const sandboxes = new Hono();
 
@@ -1746,6 +1747,38 @@ sandboxes.get('/:id/tmux-sessions', async (c) => {
   } catch (error) {
     console.error('[SandboxRoutes] Tmux session listing error:', error);
     return c.json({ sessions: [] });
+  }
+});
+
+// ============ Terminal Summary (AI-powered) ============
+
+/**
+ * GET /api/sandboxes/:id/terminal-summary
+ * Get a short AI-generated summary of what's happening in the terminal.
+ * Returns { summary: string, updatedAt: number } or { summary: null }.
+ */
+sandboxes.get('/:id/terminal-summary', async (c) => {
+  try {
+    const id = c.req.param('id');
+    if (!validateSandboxId(id)) {
+      return c.json({ summary: null }, 400);
+    }
+
+    const service = await ensureSandboxServiceInitialized();
+    const sandbox = await service.get(id);
+
+    if (!sandbox || sandbox.status !== 'running') {
+      return c.json({ summary: null });
+    }
+
+    const result = await getTerminalSummary(sandbox);
+    if (result) {
+      return c.json({ summary: result.summary, updatedAt: result.updatedAt });
+    }
+    return c.json({ summary: null });
+  } catch (error) {
+    console.error('[SandboxRoutes] Terminal summary error:', error);
+    return c.json({ summary: null });
   }
 });
 

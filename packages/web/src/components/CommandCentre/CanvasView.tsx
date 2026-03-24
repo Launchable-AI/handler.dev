@@ -301,49 +301,56 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     if (state.focusedLayout) setFocusedLayout(false);
     const minimizedSet = new Set(state.minimizedNodeIds);
     const visible = visibleWorktreeNodes.filter(n => !minimizedSet.has(n.id));
-    if (visible.length < 2) return;
+    if (visible.length === 0) return;
 
-    const gap = 40;
+    const gap = 24;
+    const MIN_W = 300;
+    const MIN_H = 200;
+
+    // Get available canvas dimensions
+    const container = canvasContainerRef.current;
+    const rect = container?.getBoundingClientRect();
+    // Use canvas size at zoom=1, with some padding for controls
+    const canvasW = rect ? rect.width - 40 : 1200;
+    const canvasH = rect ? rect.height - 40 : 800;
 
     if (layout === 'grid') {
-      const cols = Math.ceil(Math.sqrt(visible.length));
-      // Sort tallest-first so the packing algorithm fills columns evenly
-      const sorted = [...visible].sort((a, b) => (b.size?.height || 350) - (a.size?.height || 350));
-      // Track each column: current y offset and max width seen
-      const colY = Array(cols).fill(0);
-      const colMaxW = Array(cols).fill(0);
-      const placements: Array<{ node: typeof sorted[0]; col: number; y: number }> = [];
-      // Place each node into the shortest column
-      for (const node of sorted) {
-        const shortestCol = colY.indexOf(Math.min(...colY));
-        const h = node.size?.height || 350;
-        const w = node.size?.width || 650;
-        placements.push({ node, col: shortestCol, y: colY[shortestCol] });
-        colY[shortestCol] += h + gap;
-        colMaxW[shortestCol] = Math.max(colMaxW[shortestCol], w);
-      }
-      // Compute column x offsets from max widths
-      const colX = Array(cols).fill(0);
-      for (let c = 1; c < cols; c++) colX[c] = colX[c - 1] + colMaxW[c - 1] + gap;
-      for (const { node, col, y } of placements) {
-        updatePosition(node.id, { x: colX[col], y });
-      }
+      const n = visible.length;
+      const cols = Math.ceil(Math.sqrt(n));
+      const rows = Math.ceil(n / cols);
+      const cellW = Math.max(MIN_W, Math.floor((canvasW - gap * (cols - 1)) / cols));
+      const cellH = Math.max(MIN_H, Math.floor((canvasH - gap * (rows - 1)) / rows));
+
+      visible.forEach((node, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        updateSize(node.id, { width: cellW, height: cellH });
+        updatePosition(node.id, { x: col * (cellW + gap), y: row * (cellH + gap) });
+      });
     } else if (layout === 'vertical') {
+      // Column: full width, split height
+      const nodeH = Math.max(MIN_H, Math.floor((canvasH - gap * (visible.length - 1)) / visible.length));
+      const nodeW = Math.max(MIN_W, canvasW);
       let y = 0;
       for (const node of visible) {
+        updateSize(node.id, { width: nodeW, height: nodeH });
         updatePosition(node.id, { x: 0, y });
-        y += (node.size?.height || 350) + gap;
+        y += nodeH + gap;
       }
     } else {
+      // Row: full height, split width
+      const nodeW = Math.max(MIN_W, Math.floor((canvasW - gap * (visible.length - 1)) / visible.length));
+      const nodeH = Math.max(MIN_H, canvasH);
       let x = 0;
       for (const node of visible) {
+        updateSize(node.id, { width: nodeW, height: nodeH });
         updatePosition(node.id, { x, y: 0 });
-        x += (node.size?.width || 650) + gap;
+        x += nodeW + gap;
       }
     }
 
-    setTimeout(() => fitView({ duration: 300 }), 50);
-  }, [visibleWorktreeNodes, state.minimizedNodeIds, state.focusedLayout, updatePosition, fitView, setFocusedLayout]);
+    setTimeout(() => fitView({ padding: 0.02, duration: 300 }), 50);
+  }, [visibleWorktreeNodes, state.minimizedNodeIds, state.focusedLayout, updatePosition, updateSize, fitView, setFocusedLayout]);
 
   // Resize the focused node to fill the canvas and center it at zoom 1
   useEffect(() => {

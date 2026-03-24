@@ -6,7 +6,7 @@ import '@reactflow/node-resizer/dist/style.css';
 import { GitBranch, GitMerge, Trash2, Loader2, AlertCircle, ExternalLink, GitFork, Copy, X, Maximize2, Minimize2, ZoomIn, ZoomOut, PanelBottomClose, Cpu, MemoryStick, HardDrive, Upload, FolderUp, Download, Check, Activity } from 'lucide-react';
 import type { WorktreeNode } from '../../../types/command-centre';
 import { useCanvas } from '../../../context/CanvasContext';
-import { useSandboxMetrics } from '../../../hooks/useSandboxes';
+import { useSandboxMetrics, useTerminalSummary } from '../../../hooks/useSandboxes';
 import { TerminalInstance } from '../../Terminal/TerminalInstance';
 import type { ConnectionState, ShellState } from '../../Terminal/TerminalInstance';
 import { SandboxFileBrowser } from '../../sandbox/SandboxFileBrowser';
@@ -64,6 +64,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const uploadAbortRef = useRef<(() => void) | null>(null);
   const fileBrowserRef = useRef<HTMLDivElement>(null);
   const { data: metrics } = useSandboxMetrics(data.sandboxId, connState === 'connected');
+  const { data: summaryData } = useTerminalSummary(data.sandboxId, connState === 'connected');
   const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termWrapperRef = useRef<HTMLDivElement>(null);
@@ -495,7 +496,14 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
             </span>
           </button>
         )}
-        <div className="flex-1" />
+        {/* AI terminal activity summary */}
+        <div className="flex-1 min-w-0">
+          {summaryData?.summary && summaryData.summary !== 'idle' && !slimToolbar && (
+            <span className="text-[9px] italic text-[hsl(var(--text-muted))] truncate block" title={summaryData.summary}>
+              {summaryData.summary}
+            </span>
+          )}
+        </div>
 
         {/* Claude Code status indicator */}
         {claudeStatus !== 'off' && (
