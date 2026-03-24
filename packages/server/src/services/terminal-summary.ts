@@ -66,6 +66,8 @@ idle|shell prompt`;
 
 /**
  * Get a cached summary for a sandbox, or generate a new one.
+ * Always returns the last successful result while refreshing in the background.
+ * The TTL only controls when to *attempt* a refresh, never when to *discard*.
  */
 export async function getTerminalSummary(
   sandbox: { id: string; backend: string; guestIp?: string }
@@ -77,19 +79,19 @@ export async function getTerminalSummary(
   const apiKey = getOpenRouterApiKey();
   if (!apiKey) return null;
 
-  // Check cache
+  // Always return cached data if fresh enough
   const cached = cache.get(sandbox.id);
   if (cached && Date.now() - cached.updatedAt < CACHE_TTL_MS) {
     return cached;
   }
 
-  // Capture terminal content
+  // TTL expired — attempt refresh, but never discard the old value on failure
   const content = await captureTerminalContent(sandbox);
   if (!content || content.trim().length === 0) {
+    // Capture failed — return stale cache (better than nothing)
     return cached || null;
   }
 
-  // Call Haiku for classification + summary
   try {
     const result = await classifyWithHaiku(apiKey, content);
     if (result) {
@@ -98,11 +100,13 @@ export async function getTerminalSummary(
       console.log(`[TerminalSummary] ${sandbox.id}: [${result.status}] ${result.summary}`);
       return entry;
     }
+    // AI returned null (malformed response) — keep stale cache
+    return cached || null;
   } catch (err) {
     console.warn('[TerminalSummary] Failed to generate summary:', err instanceof Error ? err.message : err);
+    // API error (rate limit, network, etc.) — keep stale cache
+    return cached || null;
   }
-
-  return cached || null;
 }
 
 /**
@@ -116,7 +120,11 @@ async function captureTerminalContent(
     const tmuxSession = findActiveTmuxSession(sandbox);
     if (!tmuxSession) {
       // Fall back to running tmux list + capture inside the sandbox
-      return await captureViaExecInSandbox(sandbox);
+      const fallback = await captureViaExecInSandbox(sandbox);
+      if (!fallback) {
+        console.log(`[TerminalSummary] No tmux session found for ${sandbox.id} (backend: ${sandbox.backend})`);
+      }
+      return fallback;
     }
 
     if (sandbox.backend === 'docker') {
@@ -133,7 +141,8 @@ async function captureTerminalContent(
       `tmux capture-pane -t ${tmuxSession} -p -S -${CAPTURE_LINES} 2>/dev/null`,
       { timeout: 5000 }
     );
-  } catch {
+  } catch (err) {
+    console.warn(`[TerminalSummary] Capture failed for ${sandbox.id}:`, err instanceof Error ? err.message : err);
     return null;
   }
 }
