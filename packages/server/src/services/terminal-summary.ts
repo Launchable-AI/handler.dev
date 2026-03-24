@@ -41,24 +41,27 @@ Respond with EXACTLY one line in this format:
 STATUS|short description (3-8 words)
 
 STATUS must be one of:
-- needs_input — a process, agent, or prompt is waiting for the user to type something, answer a question, confirm an action, or provide input. Look for: question marks, [y/N] prompts, "waiting for", input cursors, permission requests, Claude/agent asking a question, interactive menus, "press any key", password prompts
-- error — a command failed, exception was thrown, build broke, test failed, something crashed. Look for: error messages, stack traces, "FAIL", non-zero exit codes, "command not found", segfaults, permission denied
-- done — a task just completed successfully and nothing else is running. Look for: "done", "complete", "success", "built in", "passed", followed by a shell prompt with no running process
-- working — a command or process is actively running or producing output. Look for: ongoing compilation, test execution, downloads in progress, active git operations, file editing, running servers
-- idle — just a shell prompt with no recent meaningful activity
+- needs_input — the terminal is BLOCKED and waiting for a HUMAN to type something. The process cannot continue without human action. Examples: [y/N] confirmation prompts, password prompts, "press any key", interactive menus waiting for selection, sudo asking for password, git prompting for commit message in an editor.
+  IMPORTANT: Do NOT use needs_input if an AI coding agent (Claude Code, Cursor, Codex, aider, etc.) is running. Agents handle their own prompts autonomously — even if you see question marks, tool calls, or "thinking" output, the agent is WORKING, not waiting for the user. Only use needs_input when NO agent is active and a raw CLI tool or shell is blocking on human input.
+- error — a command failed, exception thrown, build broke, tests failed, crash. Look for: stack traces, "FAIL", "ERROR", non-zero exit codes, "command not found", segfaults, permission denied. Note: if an agent is still running after an error (retrying, investigating), classify as working, not error.
+- done — a task just completed successfully and the terminal is back at a shell prompt with nothing running. Look for: "done", "complete", "success", "passed", build timing info, followed by a bare shell prompt.
+- working — a command, process, or AI agent is actively running. This includes: compilation, test execution, downloads, git operations, file editing, running servers, AND any AI agent session that is processing, thinking, reading files, writing code, or running tools. If you see Claude Code, Cursor, Codex, or similar agent output, this is ALWAYS working (unless the session has clearly ended).
+- idle — just a bare shell prompt ($ or >) with no recent meaningful output above it.
 
-The description should tell the user WHAT specifically needs attention or is happening.
+When in doubt between needs_input and working, choose working. False "needs input" alerts are worse than missing one.
 
 Examples:
-needs_input|claude asking about test strategy
-needs_input|npm asking to proceed with install
-needs_input|git merge conflict needs resolution
-error|jest tests failing in auth module
-error|docker build failed missing dependency
-working|running database migrations
-working|installing python dependencies
+needs_input|sudo prompting for password
+needs_input|npm asking to proceed y/n
+needs_input|git awaiting commit message
+error|jest 3 tests failing
+error|build failed missing module
+working|claude editing auth module
+working|agent running test suite
+working|installing dependencies
+working|compiling typescript
 done|build completed successfully
-done|all 42 tests passed
+done|all tests passed
 idle|shell prompt`;
 
 /**
