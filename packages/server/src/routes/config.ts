@@ -20,6 +20,7 @@ const UpdateConfigSchema = z.object({
   shellPromptTheme: z.enum(['minimal', 'clean', 'bracket', 'lambda', 'cyberpunk', 'multiline']).optional(),
   tmuxEnabled: z.boolean().optional(),
   tmuxStatusBar: z.boolean().optional(),
+  terminalSummaryEnabled: z.boolean().optional(),
 });
 
 const BrowseDirectorySchema = z.object({

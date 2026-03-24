@@ -1773,9 +1773,9 @@ sandboxes.get('/:id/terminal-summary', async (c) => {
 
     const result = await getTerminalSummary(sandbox);
     if (result) {
-      return c.json({ summary: result.summary, updatedAt: result.updatedAt });
+      return c.json({ status: result.status, summary: result.summary, updatedAt: result.updatedAt });
     }
-    return c.json({ summary: null });
+    return c.json({ status: null, summary: null });
   } catch (error) {
     console.error('[SandboxRoutes] Terminal summary error:', error);
     return c.json({ summary: null });

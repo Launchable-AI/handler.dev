@@ -59,6 +59,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [tmuxSessionName, setTmuxSessionName] = useState<string | undefined>(undefined);
+  const [ipCopied, setIpCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const uploadAbortRef = useRef<(() => void) | null>(null);
@@ -496,12 +497,54 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
             </span>
           </button>
         )}
+        {/* VM IP address — click to copy */}
+        {data.ip && !slimToolbar && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(data.ip!);
+              setIpCopied(true);
+              setTimeout(() => setIpCopied(false), 1500);
+            }}
+            onPointerDown={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            className="flex items-center gap-1 text-[9px] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors shrink-0"
+            title={`Copy IP: ${data.ip}`}
+          >
+            {ipCopied ? (
+              <Check className="h-2.5 w-2.5 text-[hsl(var(--green))]" />
+            ) : (
+              <Copy className="h-2.5 w-2.5" />
+            )}
+            <span className="font-mono">{data.ip}</span>
+          </button>
+        )}
         {/* AI terminal activity summary */}
-        <div className="flex-1 min-w-0">
-          {summaryData?.summary && summaryData.summary !== 'idle' && !slimToolbar && (
-            <span className="text-[9px] italic text-[hsl(var(--text-muted))] truncate block" title={summaryData.summary}>
-              {summaryData.summary}
-            </span>
+        <div className="flex-1 min-w-0 flex items-center">
+          {summaryData?.status && summaryData.status !== 'idle' && summaryData.summary && (
+            slimToolbar ? (
+              <span
+                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  summaryData.status === 'needs_input' ? 'bg-[hsl(var(--amber))] animate-pulse'
+                  : summaryData.status === 'error' ? 'bg-[hsl(var(--red))]'
+                  : summaryData.status === 'done' ? 'bg-[hsl(var(--green))]'
+                  : 'bg-[hsl(var(--purple)/0.5)]'
+                }`}
+                title={summaryData.summary}
+              />
+            ) : (
+              <span
+                className={`px-1.5 py-0.5 text-[9px] font-medium rounded truncate max-w-[200px] ${
+                  summaryData.status === 'needs_input' ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
+                  : summaryData.status === 'error' ? 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
+                  : summaryData.status === 'done' ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
+                  : 'bg-[hsl(var(--text-muted)/0.08)] text-[hsl(var(--text-muted))]'
+                }`}
+                title={summaryData.summary}
+              >
+                {summaryData.summary}
+              </span>
+            )
           )}
         </div>
 

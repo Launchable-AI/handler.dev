@@ -28,6 +28,7 @@ export function Settings() {
   const [sshKeysDisplayPath, setSshKeysDisplayPath] = useState('');
   const [tmuxEnabled, setTmuxEnabled] = useState(true);
   const [tmuxStatusBar, setTmuxStatusBar] = useState(false);
+  const [terminalSummaryEnabled, setTerminalSummaryEnabled] = useState(true);
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
 
   // SSH Key management state
@@ -88,6 +89,7 @@ export function Settings() {
       setSshKeysDisplayPath(config.sshKeysDisplayPath || '');
       setTmuxEnabled(config.tmuxEnabled !== false);
       setTmuxStatusBar(config.tmuxStatusBar === true);
+      setTerminalSummaryEnabled(config.terminalSummaryEnabled !== false);
     }
   }, [config]);
 
@@ -435,6 +437,37 @@ export function Settings() {
                       </span>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Terminal Activity Summary */}
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                  Terminal Activity Summary
+                </label>
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
+                  AI-powered status classification for canvas terminals. Shows what each session is doing and highlights when your attention is needed. Requires OPENROUTER_API_KEY in .env.local.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const newVal = !terminalSummaryEnabled;
+                      setTerminalSummaryEnabled(newVal);
+                      updateMutation.mutate({ terminalSummaryEnabled: newVal });
+                    }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                      terminalSummaryEnabled ? 'bg-[hsl(var(--cyan))]' : 'bg-[hsl(var(--text-muted)/0.3)]'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                        terminalSummaryEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                  <span className="text-xs text-[hsl(var(--text-secondary))]">
+                    {terminalSummaryEnabled ? 'Enabled' : 'Disabled'} — {terminalSummaryEnabled ? 'terminal sessions are classified and summarized via AI' : 'no AI status updates on canvas'}
+                  </span>
                 </div>
               </div>
 

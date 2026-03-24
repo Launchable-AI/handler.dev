@@ -164,25 +164,40 @@ interface MinimizedNodeItemProps {
 function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: MinimizedNodeItemProps) {
   const needsInput = node.claudeStatus === 'waiting';
   const { data: summaryData } = useTerminalSummary(node.sandboxId, node.status === 'ready');
+  const termStatus = summaryData?.status;
+  const isUrgent = termStatus === 'needs_input' || needsInput;
+  const isError = termStatus === 'error';
 
   return (
     <div
       onClick={() => onRestore(node.id)}
-      className={`group hover:bg-[hsl(var(--bg-elevated))] transition-colors cursor-pointer border-b border-[hsl(var(--border)/0.5)] ${
+      className={`group relative transition-colors cursor-pointer border-b ${
         collapsed ? 'px-2 py-2 flex items-center justify-center' : ''
-      } ${needsInput ? 'bg-[hsl(var(--amber)/0.05)]' : ''}`}
+      } ${
+        isUrgent
+          ? 'bg-[hsl(var(--amber)/0.08)] border-[hsl(var(--amber)/0.4)] hover:bg-[hsl(var(--amber)/0.12)]'
+          : isError
+          ? 'bg-[hsl(var(--red)/0.05)] border-[hsl(var(--red)/0.3)] hover:bg-[hsl(var(--red)/0.08)]'
+          : 'border-[hsl(var(--border)/0.5)] hover:bg-[hsl(var(--bg-elevated))]'
+      }`}
       title={collapsed ? `${node.label || node.sandboxName || node.sandboxId.slice(0, 12)} - Click to restore` : 'Click to restore'}
     >
+      {/* Urgent left accent bar */}
+      {isUrgent && !collapsed && (
+        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[hsl(var(--amber))] rounded-r" />
+      )}
+      {isError && !isUrgent && !collapsed && (
+        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[hsl(var(--red))] rounded-r" />
+      )}
+
       {collapsed && (
         <>
-          {/* Status dot */}
-          <div className={`w-2 h-2 rounded-full shrink-0 ${statusColors[node.status]}`} />
-          {/* Collapsed: show alert indicator */}
-          {needsInput && (
-            <div className="absolute right-1 top-1/2 -translate-y-1/2">
-              <span className="w-2 h-2 rounded-full bg-[hsl(var(--amber))] animate-pulse block" />
-            </div>
-          )}
+          {/* Status dot — use summary status color when available */}
+          <div className={`w-2 h-2 rounded-full shrink-0 ${
+            isUrgent ? 'bg-[hsl(var(--amber))] animate-pulse'
+            : isError ? 'bg-[hsl(var(--red))]'
+            : statusColors[node.status]
+          }`} />
         </>
       )}
 
@@ -223,12 +238,19 @@ function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: Minimi
             </div>
           </div>
 
-          {/* AI terminal activity summary */}
-          {summaryData?.summary && summaryData.summary !== 'idle' && (
-            <div className="px-3 pb-1">
-              <span className="text-[9px] italic text-[hsl(var(--text-muted))] truncate block">
+          {/* AI terminal activity summary badge */}
+          {termStatus && termStatus !== 'idle' && summaryData?.summary && (
+            <div className="px-3 pb-1.5">
+              <div
+                className={`px-2 py-1 text-[10px] font-medium rounded truncate ${
+                  termStatus === 'needs_input' ? 'bg-[hsl(var(--amber)/0.15)] text-[hsl(var(--amber))]'
+                  : termStatus === 'error' ? 'bg-[hsl(var(--red)/0.15)] text-[hsl(var(--red))]'
+                  : termStatus === 'done' ? 'bg-[hsl(var(--green)/0.15)] text-[hsl(var(--green))]'
+                  : 'bg-[hsl(var(--text-muted)/0.08)] text-[hsl(var(--text-muted))]'
+                }`}
+              >
                 {summaryData.summary}
-              </span>
+              </div>
             </div>
           )}
 

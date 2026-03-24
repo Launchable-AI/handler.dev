@@ -128,6 +128,7 @@ export interface AppConfig {
   tmuxEnabled?: boolean; // Enable/disable tmux for terminal sessions (default: true)
   tmuxStatusBar?: boolean; // Show/hide tmux status bar at bottom of terminal (default: false)
   defaultFirecrackerImage?: string; // Override default base image for Firecracker/CH VMs (falls back to hardcoded default)
+  terminalSummaryEnabled?: boolean; // Enable/disable AI terminal activity summaries (default: true)
 }
 
 const DEFAULT_CONFIG: AppConfig = {

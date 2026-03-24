@@ -489,6 +489,7 @@ export interface AppConfig {
   shellPromptTheme?: ShellPromptTheme;
   tmuxEnabled?: boolean; // Enable/disable tmux for terminal sessions (default: true)
   tmuxStatusBar?: boolean; // Show/hide tmux status bar at bottom of terminal (default: false)
+  terminalSummaryEnabled?: boolean; // Enable/disable AI terminal activity summaries (default: true)
 }
 
 export interface DataDirScanResult {
@@ -3928,7 +3929,10 @@ export async function listTmuxSessions(id: string): Promise<TmuxSessionInfo[]> {
 
 // ============ Terminal Summary (AI-powered) ============
 
+export type TerminalStatus = 'needs_input' | 'error' | 'working' | 'done' | 'idle';
+
 export interface TerminalSummaryResult {
+  status: TerminalStatus | null;
   summary: string | null;
   updatedAt?: number;
 }

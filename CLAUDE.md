@@ -281,22 +281,29 @@ Key files:
 
 ### Terminal Activity Summary (AI-powered)
 
-Short AI-generated descriptions of what's happening in each terminal session (e.g., "installing node dependencies", "debugging api endpoint"). Uses Claude Haiku via OpenRouter for cost efficiency.
+AI-classified terminal status and activity descriptions used as triage cues to help users decide what to attend to next. Each terminal is classified into a **status** that drives visual treatment:
+
+- **`needs_input`** — agent/process waiting for user action → **orange** highlight, pulsing accent bar, prominent badge
+- **`error`** — something failed → **red** indicator, accent bar
+- **`working`** — actively running a task → muted badge with activity description
+- **`done`** — task completed, awaiting review → **green** badge
+- **`idle`** — shell prompt, nothing happening → hidden
+
+Uses Google Gemma 3n (`google/gemma-3n-e4b-it`) via OpenRouter — ~100x cheaper than Haiku ($0.02/$0.04 vs $0.80/$4.00 per M tokens). The AI returns `STATUS|description` (e.g., `needs_input|claude asking about test strategy`). Togglable via `terminalSummaryEnabled` in config (Settings > General).
 
 - **Capture**: `tmux capture-pane` grabs the last 40 lines from the most recently accessed tmux session for a sandbox. Falls back to listing sessions via `execInSandbox` if no persisted session is found.
-- **Summarization**: Last 3000 chars of terminal output sent to `anthropic/claude-haiku-4.5` via OpenRouter with a system prompt that produces 3-6 word activity phrases.
 - **Caching**: 20s server-side in-memory cache per sandbox.
 - **Polling**: 20s frontend interval via React Query `useTerminalSummary()` hook, enabled only for running/connected sandboxes.
-- **Display**: Shown as subtle italic text in the SandboxNode toolbar (spacer area between label and status indicators) and in the MinimizedNodesSidebar below the node header. "idle" summaries are hidden.
+- **Display**: Colored badge in SandboxNode toolbar. In MinimizedNodesSidebar: colored badge + orange/red left accent bar + background tint for urgent items. Collapsed sidebar shows colored status dot.
 - **Requires**: `OPENROUTER_API_KEY` in `.env.local` (same key used by the Dockerfile assistant and MCP search features).
 
 Key files:
-- `packages/server/src/services/terminal-summary.ts` — Capture, summarize, and cache service
-- `packages/server/src/routes/sandboxes.ts` — `GET /api/sandboxes/:id/terminal-summary` endpoint
-- `packages/web/src/api/client.ts` — `getTerminalSummary()`, `TerminalSummaryResult` type
+- `packages/server/src/services/terminal-summary.ts` — Capture, classify (status + summary), and cache service
+- `packages/server/src/routes/sandboxes.ts` — `GET /api/sandboxes/:id/terminal-summary` endpoint (returns `{ status, summary, updatedAt }`)
+- `packages/web/src/api/client.ts` — `getTerminalSummary()`, `TerminalSummaryResult`, `TerminalStatus` types
 - `packages/web/src/hooks/useSandboxes.ts` — `useTerminalSummary()` hook (20s polling)
-- `packages/web/src/components/CommandCentre/nodes/SandboxNode.tsx` — Summary in toolbar
-- `packages/web/src/components/CommandCentre/MinimizedNodesSidebar.tsx` — Summary in minimized cards
+- `packages/web/src/components/CommandCentre/nodes/SandboxNode.tsx` — Colored status badge in toolbar
+- `packages/web/src/components/CommandCentre/MinimizedNodesSidebar.tsx` — Status-driven card styling (accent bar, background tint, badge)
 
 ### Image Builder (dev-only)
 
