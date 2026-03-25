@@ -29,7 +29,7 @@ const MAX_FONT_SIZE = 24;
 const zoomSelector = (s: { transform: [number, number, number] }) => s.transform[2];
 
 function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
-  const { addNode, removeNode, updateNode, updateSize, state, minimizeNode } = useCanvas();
+  const { addNode, removeNode, updateNode, updateSize, state, minimizeNode, selectedNodeId } = useCanvas();
   const zoom = useStore(zoomSelector);
   const slimToolbar = state.slimToolbar;
   const [showForkInput, setShowForkInput] = useState(false);
@@ -421,7 +421,9 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
     <>
     {focusOverlay}
     <div
-      className={`relative flex flex-col bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] rounded-lg shadow-lg overflow-hidden w-full h-full ${dragging ? 'opacity-70' : ''}`}
+      className={`relative flex flex-col bg-[hsl(var(--bg-surface))] border rounded-lg shadow-lg overflow-hidden w-full h-full ${dragging ? 'opacity-70' : ''} ${
+        selectedNodeId === data.id ? 'border-[hsl(var(--cyan))] ring-1 ring-[hsl(var(--cyan)/0.4)]' : 'border-[hsl(var(--border))]'
+      }`}
       style={{ willChange: 'transform' }}
     >
       <NodeResizer

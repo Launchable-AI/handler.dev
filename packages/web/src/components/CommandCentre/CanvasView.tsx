@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactFlow, {
   Background,
   Controls,
   MiniMap,
   useReactFlow,
+  useViewport,
   applyNodeChanges,
   type OnNodesChange,
   type NodeDragHandler,
@@ -19,9 +21,11 @@ import { SandboxNode } from './nodes/SandboxNode';
 import { WorktreeEdge } from './nodes/WorktreeEdge';
 import { GitLogPanel } from './GitLogPanel';
 import { MinimizedNodesSidebar, type MinimizedNodeInfo } from './MinimizedNodesSidebar';
-import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween, LayoutGrid, Columns3, Rows3, LayoutPanelLeft, Terminal, Loader2 } from 'lucide-react';
+import { Plus, GitBranch, PanelLeftClose, PanelLeftOpen, Crosshair, Trash2, AlignVerticalSpaceAround, AlignVerticalSpaceBetween, LayoutGrid, Columns3, Rows3, LayoutPanelLeft, Terminal, Loader2, Keyboard } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
 import { listTmuxSessions, type TmuxSessionInfo } from '../../api/client';
+import { useCanvasShortcuts } from '../../hooks/useCanvasShortcuts';
+import { ShortcutsHelpOverlay } from './ShortcutsHelpOverlay';
 
 const nodeTypes = {
   sandbox: SandboxNode,
@@ -37,10 +41,11 @@ interface CanvasViewProps {
 
 // Inner component that has access to useReactFlow
 function CanvasViewInner({ className = '' }: CanvasViewProps) {
-  const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar, restoreNode, setFocusedLayout, setFocusedNodeId } = useCanvas();
+  const { state, nodes, edges, addNode, removeNode, updatePosition, updateSize, activeWorkspace, toggleSlimToolbar, restoreNode, setFocusedLayout, setFocusedNodeId, setSelectedNodeId } = useCanvas();
   const { data: sandboxData } = useSandboxes();
   const { state: ccState } = useCommandCentre();
   const { setCenter, fitView } = useReactFlow();
+  const viewport = useViewport();
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
@@ -420,6 +425,35 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     }
   }, [state.focusedLayout, effectiveFocusedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Canvas keyboard shortcuts — only pan camera if node is outside the viewport
+  const focusCameraOnNode = useCallback((node: WorktreeNode) => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const w = node.size?.width || 650;
+    const h = node.size?.height || 350;
+    // Convert node position to screen coords
+    const screenX = node.position.x * viewport.zoom + viewport.x;
+    const screenY = node.position.y * viewport.zoom + viewport.y;
+    const screenW = w * viewport.zoom;
+    const screenH = h * viewport.zoom;
+    // Check if node is fully within the viewport (with some margin)
+    const margin = 20;
+    const fullyVisible =
+      screenX >= margin &&
+      screenY >= margin &&
+      screenX + screenW <= rect.width - margin &&
+      screenY + screenH <= rect.height - margin;
+    if (!fullyVisible) {
+      setCenter(node.position.x + w / 2, node.position.y + h / 2, { zoom: viewport.zoom, duration: 200 });
+    }
+  }, [setCenter, viewport]);
+
+  const { showHelp, setShowHelp } = useCanvasShortcuts({
+    arrangeNodes,
+    focusCamera: focusCameraOnNode,
+  });
+
   const statusDotColor: Record<WorktreeNode['status'], string> = {
     creating: 'bg-[hsl(var(--amber))]',
     ready: 'bg-[hsl(var(--green))]',
@@ -531,6 +565,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
           defaultEdgeOptions={{ type: 'worktree' }}
           proOptions={{ hideAttribution: true }}
           selectNodesOnDrag={false}
+          onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
           <Controls
@@ -545,158 +580,150 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
           )}
         </ReactFlow>
 
-        {/* Canvas controls */}
-        <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
-          {/* Slim toolbar toggle */}
-          <button
-            onClick={toggleSlimToolbar}
-            className={`p-1.5 bg-[hsl(var(--bg-surface))] border rounded shadow-lg transition-colors ${
-              state.slimToolbar
-                ? 'border-[hsl(var(--cyan)/0.5)] text-[hsl(var(--cyan))]'
-                : 'border-[hsl(var(--border))] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]'
-            }`}
-            title={state.slimToolbar ? 'Switch to normal toolbar' : 'Switch to slim toolbar'}
-          >
-            {state.slimToolbar ? (
-              <AlignVerticalSpaceBetween className="h-3.5 w-3.5" />
-            ) : (
-              <AlignVerticalSpaceAround className="h-3.5 w-3.5" />
-            )}
-          </button>
-
-          {/* Layout arrange buttons */}
-          {visibleWorktreeNodes.filter(n => !state.minimizedNodeIds.includes(n.id)).length >= 1 && (
-            <div className="flex items-center bg-[hsl(var(--bg-elevated))] border border-[hsl(var(--border))] rounded shadow-lg overflow-hidden">
-              <button
-                onClick={() => arrangeNodes('grid')}
-                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] transition-colors"
-                title="Arrange as grid"
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => arrangeNodes('vertical')}
-                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] transition-colors border-l border-[hsl(var(--border))]"
-                title="Arrange as column"
-              >
-                <Rows3 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => arrangeNodes('horizontal')}
-                className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] transition-colors border-l border-[hsl(var(--border))]"
-                title="Arrange as row"
-              >
-                <Columns3 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => setFocusedLayout(!state.focusedLayout)}
-                className={`p-1.5 transition-colors border-l border-[hsl(var(--border))] ${
-                  state.focusedLayout
-                    ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]'
-                    : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))]'
-                }`}
-                title="Focused window"
-              >
-                <LayoutPanelLeft className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-
-          {/* Add sandbox to canvas button */}
-          <div className="relative">
-            <button
-              onClick={() => setShowAddMenu(!showAddMenu)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] bg-[hsl(var(--bg-surface))] border border-[hsl(var(--cyan)/0.3)] rounded shadow-lg transition-colors"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add to Canvas
-            </button>
-
-            {showAddMenu && (
+        {/* Canvas controls — portaled into toolbar slots */}
+        {(() => {
+          const centerSlot = document.getElementById('canvas-toolbar-slot');
+          const rightSlot = document.getElementById('canvas-toolbar-right-slot');
+          return (<>
+            {/* Center slot: slim toolbar toggle + layout buttons */}
+            {centerSlot && createPortal(
               <>
-                <div className="fixed inset-0 z-40" onClick={() => { setShowAddMenu(false); setExpandedSandboxId(null); setTmuxSessions([]); }} />
-                <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg rounded max-h-[300px] overflow-y-auto">
-                  {availableSandboxes.length === 0 ? (
-                    <div className="px-4 py-3 text-xs text-[hsl(var(--text-muted))]">
-                      {!sandboxes
-                        ? 'Loading sandboxes...'
-                        : sandboxes.length === 0
-                        ? 'No sandboxes found.'
-                        : runningSandboxes.length === 0
-                        ? `${sandboxes.length} sandbox(es) found but none running.`
-                        : `${runningSandboxes.length} running but all already on canvas.`}
-                    </div>
-                  ) : (
-                    <>
-                    {sandboxesNotOnCanvas.length > 1 && (
-                      <button
-                        onClick={handleAddAll}
-                        disabled={addingAll}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.08)] transition-colors border-b border-[hsl(var(--border)/0.5)] font-medium disabled:opacity-50"
-                      >
-                        {addingAll ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Plus className="h-3.5 w-3.5" />
-                        )}
-                        Add all ({sandboxesNotOnCanvas.length})
-                      </button>
-                    )}
-                    {availableSandboxes.map(sandbox => (
-                      <div key={sandbox.id}>
-                        <button
-                          onClick={() => handleSandboxClick(sandbox)}
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[hsl(var(--bg-elevated))] transition-colors ${
-                            expandedSandboxId === sandbox.id ? 'bg-[hsl(var(--bg-elevated))]' : ''
-                          }`}
-                        >
-                          <GitBranch className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-[hsl(var(--text-primary))] truncate">
-                              {sandbox.name}
-                            </div>
-                            <div className="text-[10px] text-[hsl(var(--text-muted))] truncate">
-                              {sandbox.image}
-                              <span className="ml-1 opacity-60">{sandbox.backend}</span>
-                            </div>
-                          </div>
-                          {expandedSandboxId === sandbox.id && loadingSessions && (
-                            <Loader2 className="h-3 w-3 text-[hsl(var(--text-muted))] animate-spin" />
-                          )}
-                        </button>
+                {/* Slim toolbar toggle */}
+                <button
+                  onClick={toggleSlimToolbar}
+                  className={`p-1.5 rounded transition-colors ${
+                    state.slimToolbar
+                      ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]'
+                      : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))]'
+                  }`}
+                  title={state.slimToolbar ? 'Normal toolbar' : 'Slim toolbar'}
+                >
+                  {state.slimToolbar ? <AlignVerticalSpaceBetween className="h-3.5 w-3.5" /> : <AlignVerticalSpaceAround className="h-3.5 w-3.5" />}
+                </button>
 
-                        {/* Session picker — shown when this sandbox is expanded */}
-                        {expandedSandboxId === sandbox.id && !loadingSessions && tmuxSessions.length > 0 && (
-                          <div className="border-t border-[hsl(var(--border)/0.5)] bg-[hsl(var(--bg-elevated)/0.5)]">
-                            <button
-                              onClick={() => addSandboxToCanvas(sandbox)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 pl-8 text-xs text-left hover:bg-[hsl(var(--bg-overlay))] transition-colors text-[hsl(var(--green))]"
-                            >
-                              <Plus className="h-3 w-3" />
-                              New session
-                            </button>
-                            {tmuxSessions.map(session => (
-                              <button
-                                key={session.name}
-                                onClick={() => addSandboxToCanvas(sandbox, session.name)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 pl-8 text-xs text-left hover:bg-[hsl(var(--bg-overlay))] transition-colors text-[hsl(var(--text-secondary))]"
-                              >
-                                <Terminal className="h-3 w-3 text-[hsl(var(--cyan))]" />
-                                <span className="truncate">{session.name}</span>
-                                <span className="text-[10px] text-[hsl(var(--text-muted))] ml-auto">{session.windows}w</span>
-                              </button>
-                            ))}
+                {/* Separator */}
+                <div className="w-px h-5 bg-[hsl(var(--border))]" />
+
+                {/* Layout arrange buttons */}
+                <div className="flex items-center gap-0.5 bg-[hsl(var(--bg-elevated))] p-0.5 rounded">
+                  <button onClick={() => arrangeNodes('grid')} className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors" title="Grid (Alt+1)">
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => arrangeNodes('vertical')} className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors" title="Column (Alt+2)">
+                    <Rows3 className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => arrangeNodes('horizontal')} className="p-1 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))] rounded transition-colors" title="Row (Alt+3)">
+                    <Columns3 className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setFocusedLayout(!state.focusedLayout)}
+                    className={`p-1 rounded transition-colors ${
+                      state.focusedLayout ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]' : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))]'
+                    }`}
+                    title="Focused (Alt+4)"
+                  >
+                    <LayoutPanelLeft className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </>,
+              centerSlot
+            )}
+
+            {/* Right slot: shortcuts icon + Add to Canvas */}
+            {rightSlot && createPortal(
+              <>
+                {/* Keyboard shortcuts icon */}
+                <button
+                  onClick={() => setShowHelp(true)}
+                  className="p-1.5 text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-elevated))] rounded transition-colors"
+                  title="Keyboard shortcuts (?)"
+                >
+                  <Keyboard className="h-3.5 w-3.5" />
+                </button>
+
+                {/* Add to Canvas button */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowAddMenu(!showAddMenu)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.1)] border border-[hsl(var(--cyan)/0.3)] rounded transition-colors"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add to Canvas
+                  </button>
+
+                  {showAddMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => { setShowAddMenu(false); setExpandedSandboxId(null); setTmuxSessions([]); }} />
+                      <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-[hsl(var(--bg-surface))] border border-[hsl(var(--border))] shadow-lg rounded max-h-[300px] overflow-y-auto">
+                        {availableSandboxes.length === 0 ? (
+                          <div className="px-4 py-3 text-xs text-[hsl(var(--text-muted))]">
+                            {!sandboxes
+                              ? 'Loading sandboxes...'
+                              : sandboxes.length === 0
+                              ? 'No sandboxes found.'
+                              : runningSandboxes.length === 0
+                              ? `${sandboxes.length} sandbox(es) found but none running.`
+                              : `${runningSandboxes.length} running but all already on canvas.`}
                           </div>
+                        ) : (
+                          <>
+                          {sandboxesNotOnCanvas.length > 1 && (
+                            <button
+                              onClick={handleAddAll}
+                              disabled={addingAll}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.08)] transition-colors border-b border-[hsl(var(--border)/0.5)] font-medium disabled:opacity-50"
+                            >
+                              {addingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                              Add all ({sandboxesNotOnCanvas.length})
+                            </button>
+                          )}
+                          {availableSandboxes.map(sandbox => (
+                            <div key={sandbox.id}>
+                              <button
+                                onClick={() => handleSandboxClick(sandbox)}
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-[hsl(var(--bg-elevated))] transition-colors ${
+                                  expandedSandboxId === sandbox.id ? 'bg-[hsl(var(--bg-elevated))]' : ''
+                                }`}
+                              >
+                                <GitBranch className="h-3.5 w-3.5 text-[hsl(var(--cyan))]" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-[hsl(var(--text-primary))] truncate">{sandbox.name}</div>
+                                  <div className="text-[10px] text-[hsl(var(--text-muted))] truncate">
+                                    {sandbox.image}
+                                    <span className="ml-1 opacity-60">{sandbox.backend}</span>
+                                  </div>
+                                </div>
+                                {expandedSandboxId === sandbox.id && loadingSessions && (
+                                  <Loader2 className="h-3 w-3 text-[hsl(var(--text-muted))] animate-spin" />
+                                )}
+                              </button>
+                              {expandedSandboxId === sandbox.id && !loadingSessions && tmuxSessions.length > 0 && (
+                                <div className="border-t border-[hsl(var(--border)/0.5)] bg-[hsl(var(--bg-elevated)/0.5)]">
+                                  <button onClick={() => addSandboxToCanvas(sandbox)} className="w-full flex items-center gap-2 px-3 py-1.5 pl-8 text-xs text-left hover:bg-[hsl(var(--bg-overlay))] transition-colors text-[hsl(var(--green))]">
+                                    <Plus className="h-3 w-3" /> New session
+                                  </button>
+                                  {tmuxSessions.map(session => (
+                                    <button key={session.name} onClick={() => addSandboxToCanvas(sandbox, session.name)} className="w-full flex items-center gap-2 px-3 py-1.5 pl-8 text-xs text-left hover:bg-[hsl(var(--bg-overlay))] transition-colors text-[hsl(var(--text-secondary))]">
+                                      <Terminal className="h-3 w-3 text-[hsl(var(--cyan))]" />
+                                      <span className="truncate">{session.name}</span>
+                                      <span className="text-[10px] text-[hsl(var(--text-muted))] ml-auto">{session.windows}w</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          </>
                         )}
                       </div>
-                    ))}
                     </>
                   )}
                 </div>
-              </>
+              </>,
+              rightSlot
             )}
-          </div>
-        </div>
+          </>);
+        })()}
 
         {/* Git history panel */}
         {activeGitPanel && (
@@ -728,6 +755,9 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
         nodes={minimizedNodesInfo}
         onRestore={state.focusedLayout ? setFocusedNodeId : restoreNode}
       />
+
+      {/* Keyboard shortcuts help overlay */}
+      {showHelp && <ShortcutsHelpOverlay onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

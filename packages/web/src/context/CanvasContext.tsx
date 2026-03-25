@@ -10,6 +10,7 @@ interface CanvasState {
   minimizedNodeIds: string[];
   focusedLayout: boolean;
   focusedNodeId: string | null;
+  selectedNodeId: string | null; // Keyboard navigation target (transient, not persisted)
 }
 
 interface CanvasContextValue {
@@ -35,6 +36,8 @@ interface CanvasContextValue {
   isNodeMinimized: (id: string) => boolean;
   setFocusedLayout: (active: boolean) => void;
   setFocusedNodeId: (id: string | null) => void;
+  selectedNodeId: string | null;
+  setSelectedNodeId: (id: string | null) => void;
 }
 
 const DEFAULT_WORKSPACE_ID = 'default';
@@ -54,7 +57,8 @@ type Action =
   | { type: 'MINIMIZE_NODE'; payload: string }
   | { type: 'RESTORE_NODE'; payload: string }
   | { type: 'SET_FOCUSED_LAYOUT'; payload: boolean }
-  | { type: 'SET_FOCUSED_NODE'; payload: string | null };
+  | { type: 'SET_FOCUSED_NODE'; payload: string | null }
+  | { type: 'SET_SELECTED_NODE'; payload: string | null };
 
 const STORAGE_KEY = 'handler-canvas-nodes';
 const WORKSPACES_KEY = 'handler-canvas-workspaces';
@@ -255,6 +259,9 @@ function canvasReducer(state: CanvasState, action: Action): CanvasState {
     case 'SET_FOCUSED_NODE':
       newState = { ...state, focusedNodeId: action.payload };
       break;
+    case 'SET_SELECTED_NODE':
+      newState = { ...state, selectedNodeId: action.payload };
+      break;
     default:
       return state;
   }
@@ -300,6 +307,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     minimizedNodeIds: [],
     focusedLayout: false,
     focusedNodeId: null,
+    selectedNodeId: null,
   });
 
   // Load persisted state on mount
@@ -390,6 +398,10 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_FOCUSED_NODE', payload: id });
   }, []);
 
+  const setSelectedNodeId = useCallback((id: string | null) => {
+    dispatch({ type: 'SET_SELECTED_NODE', payload: id });
+  }, []);
+
   const nodes = buildReactFlowNodes(state.worktreeNodes, visibleIds, minimizedIds);
   const edges = buildReactFlowEdges(state.worktreeNodes, visibleIds);
 
@@ -413,6 +425,8 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     isNodeMinimized,
     setFocusedLayout,
     setFocusedNodeId,
+    selectedNodeId: state.selectedNodeId,
+    setSelectedNodeId,
   };
 
   return (

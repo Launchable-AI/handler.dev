@@ -200,6 +200,12 @@ export function ToolBar({ className = '' }: ToolBarProps) {
           <>
             {/* Canvas-specific: Workspace switcher */}
             <WorkspaceSwitcher />
+
+            {/* Separator */}
+            <div className="w-px h-5 bg-[hsl(var(--border))]" />
+
+            {/* Slot for canvas controls (portaled from CanvasViewInner) */}
+            <div id="canvas-toolbar-slot" className="flex items-center gap-2" />
           </>
         )}
 
@@ -224,8 +230,10 @@ export function ToolBar({ className = '' }: ToolBarProps) {
         </button>
       </div>
 
-      {/* Right: Quick actions (grid view only) */}
-      {viewMode !== 'grid' ? <div /> : <div className="flex items-center gap-2">
+      {/* Right: Quick actions */}
+      {viewMode === 'canvas' ? (
+        <div id="canvas-toolbar-right-slot" className="flex items-center gap-2" />
+      ) : (<div className="flex items-center gap-2">
         {/* Open All Running button */}
         <button
           onClick={handleOpenAllRunning}
@@ -256,7 +264,7 @@ export function ToolBar({ className = '' }: ToolBarProps) {
             <SessionPicker onClose={() => setShowPicker(false)} />
           )}
         </div>
-      </div>}
+      </div>)}
       </div>
 
       {/* Collapsible Resource Overview (hidden in fullscreen) */}

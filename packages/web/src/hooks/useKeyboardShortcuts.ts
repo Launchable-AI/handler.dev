@@ -16,12 +16,17 @@ export function useKeyboardShortcuts(handlers: Record<string, () => void>): void
     const onKeyDown = (e: KeyboardEvent) => {
       if (!getShortcutsEnabled()) return;
 
-      // Skip if focus is in an editable element
+      // Skip if focus is in an editable element — but allow modifier-key
+      // combos (Alt+, Ctrl+, Meta+) through since they aren't normal text input.
+      // This lets canvas shortcuts work even when xterm (which uses a hidden
+      // textarea) has focus.
       const target = e.target as HTMLElement;
+      const hasModifier = e.altKey || e.ctrlKey || e.metaKey;
       if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
+        !hasModifier &&
+        (target.tagName === 'INPUT' ||
+         target.tagName === 'TEXTAREA' ||
+         target.isContentEditable)
       ) {
         return;
       }

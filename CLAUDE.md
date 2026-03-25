@@ -242,17 +242,26 @@ Key files:
 
 ### Keyboard Shortcuts
 
-A configurable keyboard shortcut system for terminal tab cycling and future actions:
-- `packages/web/src/lib/keyboard-shortcuts.ts` — Shortcut definitions, localStorage storage, combo matching/formatting
-- `packages/web/src/hooks/useKeyboardShortcuts.ts` — Global `window` keydown listener (capture phase) that intercepts before xterm/browser
+A configurable keyboard shortcut system for terminal tabs and canvas navigation. All shortcuts use a modifier key (default: Alt) to avoid conflicts with terminal input. Press `?` (when terminal unfocused) to show the help overlay.
+
+- `packages/web/src/lib/keyboard-shortcuts.ts` — Shortcut definitions (`'terminal'` and `'canvas'` categories), localStorage storage, combo matching/formatting
+- `packages/web/src/hooks/useKeyboardShortcuts.ts` — Global `window` keydown listener (capture phase). Allows modifier-key events through even in textareas (so shortcuts work when xterm has focus).
+- `packages/web/src/hooks/useCanvasShortcuts.ts` — Canvas shortcut handler hook with spatial navigation (nearest node in 90-degree cone), list-order navigation, layout cycling, and help overlay toggle
+- `packages/web/src/components/CommandCentre/ShortcutsHelpOverlay.tsx` — `?` help overlay showing all shortcuts grouped by category
 - `packages/web/src/components/settings/KeyboardShortcutsSettings.tsx` — Settings panel for enable/disable toggle, remapping (click to record), and reset
-- Settings > Keyboard tab in `packages/web/src/components/Settings.tsx`
 
-Default shortcuts:
-- `Ctrl+]` — Next terminal tab
-- `Ctrl+[` — Previous terminal tab
+Default canvas shortcuts (all Alt+key, remappable in Settings > Keyboard):
+- `Alt+Arrow` — Navigate between canvas nodes (spatial: up/down/left/right)
+- `Alt+Enter` — Focus/maximize selected node (toggle focused layout)
+- `Alt+M` — Minimize node to sidebar
+- `Alt+W` — Close/remove node
+- `Alt+1/2/3/4` — Grid / Vertical / Horizontal / Focused layout
+- `Alt+]/[` — Swap to next/previous node (works in focused mode)
+- `?` — Show shortcuts help overlay
 
-User overrides stored in localStorage (`handler:shortcuts-enabled`, `handler:shortcuts`). The xterm `attachCustomKeyEventHandler` prevents the terminal from consuming shortcut keys. Add new shortcuts by appending to `SHORTCUT_DEFINITIONS` in `keyboard-shortcuts.ts`.
+Canvas navigation uses `selectedNodeId` (transient state in `CanvasContext`, not persisted) to track the keyboard cursor. Selected nodes get a cyan ring highlight. In focused mode, navigation shortcuts swap the focused node.
+
+The xterm `attachCustomKeyEventHandler` in `TerminalInstance.tsx` iterates `SHORTCUT_DEFINITIONS` and returns `false` for matches, letting registered shortcuts pass through xterm to the window listener. Users can remap to vim keys (Alt+H/J/K/L) in Settings.
 
 ### Agent Detection
 

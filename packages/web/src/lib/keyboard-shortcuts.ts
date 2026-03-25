@@ -14,13 +14,38 @@ export interface KeyCombo {
 export interface ShortcutDefinition {
   id: string;           // e.g. 'terminal.nextTab'
   label: string;        // e.g. 'Next terminal tab'
-  category: 'terminal' | 'navigation' | 'general';
+  category: 'terminal' | 'navigation' | 'general' | 'canvas';
   defaultCombo: KeyCombo;
 }
 
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
+  // Terminal
   { id: 'terminal.nextTab', label: 'Next terminal tab', category: 'terminal', defaultCombo: { key: ']', ctrl: true } },
   { id: 'terminal.prevTab', label: 'Previous terminal tab', category: 'terminal', defaultCombo: { key: '[', ctrl: true } },
+
+  // Canvas — navigation (Alt+Arrow defaults, vim users can remap to Alt+h/j/k/l in Settings)
+  { id: 'canvas.nextNode', label: 'Next node', category: 'canvas', defaultCombo: { key: 'ArrowRight', alt: true } },
+  { id: 'canvas.prevNode', label: 'Previous node', category: 'canvas', defaultCombo: { key: 'ArrowLeft', alt: true } },
+  { id: 'canvas.nodeAbove', label: 'Node above', category: 'canvas', defaultCombo: { key: 'ArrowUp', alt: true } },
+  { id: 'canvas.nodeBelow', label: 'Node below', category: 'canvas', defaultCombo: { key: 'ArrowDown', alt: true } },
+
+  // Canvas — actions
+  { id: 'canvas.focusNode', label: 'Focus / maximize node', category: 'canvas', defaultCombo: { key: 'Enter', alt: true } },
+  { id: 'canvas.minimizeNode', label: 'Minimize node', category: 'canvas', defaultCombo: { key: 'm', alt: true } },
+  { id: 'canvas.closeNode', label: 'Close / remove node', category: 'canvas', defaultCombo: { key: 'w', alt: true } },
+
+  // Canvas — layouts
+  { id: 'canvas.layoutGrid', label: 'Grid layout', category: 'canvas', defaultCombo: { key: '1', alt: true } },
+  { id: 'canvas.layoutVertical', label: 'Vertical layout', category: 'canvas', defaultCombo: { key: '2', alt: true } },
+  { id: 'canvas.layoutHorizontal', label: 'Horizontal layout', category: 'canvas', defaultCombo: { key: '3', alt: true } },
+  { id: 'canvas.layoutFocused', label: 'Focused layout', category: 'canvas', defaultCombo: { key: '4', alt: true } },
+
+  // Canvas — focused mode
+  { id: 'canvas.swapNext', label: 'Swap to next node', category: 'canvas', defaultCombo: { key: ']', alt: true } },
+  { id: 'canvas.swapPrev', label: 'Swap to previous node', category: 'canvas', defaultCombo: { key: '[', alt: true } },
+
+  // Canvas — help
+  { id: 'canvas.showHelp', label: 'Show keyboard shortcuts', category: 'canvas', defaultCombo: { key: '?' } },
 ];
 
 const STORAGE_ENABLED_KEY = 'handler:shortcuts-enabled';

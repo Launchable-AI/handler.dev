@@ -6,6 +6,7 @@ import { Loader2, Copy, Check, RefreshCw, ExternalLink, X } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import type { ShellPromptTheme } from '../../lib/prompt-themes';
 import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../../lib/terminal-themes';
+import { SHORTCUT_DEFINITIONS, getCombo, matchesCombo } from '../../lib/keyboard-shortcuts';
 import { useTheme } from '../../hooks/useTheme';
 import { getWsUrl as getWsUrlBase } from '@/api/client';
 
@@ -192,6 +193,11 @@ export function TerminalInstance({
         // Let browser handle copy (Ctrl+C / Cmd+C) when there's a selection
         if (mod && event.key === 'c' && term.hasSelection()) {
           return false;
+        }
+        // Let registered global shortcuts pass through xterm to the window listener
+        for (const def of SHORTCUT_DEFINITIONS) {
+          const combo = getCombo(def.id);
+          if (matchesCombo(event, combo)) return false;
         }
       }
       return true;
