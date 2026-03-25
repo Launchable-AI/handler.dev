@@ -856,30 +856,40 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
         </div>
       )}
 
-      {/* AI terminal activity summary — own row below toolbar */}
-      {summaryData?.status && summaryData.status !== 'idle' && summaryData.summary && (
-        <div className={`shrink-0 flex items-center gap-1.5 border-b select-none ${
-          summaryData.status === 'needs_input' ? 'bg-[hsl(var(--amber)/0.1)] border-[hsl(var(--amber)/0.3)]'
-          : summaryData.status === 'error' ? 'bg-[hsl(var(--red)/0.08)] border-[hsl(var(--red)/0.3)]'
-          : summaryData.status === 'done' ? 'bg-[hsl(var(--green)/0.08)] border-[hsl(var(--green)/0.3)]'
-          : 'bg-[hsl(var(--bg-surface))] border-[hsl(var(--border))]'
-        } ${slimToolbar ? 'px-1.5 py-0.5' : 'px-3 py-1'}`}>
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-            summaryData.status === 'needs_input' ? 'bg-[hsl(var(--amber))] animate-pulse'
-            : summaryData.status === 'error' ? 'bg-[hsl(var(--red))]'
-            : summaryData.status === 'done' ? 'bg-[hsl(var(--green))]'
-            : 'bg-[hsl(var(--text-muted)/0.4)]'
-          }`} />
-          <span className={`truncate font-medium ${slimToolbar ? 'text-[8px]' : 'text-[10px]'} ${
-            summaryData.status === 'needs_input' ? 'text-[hsl(var(--amber))]'
-            : summaryData.status === 'error' ? 'text-[hsl(var(--red))]'
-            : summaryData.status === 'done' ? 'text-[hsl(var(--green))]'
-            : 'text-[hsl(var(--text-muted))]'
-          }`}>
-            {summaryData.summary}
-          </span>
-        </div>
-      )}
+      {/* AI terminal activity summary — fixed-height row to prevent layout shifts.
+          Always rendered to avoid ResizeObserver → fitAddon → tmux resize jank. */}
+      {(() => {
+        const ss = summaryData?.status;
+        const hasStatus = ss && ss !== 'idle' && summaryData?.summary;
+        return (
+          <div className={`shrink-0 flex items-center gap-1.5 border-b select-none transition-colors ${
+            !hasStatus ? 'bg-[hsl(var(--bg-surface))] border-[hsl(var(--border))]'
+            : ss === 'needs_input' ? 'bg-[hsl(var(--amber)/0.1)] border-[hsl(var(--amber)/0.3)]'
+            : ss === 'error' ? 'bg-[hsl(var(--red)/0.08)] border-[hsl(var(--red)/0.3)]'
+            : ss === 'done' ? 'bg-[hsl(var(--green)/0.08)] border-[hsl(var(--green)/0.3)]'
+            : 'bg-[hsl(var(--bg-surface))] border-[hsl(var(--border))]'
+          } ${slimToolbar ? 'px-1.5 py-0.5' : 'px-3 py-1'}`}>
+            {hasStatus ? (<>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                ss === 'needs_input' ? 'bg-[hsl(var(--amber))] animate-pulse'
+                : ss === 'error' ? 'bg-[hsl(var(--red))]'
+                : ss === 'done' ? 'bg-[hsl(var(--green))]'
+                : 'bg-[hsl(var(--text-muted)/0.4)]'
+              }`} />
+              <span className={`truncate font-medium ${slimToolbar ? 'text-[8px]' : 'text-[10px]'} ${
+                ss === 'needs_input' ? 'text-[hsl(var(--amber))]'
+                : ss === 'error' ? 'text-[hsl(var(--red))]'
+                : ss === 'done' ? 'text-[hsl(var(--green))]'
+                : 'text-[hsl(var(--text-muted))]'
+              }`}>
+                {summaryData!.summary}
+              </span>
+            </>) : (
+              <span className={`${slimToolbar ? 'text-[8px]' : 'text-[10px]'} text-transparent select-none`}>&nbsp;</span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Terminal body - takes remaining space, clips overflow */}
       <div ref={termContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col" onKeyDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
