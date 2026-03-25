@@ -669,7 +669,7 @@ export function TerminalInstance({
       {/* Terminal */}
       <div
         ref={terminalRef}
-        className="flex-1 p-1"
+        className="flex-1 min-h-0 px-1 pt-1"
         style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}
       />
 
