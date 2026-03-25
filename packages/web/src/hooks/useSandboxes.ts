@@ -483,8 +483,8 @@ export function useTerminalSummary(sandboxId: string, enabled = true) {
     queryKey: ['terminal-summary', sandboxId],
     queryFn: () => api.getTerminalSummary(sandboxId),
     enabled: enabled && !!sandboxId,
-    staleTime: 20_000, // Match poll interval — cached data is always returned immediately on remount
+    staleTime: 5_000, // Match poll interval — cached data is always returned immediately on remount
     gcTime: 5 * 60_000, // Keep cache 5 min after last subscriber unmounts (survives swap)
-    refetchInterval: enabled ? 20_000 : false,
+    refetchInterval: enabled ? 5_000 : false,
   });
 }

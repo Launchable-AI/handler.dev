@@ -23,7 +23,7 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // $0.02/M input, $0.04/M output vs Haiku's $0.80/$4.00
 const SUMMARY_MODEL = 'google/gemma-3n-e4b-it';
 const CAPTURE_LINES = 40;
-const CACHE_TTL_MS = 20_000; // 20 seconds
+const CACHE_TTL_MS = 5_000; // 5 seconds
 
 export type TerminalStatus = 'needs_input' | 'error' | 'working' | 'done' | 'idle';
 
