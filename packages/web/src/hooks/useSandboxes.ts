@@ -478,6 +478,17 @@ export function useSandboxLogs(id: string, enabled: boolean = true) {
  * Fetch AI-generated terminal activity summary for a sandbox.
  * Polls every 20s when enabled.
  */
+export function useTerminalCapture(sandboxId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['terminal-capture', sandboxId],
+    queryFn: () => api.getTerminalCapture(sandboxId),
+    enabled: enabled && !!sandboxId,
+    staleTime: 3_000,
+    gcTime: 5 * 60_000,
+    refetchInterval: enabled ? 5_000 : false,
+  });
+}
+
 export function useTerminalSummary(sandboxId: string, enabled = true) {
   return useQuery({
     queryKey: ['terminal-summary', sandboxId],

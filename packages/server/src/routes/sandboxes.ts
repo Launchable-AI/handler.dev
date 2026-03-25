@@ -1782,6 +1782,35 @@ sandboxes.get('/:id/terminal-summary', async (c) => {
   }
 });
 
+// ============ Terminal Capture (ANSI snapshot for previews) ============
+
+/**
+ * GET /api/sandboxes/:id/terminal-capture
+ * Capture the current tmux pane content with ANSI escape codes.
+ * Returns { content: string } or { content: null }.
+ */
+sandboxes.get('/:id/terminal-capture', async (c) => {
+  try {
+    const id = c.req.param('id');
+    if (!validateSandboxId(id)) return c.json({ content: null }, 400);
+
+    const service = await ensureSandboxServiceInitialized();
+    const sandbox = await service.get(id);
+    if (!sandbox || sandbox.status !== 'running') return c.json({ content: null });
+
+    // Capture with ANSI escape codes (-e) for proper color rendering
+    const content = await execInSandbox(
+      sandbox,
+      `tmux capture-pane -e -p -S -50 2>/dev/null || true`,
+      { timeout: 5000 }
+    );
+
+    return c.json({ content: content || null });
+  } catch {
+    return c.json({ content: null });
+  }
+});
+
 // ============ Git Operations (backend-agnostic) ============
 
 /**

@@ -3941,6 +3941,13 @@ export async function getTerminalSummary(id: string): Promise<TerminalSummaryRes
   return fetchAPI<TerminalSummaryResult>(`/sandboxes/${encodeURIComponent(id)}/terminal-summary`);
 }
 
+// ============ Terminal Capture ============
+
+export async function getTerminalCapture(id: string): Promise<string | null> {
+  const result = await fetchAPI<{ content: string | null }>(`/sandboxes/${encodeURIComponent(id)}/terminal-capture`);
+  return result.content;
+}
+
 // ============ Image Builder (dev-mode only) ============
 
 export interface ImageBuilderDetail {

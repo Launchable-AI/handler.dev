@@ -597,31 +597,17 @@ export function closeVmSessionByWebSocket(ws: WebSocket): void {
   for (const [id, session] of sessions.entries()) {
     if (session.ws === ws) {
       if (session.tmuxSession) {
-        if (session.isPrimary !== false) {
-          // Primary session: detach cleanly, the tmux session continues in the VM
-          if (session.process.stdin?.writable) {
-            session.process.stdin.write('\x02d'); // Ctrl+B followed by 'd' to detach
-          }
-          setTimeout(() => {
-            if (!session.process.killed) {
-              session.process.kill('SIGTERM');
-            }
-          }, 100);
-          console.log(`[VM Terminal] Detached from tmux session ${session.tmuxSession} (session preserved for reconnection)`);
-        } else {
-          // Secondary session: kill the tmux session inside the VM, then clean up
-          if (session.vmIp && session.dataDir) {
-            const tmuxName = session.tmuxSession;
-            sshExec(session.vmIp, session.dataDir, `tmux kill-session -t ${tmuxName} 2>/dev/null`)
-              .then(() => console.log(`[VM Terminal] Killed secondary tmux session ${tmuxName}`))
-              .catch(() => console.log(`[VM Terminal] Secondary tmux session ${tmuxName} already gone`));
-          }
+        // Always detach cleanly — tmux session survives for reconnection on restore.
+        // Kill only happens in closeVmSession() (explicit node removal).
+        if (session.process.stdin?.writable) {
+          session.process.stdin.write('\x02d'); // Ctrl+B followed by 'd' to detach
+        }
+        setTimeout(() => {
           if (!session.process.killed) {
             session.process.kill('SIGTERM');
           }
-          deletePersistedSession(id);
-          console.log(`[VM Terminal] Closed secondary session ${id} (tmux: ${session.tmuxSession})`);
-        }
+        }, 100);
+        console.log(`[VM Terminal] Detached from tmux session ${session.tmuxSession} (preserved for reconnection)`);
       } else {
         // For non-tmux sessions: kill the process
         if (!session.process.killed) {

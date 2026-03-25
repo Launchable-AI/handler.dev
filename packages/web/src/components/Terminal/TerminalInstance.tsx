@@ -42,6 +42,8 @@ export interface TerminalInstanceProps {
   fontSize?: number;
   /** Current CSS zoom/scale factor (e.g. from ReactFlow). Corrects mouse coordinates for text selection. */
   zoomLevel?: number;
+  /** Suppress resize messages to server — used for preview terminals that shouldn't affect tmux window size */
+  suppressResize?: boolean;
 }
 
 // Session storage key prefix
@@ -57,6 +59,7 @@ export function TerminalInstance({
   className = '',
   fontSize = 13,
   zoomLevel,
+  suppressResize = false,
 }: TerminalInstanceProps) {
   const { isDark: systemIsDark } = useTheme();
   const [terminalThemeMode, setTerminalThemeMode] = useState<TerminalThemeMode>(getStoredTerminalThemeMode);
@@ -319,6 +322,7 @@ export function TerminalInstance({
     let fitRafId: number | null = null;
 
     const sendResizeIfChanged = () => {
+      if (suppressResize) return; // Preview terminals don't send resize
       if (currentWs?.readyState === WebSocket.OPEN &&
           (term.cols !== lastSentCols || term.rows !== lastSentRows)) {
         lastSentCols = term.cols;
@@ -590,8 +594,8 @@ export function TerminalInstance({
       // Refit terminal after font size change
       try {
         fitAddonRef.current.fit();
-        // Send resize to server
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
+        // Send resize to server (skip for preview terminals)
+        if (!suppressResize && wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({
             type: 'resize',
             cols: xtermRef.current.cols,
@@ -602,7 +606,7 @@ export function TerminalInstance({
         console.warn('[Terminal] Fit after font change failed:', e);
       }
     }
-  }, [fontSize]);
+  }, [fontSize, suppressResize]);
 
   // Listen for prompt theme changes from settings
   useEffect(() => {
@@ -667,12 +671,11 @@ export function TerminalInstance({
         </div>
       )}
 
-      {/* Terminal */}
-      <div
-        ref={terminalRef}
-        className="flex-1 min-h-0 px-1 pt-1"
-        style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}
-      />
+      {/* Terminal — outer div provides visual margin, inner div has zero padding
+          so FitAddon measures the exact available height for rows */}
+      <div className="flex-1 min-h-0 px-1 pt-1 flex flex-col" style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}>
+        <div ref={terminalRef} className="flex-1 min-h-0" />
+      </div>
 
       {/* Detected URLs bar — disabled for now, too buggy
       {(() => {

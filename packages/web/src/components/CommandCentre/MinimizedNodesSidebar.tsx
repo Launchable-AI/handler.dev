@@ -6,8 +6,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, GitBranch, Maximize2, AlertCircle } from 'lucide-react';
 import type { WorktreeNode } from '../../types/command-centre';
-import { TerminalInstance } from '../Terminal/TerminalInstance';
-import { useTerminalSummary } from '../../hooks/useSandboxes';
+import { TerminalSnapshot } from '../Terminal/TerminalSnapshot';
+import { useTerminalSummary, useTerminalCapture } from '../../hooks/useSandboxes';
 
 export interface MinimizedNodeInfo {
   id: string;
@@ -36,7 +36,7 @@ const statusColors: Record<WorktreeNode['status'], string> = {
 
 const STORAGE_KEY = 'handler-minimized-sidebar-width';
 const MIN_WIDTH = 120;
-const MAX_WIDTH = 500;
+const MAX_WIDTH = 1000;
 const DEFAULT_WIDTH = 224; // w-56
 const COLLAPSED_WIDTH = 40; // w-10
 
@@ -91,13 +91,13 @@ export function MinimizedNodesSidebar({ nodes, onRestore }: MinimizedNodesSideba
     window.addEventListener('mouseup', onUp);
   }, [width]);
 
+  // Terminal preview height scales with sidebar width
+  const previewHeight = Math.max(60, Math.round((width - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH) * 300 + 60));
+
   // Don't render if no minimized nodes
   if (nodes.length === 0) {
     return null;
   }
-
-  // Terminal preview height scales with sidebar width
-  const previewHeight = Math.max(40, Math.round((width - MIN_WIDTH) / (MAX_WIDTH - MIN_WIDTH) * 160 + 48));
 
   return (
     <div
@@ -164,6 +164,7 @@ interface MinimizedNodeItemProps {
 function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: MinimizedNodeItemProps) {
   const needsInput = node.claudeStatus === 'waiting';
   const { data: summaryData } = useTerminalSummary(node.sandboxId, node.status === 'ready');
+  const { data: captureContent } = useTerminalCapture(node.sandboxId, node.status === 'ready' && !collapsed);
   const termStatus = summaryData?.status;
   const isUrgent = termStatus === 'needs_input' || needsInput;
   const isError = termStatus === 'error';
@@ -254,22 +255,16 @@ function MinimizedNodeItem({ node, collapsed, onRestore, previewHeight }: Minimi
             </div>
           )}
 
-          {/* Terminal preview */}
-          {node.status === 'ready' && (
+          {/* Terminal snapshot preview — polls capture-pane every 5s, no WebSocket */}
+          {node.status === 'ready' && captureContent && (
             <div
-              className="mx-1.5 mb-1.5 rounded overflow-hidden bg-[hsl(var(--bg-base))] pointer-events-none"
+              className="mx-1.5 mb-1.5 rounded overflow-hidden pointer-events-none"
               style={{ height: previewHeight }}
             >
-              <TerminalInstance
-                target={{
-                  type: node.backendType && node.backendType !== 'docker' ? 'vm' : 'container',
-                  id: node.sandboxId,
-                  sessionKey: `minimized-${node.id}`,
-                  ...(node.ip ? { ip: node.ip } : {}),
-                }}
-                showStatusBar={false}
-                fontSize={6}
-                className="h-full [&_.xterm-viewport]:!overflow-hidden"
+              <TerminalSnapshot
+                content={captureContent}
+                fontSize={Math.max(5, Math.min(9, Math.round(previewHeight / 25)))}
+                className="h-full"
               />
             </div>
           )}
