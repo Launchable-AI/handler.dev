@@ -343,25 +343,26 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     const visible = visibleWorktreeNodes.filter(n => !minimizedSet.has(n.id));
     if (visible.length === 0) return;
 
-    const gap = 24;
+    const gap = 16;
     const MIN_W = 300;
     const MIN_H = 200;
 
-    // Get available canvas dimensions, accounting for overlapping UI:
-    // - Top toolbar overlay (~50px)
-    // - Bottom ReactFlow controls (~40px)
-    // - Extra horizontal margin for left panel toggle + right sidebar
+    // Get the ReactFlow viewport pixel dimensions. fitView with padding 0.03
+    // reserves ~3% on each side, so the usable area for nodes is ~94% of the
+    // viewport. We size nodes to fill that usable area so fitView lands at
+    // zoom=1 and nothing is clipped.
     const container = canvasContainerRef.current;
     const rect = container?.getBoundingClientRect();
-    const canvasW = rect ? rect.width - 80 : 1200;
-    const canvasH = rect ? rect.height - 100 : 800;
+    const FIT_PADDING = 0.03;
+    const usableW = rect ? Math.floor(rect.width * (1 - FIT_PADDING * 2)) : 1200;
+    const usableH = rect ? Math.floor(rect.height * (1 - FIT_PADDING * 2)) : 800;
 
     if (layout === 'grid') {
       const n = visible.length;
       const cols = Math.ceil(Math.sqrt(n));
       const rows = Math.ceil(n / cols);
-      const cellW = Math.max(MIN_W, Math.floor((canvasW - gap * (cols - 1)) / cols));
-      const cellH = Math.max(MIN_H, Math.floor((canvasH - gap * (rows - 1)) / rows));
+      const cellW = Math.max(MIN_W, Math.floor((usableW - gap * (cols - 1)) / cols));
+      const cellH = Math.max(MIN_H, Math.floor((usableH - gap * (rows - 1)) / rows));
 
       visible.forEach((node, i) => {
         const col = i % cols;
@@ -371,8 +372,8 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       });
     } else if (layout === 'vertical') {
       // Column: full width, split height
-      const nodeH = Math.max(MIN_H, Math.floor((canvasH - gap * (visible.length - 1)) / visible.length));
-      const nodeW = Math.max(MIN_W, canvasW);
+      const nodeH = Math.max(MIN_H, Math.floor((usableH - gap * (visible.length - 1)) / visible.length));
+      const nodeW = Math.max(MIN_W, usableW);
       let y = 0;
       for (const node of visible) {
         updateSize(node.id, { width: nodeW, height: nodeH });
@@ -381,8 +382,8 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       }
     } else {
       // Row: full height, split width
-      const nodeW = Math.max(MIN_W, Math.floor((canvasW - gap * (visible.length - 1)) / visible.length));
-      const nodeH = Math.max(MIN_H, canvasH);
+      const nodeW = Math.max(MIN_W, Math.floor((usableW - gap * (visible.length - 1)) / visible.length));
+      const nodeH = Math.max(MIN_H, usableH);
       let x = 0;
       for (const node of visible) {
         updateSize(node.id, { width: nodeW, height: nodeH });
@@ -391,7 +392,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       }
     }
 
-    setTimeout(() => fitView({ padding: 0.05, duration: 300 }), 50);
+    setTimeout(() => fitView({ padding: FIT_PADDING, maxZoom: 1, duration: 300 }), 50);
   }, [visibleWorktreeNodes, state.minimizedNodeIds, state.focusedLayout, updatePosition, updateSize, fitView, setFocusedLayout]);
 
   // Resize the focused node to fill the canvas and center it at zoom 1
