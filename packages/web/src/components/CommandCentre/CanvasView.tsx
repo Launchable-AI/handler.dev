@@ -237,7 +237,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     dragDeltaRef.current = { dx: 0, dy: 0 };
   }, [updatePosition, getDescendantIds, state.worktreeNodes]);
 
-  const addSandboxToCanvas = (sandbox: { id: string; name: string; backend: string; guestIp?: string }, attachTmuxSession?: string) => {
+  const addSandboxToCanvas = (sandbox: { id: string; name: string; backend: string; guestIp?: string }, attachTmuxSession?: string, closeMenu = true) => {
     const nodeId = `wt-${sandbox.id}-${Date.now()}`;
     const newNode: WorktreeNode = {
       id: nodeId,
@@ -255,9 +255,44 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       ...(attachTmuxSession ? { attachTmuxSession } : {}),
     };
     addNode(newNode);
+    if (closeMenu) {
+      setShowAddMenu(false);
+      setExpandedSandboxId(null);
+      setTmuxSessions([]);
+    }
+  };
+
+  const [addingAll, setAddingAll] = useState(false);
+
+  // Sandboxes not yet on the canvas (for "Add all")
+  const sandboxIdsOnCanvas = useMemo(() => {
+    const activeNodeIds = new Set(activeWorkspace?.nodeIds || []);
+    return new Set(state.worktreeNodes.filter(n => activeNodeIds.has(n.id)).map(n => n.sandboxId));
+  }, [state.worktreeNodes, activeWorkspace]);
+
+  const sandboxesNotOnCanvas = useMemo(
+    () => availableSandboxes.filter(s => !sandboxIdsOnCanvas.has(s.id)),
+    [availableSandboxes, sandboxIdsOnCanvas]
+  );
+
+  const handleAddAll = async () => {
+    if (sandboxesNotOnCanvas.length === 0) return;
+    setAddingAll(true);
+    // For each sandbox not already on canvas, try to find an existing tmux session to attach to
+    for (const sandbox of sandboxesNotOnCanvas) {
+      try {
+        const sessions = await listTmuxSessions(sandbox.id);
+        // Attach to the first (most recent) tmux session, or create new
+        const firstSession = sessions.length > 0 ? sessions[0].name : undefined;
+        addSandboxToCanvas(sandbox, firstSession, false);
+      } catch {
+        addSandboxToCanvas(sandbox, undefined, false);
+      }
+    }
     setShowAddMenu(false);
     setExpandedSandboxId(null);
     setTmuxSessions([]);
+    setAddingAll(false);
   };
 
   const handleSandboxClick = async (sandbox: { id: string; name: string; backend: string; guestIp?: string }) => {
@@ -590,7 +625,22 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
                         : `${runningSandboxes.length} running but all already on canvas.`}
                     </div>
                   ) : (
-                    availableSandboxes.map(sandbox => (
+                    <>
+                    {sandboxesNotOnCanvas.length > 1 && (
+                      <button
+                        onClick={handleAddAll}
+                        disabled={addingAll}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left text-[hsl(var(--cyan))] hover:bg-[hsl(var(--cyan)/0.08)] transition-colors border-b border-[hsl(var(--border)/0.5)] font-medium disabled:opacity-50"
+                      >
+                        {addingAll ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="h-3.5 w-3.5" />
+                        )}
+                        Add all ({sandboxesNotOnCanvas.length})
+                      </button>
+                    )}
+                    {availableSandboxes.map(sandbox => (
                       <div key={sandbox.id}>
                         <button
                           onClick={() => handleSandboxClick(sandbox)}
@@ -637,7 +687,8 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
                           </div>
                         )}
                       </div>
-                    ))
+                    ))}
+                    </>
                   )}
                 </div>
               </>
