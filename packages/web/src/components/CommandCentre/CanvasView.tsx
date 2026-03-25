@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ReactFlow, {
   Background,
   Controls,
-  MiniMap,
+  // MiniMap,
   useReactFlow,
   useViewport,
   applyNodeChanges,
@@ -107,21 +107,33 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
   }, [sandboxes]);
 
   // Focused layout: resolve the effective focused node ID
+  // When entering focused mode without a target, auto-select the first visible node.
+  // When the focused node is removed, exit focused mode (don't auto-replace).
+  const prevFocusedNodeIdRef = useRef(state.focusedNodeId);
   const effectiveFocusedId = useMemo(() => {
     if (!state.focusedLayout) return null;
     if (state.focusedNodeId && visibleWorktreeNodes.some(n => n.id === state.focusedNodeId)) {
       return state.focusedNodeId;
     }
-    // Focused node was removed — exit focused mode instead of auto-selecting another
+    // No focusedNodeId set — entering focused mode fresh, pick first node
+    if (!state.focusedNodeId) {
+      return visibleWorktreeNodes[0]?.id || null;
+    }
+    // focusedNodeId was set but node is gone — it was removed
     return null;
   }, [state.focusedLayout, state.focusedNodeId, visibleWorktreeNodes]);
 
-  // Exit focused mode when the focused node is gone
+  // Sync effectiveFocusedId back to context (for fresh entry) or exit if node removed
   useEffect(() => {
-    if (state.focusedLayout && !effectiveFocusedId) {
-      setFocusedLayout(false);
+    if (state.focusedLayout) {
+      if (effectiveFocusedId && effectiveFocusedId !== state.focusedNodeId) {
+        setFocusedNodeId(effectiveFocusedId);
+      } else if (!effectiveFocusedId) {
+        setFocusedLayout(false);
+      }
     }
-  }, [state.focusedLayout, effectiveFocusedId, setFocusedLayout]);
+    prevFocusedNodeIdRef.current = state.focusedNodeId;
+  }, [state.focusedLayout, effectiveFocusedId, state.focusedNodeId, setFocusedNodeId, setFocusedLayout]);
 
   // Sync context nodes into local state when not dragging
   // In focused mode, only show the focused node on the canvas
@@ -587,13 +599,14 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
           <Controls
             className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))] !shadow-lg [&>button]:!bg-[hsl(var(--bg-elevated))] [&>button]:!border-[hsl(var(--border))] [&>button]:!text-[hsl(var(--text-secondary))] [&>button:hover]:!bg-[hsl(var(--bg-overlay))]"
           />
+          {/* MiniMap hidden — takes up canvas space without adding value
           {!state.focusedLayout && (
             <MiniMap
               className="!bg-[hsl(var(--bg-surface))] !border-[hsl(var(--border))]"
               nodeColor="hsl(var(--cyan))"
               maskColor="hsla(var(--bg-base), 0.7)"
             />
-          )}
+          )} */}
         </ReactFlow>
 
         {/* Canvas controls — portaled into toolbar slots */}

@@ -20,32 +20,44 @@ interface TerminalSnapshotProps {
 export function TerminalSnapshot({ content, fontSize = 6, className = '' }: TerminalSnapshotProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
+  const isDisposedRef = useRef(false);
   const { isDark: systemIsDark } = useTheme();
   const themeMode = getStoredTerminalThemeMode();
   const isDark = themeMode === 'system' ? systemIsDark : themeMode === 'dark';
 
-  // Create xterm once
+  // Create xterm — delayed by a tick to survive React strict mode's
+  // immediate unmount (prevents "Cannot read properties of undefined
+  // (reading 'dimensions')" from xterm's internal Viewport setTimeout)
   useEffect(() => {
     if (!containerRef.current) return;
+    isDisposedRef.current = false;
 
-    const term = new XTerm({
-      cursorBlink: false,
-      cursorStyle: 'underline',
-      disableStdin: true,
-      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-      fontSize,
-      lineHeight: 1.2,
-      theme: getTerminalTheme(isDark),
-      scrollback: 0,
-      convertEol: true,
-    });
+    const initTimeout = setTimeout(() => {
+      if (isDisposedRef.current || !containerRef.current) return;
 
-    term.open(containerRef.current);
-    termRef.current = term;
+      const term = new XTerm({
+        cursorBlink: false,
+        cursorStyle: 'underline',
+        disableStdin: true,
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        fontSize,
+        lineHeight: 1.2,
+        theme: getTerminalTheme(isDark),
+        scrollback: 0,
+        convertEol: true,
+      });
+
+      term.open(containerRef.current!);
+      termRef.current = term;
+    }, 0);
 
     return () => {
-      term.dispose();
-      termRef.current = null;
+      isDisposedRef.current = true;
+      clearTimeout(initTimeout);
+      if (termRef.current) {
+        termRef.current.dispose();
+        termRef.current = null;
+      }
     };
   }, [fontSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
