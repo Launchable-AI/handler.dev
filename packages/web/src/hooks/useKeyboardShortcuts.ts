@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { getShortcutsEnabled, getCombo, matchesCombo } from '../lib/keyboard-shortcuts';
+import { getShortcutsEnabled, getCombo, matchesCombo, isShortcutDisabled } from '../lib/keyboard-shortcuts';
 
 export function useKeyboardShortcuts(handlers: Record<string, () => void>): void {
   const handlersRef = useRef(handlers);
@@ -32,6 +32,7 @@ export function useKeyboardShortcuts(handlers: Record<string, () => void>): void
       }
 
       for (const actionId of Object.keys(handlersRef.current)) {
+        if (isShortcutDisabled(actionId)) continue;
         const combo = getCombo(actionId);
         if (matchesCombo(e, combo)) {
           e.preventDefault();
