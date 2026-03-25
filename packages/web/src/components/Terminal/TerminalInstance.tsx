@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Loader2, Copy, Check, RefreshCw, ExternalLink, X } from 'lucide-react';
+import { Loader2, /* Copy, Check, */ RefreshCw /*, ExternalLink, X */ } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import type { ShellPromptTheme } from '../../lib/prompt-themes';
 import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../../lib/terminal-themes';
@@ -66,9 +66,10 @@ export function TerminalInstance({
   const [errorMessage, setErrorMessage] = useState<string>();
   const [isTmuxSession, setIsTmuxSession] = useState(false);
   const tmuxSessionNameRef = useRef<string | undefined>(undefined);
-  const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
-  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
-  const [dismissedUrls, setDismissedUrls] = useState<Set<string>>(new Set());
+  // URL bar state — commented out while bar is disabled
+  // const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
+  // const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  // const [dismissedUrls, setDismissedUrls] = useState<Set<string>>(new Set());
   const terminalIsDarkRef = useRef(terminalIsDark);
   terminalIsDarkRef.current = terminalIsDark;
   const zoomRef = useRef(zoomLevel ?? 1);
@@ -173,8 +174,14 @@ export function TerminalInstance({
     term.loadAddon(fitAddon);
     fitAddonRef.current = fitAddon;
 
-    // Web links addon - underline detection only, no click handler
-    const webLinksAddon = new WebLinksAddon((_event, _uri) => {});
+    // Web links addon — Ctrl/Cmd+click opens in browser, plain click copies to clipboard
+    const webLinksAddon = new WebLinksAddon((event, uri) => {
+      if (event.ctrlKey || event.metaKey) {
+        window.open(uri, '_blank', 'noopener,noreferrer');
+      } else {
+        navigator.clipboard.writeText(uri);
+      }
+    });
     term.loadAddon(webLinksAddon);
 
     // Open terminal
@@ -293,14 +300,8 @@ export function TerminalInstance({
           }
         }
         URL_SCAN_RE.lastIndex = 0;
-        setDetectedUrls(urls);
-        // Prune dismissed URLs that are no longer visible — if a URL disappears
-        // (server stopped, scrolled away) and reappears later, show it again
-        const currentUrls = new Set(urls.map(u => u.url));
-        setDismissedUrls(prev => {
-          const pruned = new Set([...prev].filter(u => currentUrls.has(u)));
-          return pruned.size === prev.size ? prev : pruned;
-        });
+        // setDetectedUrls(urls);  // URL bar disabled
+        // setDismissedUrls(prev => { ... });  // URL bar disabled
         onUrlsDetectedRef.current?.(urls.map(u => u.url));
       }, 300);
     };
@@ -673,7 +674,7 @@ export function TerminalInstance({
         style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}
       />
 
-      {/* Detected URLs bar */}
+      {/* Detected URLs bar — disabled for now, too buggy
       {(() => {
         const visibleUrls = [...new Map(detectedUrls.map(u => [u.url, u])).values()].filter(({ url }) => !dismissedUrls.has(url));
         return visibleUrls.length > 0 ? (
@@ -724,7 +725,7 @@ export function TerminalInstance({
             ))}
           </div>
         ) : null;
-      })()}
+      })()} */}
 
       {/* Error overlay */}
       {connectionState === 'error' && errorMessage && (
