@@ -190,7 +190,9 @@ async function startAttachTmuxSession(
   const theme = config.shellPromptTheme || 'minimal';
   const tmuxThemeContent = getTmuxThemeContent(theme, showStatusBar);
 
-  const setupAndAttach = `mkdir -p ~/.config/handler && cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF\ntmux attach-session -t ${tmuxSession} \\; source-file ~/.config/handler/tmux-theme.conf \\; resize-window -x ${cols} -y ${rows}`;
+  // Attach and resize all windows (not just current) to avoid stale sizes on Ctrl-B n
+  const resizeAll = `for w in $(tmux list-windows -t ${tmuxSession} -F '#{session_name}:#{window_index}'); do tmux resize-window -t "$w" -x ${cols} -y ${rows} 2>/dev/null; done`;
+  const setupAndAttach = `mkdir -p ~/.config/handler && cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF\ntmux attach-session -t ${tmuxSession} \\; source-file ~/.config/handler/tmux-theme.conf && ${resizeAll}`;
 
   const process = spawn('docker', [
     'exec',
@@ -361,7 +363,9 @@ export async function resumeTerminalSession(
   const showStatusBar = config.tmuxStatusBar === true;
   const tmuxThemeContent = getTmuxThemeContent(theme, showStatusBar);
 
-  const setupAndAttach = `mkdir -p ~/.config/handler && cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF\ntmux attach-session -t ${tmuxSession} \\; source-file ~/.config/handler/tmux-theme.conf \\; resize-window -x ${cols} -y ${rows}`;
+  // Attach and resize all windows to avoid stale sizes on Ctrl-B n
+  const resizeAll = `for w in $(tmux list-windows -t ${tmuxSession} -F '#{session_name}:#{window_index}'); do tmux resize-window -t "$w" -x ${cols} -y ${rows} 2>/dev/null; done`;
+  const setupAndAttach = `mkdir -p ~/.config/handler && cat > ~/.config/handler/tmux-theme.conf << 'HANDLER_TMUX_EOF'\n${tmuxThemeContent}\nHANDLER_TMUX_EOF\ntmux attach-session -t ${tmuxSession} \\; source-file ~/.config/handler/tmux-theme.conf && ${resizeAll}`;
   const tmuxCmd = setupAndAttach;
 
   const process = spawn('docker', [
@@ -424,9 +428,11 @@ export async function resumeTerminalSession(
   // Send connected message
   ws.send(JSON.stringify({ type: 'connected', sessionId, tmuxSession, resumed: true }));
 
-  // Resize the tmux window to match client dimensions
+  // Resize all tmux windows to match client dimensions
   try {
-    await safeExec('docker', ['exec', containerId, 'tmux', 'resize-window', '-t', tmuxSession, '-x', String(cols), '-y', String(rows)]);
+    await safeExec('docker', ['exec', containerId, 'bash', '-c',
+      `for w in $(tmux list-windows -t ${tmuxSession} -F '#{session_name}:#{window_index}'); do tmux resize-window -t "$w" -x ${cols} -y ${rows} 2>/dev/null; done`
+    ]);
   } catch {
     // Ignore resize errors
   }
@@ -453,10 +459,12 @@ export function resizeSession(sessionId: string, cols: number, rows: number): bo
   session.lastRows = rows;
 
   if (session.tmuxSession) {
-    // For tmux sessions: resize via docker exec (no stdin echo).
-    // tmux resize-window handles the PTY and sends SIGWINCH to the shell.
-    safeExec('docker', ['exec', session.containerId, 'tmux', 'resize-window', '-t', session.tmuxSession, '-x', String(cols), '-y', String(rows)])
-      .catch(() => { /* ignore errors */ });
+    // For tmux sessions: resize ALL windows in the session, not just the current one.
+    // Using resize-window on a single window leaves other windows at stale sizes,
+    // causing visual jank when the user switches tmux windows with Ctrl-B n.
+    safeExec('docker', ['exec', session.containerId, 'bash', '-c',
+      `for w in $(tmux list-windows -t ${session.tmuxSession} -F '#{session_name}:#{window_index}'); do tmux resize-window -t "$w" -x ${cols} -y ${rows} 2>/dev/null; done`
+    ]).catch(() => { /* ignore errors */ });
   } else if (session.process.stdin?.writable) {
     // For non-tmux sessions: send stty through stdin (only fallback)
     session.process.stdin.write(`\x15stty cols ${cols} rows ${rows} 2>/dev/null\n`);
