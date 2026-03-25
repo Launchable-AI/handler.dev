@@ -252,6 +252,30 @@ export class FirecrackerService extends EventEmitter {
             vm.networkConfig.tapDevice = undefined;
           }
           await this.saveVmState(vm);
+        } else if (processAlive && vm.status === 'booting' && vm.guestIp) {
+          // Process is alive and has an IP — check if SSH is actually ready
+          // (happens when server restarts during boot sequence)
+          try {
+            const sshKeyPath = this.getSshKeyPath();
+            execFileSync('ssh', [
+              '-i', sshKeyPath,
+              '-o', 'StrictHostKeyChecking=no',
+              '-o', 'UserKnownHostsFile=/dev/null',
+              '-o', 'ConnectTimeout=2',
+              '-o', 'BatchMode=yes',
+              '-o', 'LogLevel=ERROR',
+              `agent@${vm.guestIp}`,
+              'echo ok'
+            ], { timeout: 5000 });
+            // SSH works — transition to running
+            vm.status = 'running';
+            vm.statusMessage = undefined;
+            await this.saveVmState(vm);
+            console.log(`[FirecrackerService] Recovered booting VM ${id} (${vm.name}) — SSH reachable, now running`);
+          } catch {
+            // SSH not ready yet — leave as booting, will be caught by timeout below
+            console.log(`[FirecrackerService] VM ${id} (${vm.name}) still booting — SSH not ready yet (${Math.round(elapsed / 1000)}s)`);
+          }
         } else if (elapsed > STARTUP_TIMEOUT_MS) {
           // Process is alive but startup timed out — kill and mark as error
           console.warn(`[FirecrackerService] VM ${id} stuck in '${vm.status}' for ${Math.round(elapsed / 1000)}s — killing and marking as error`);
