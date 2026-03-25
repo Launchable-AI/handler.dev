@@ -204,7 +204,12 @@ export function resetAll(): void {
 
 export function matchesCombo(event: KeyboardEvent, combo: KeyCombo): boolean {
   if (!combo.key) return false;
-  if (event.key !== combo.key) return false;
+  // Case-insensitive match for single character keys (h/H, l/L, etc.)
+  // Also check event.code for Alt+key on Linux where Alt can produce special chars (Alt+l → ł)
+  const comboKey = combo.key.toLowerCase();
+  const eventKey = event.key.toLowerCase();
+  const codeKey = event.code.startsWith('Key') ? event.code.slice(3).toLowerCase() : '';
+  if (eventKey !== comboKey && codeKey !== comboKey) return false;
   if (!!combo.ctrl !== event.ctrlKey) return false;
   if (!!combo.shift !== event.shiftKey) return false;
   if (!!combo.alt !== event.altKey) return false;

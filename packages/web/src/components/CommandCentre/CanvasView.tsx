@@ -593,6 +593,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
           defaultEdgeOptions={{ type: 'worktree' }}
           proOptions={{ hideAttribution: true }}
           selectNodesOnDrag={false}
+          panOnDrag={false}
           onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(var(--border))" />
