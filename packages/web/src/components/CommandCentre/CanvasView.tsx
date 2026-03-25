@@ -342,12 +342,14 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     const MIN_W = 300;
     const MIN_H = 200;
 
-    // Get available canvas dimensions
+    // Get available canvas dimensions, accounting for overlapping UI:
+    // - Top toolbar overlay (~50px)
+    // - Bottom ReactFlow controls (~40px)
+    // - Extra horizontal margin for left panel toggle + right sidebar
     const container = canvasContainerRef.current;
     const rect = container?.getBoundingClientRect();
-    // Use canvas size at zoom=1, with some padding for controls
-    const canvasW = rect ? rect.width - 40 : 1200;
-    const canvasH = rect ? rect.height - 40 : 800;
+    const canvasW = rect ? rect.width - 80 : 1200;
+    const canvasH = rect ? rect.height - 100 : 800;
 
     if (layout === 'grid') {
       const n = visible.length;
@@ -384,7 +386,7 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
       }
     }
 
-    setTimeout(() => fitView({ padding: 0.02, duration: 300 }), 50);
+    setTimeout(() => fitView({ padding: 0.05, duration: 300 }), 50);
   }, [visibleWorktreeNodes, state.minimizedNodeIds, state.focusedLayout, updatePosition, updateSize, fitView, setFocusedLayout]);
 
   // Resize the focused node to fill the canvas and center it at zoom 1
