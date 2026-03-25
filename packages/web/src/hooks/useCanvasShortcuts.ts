@@ -165,7 +165,10 @@ export function useCanvasShortcuts({ arrangeNodes, focusCamera }: UseCanvasShort
     'canvas.layoutGrid': () => arrangeNodes('grid'),
     'canvas.layoutVertical': () => arrangeNodes('vertical'),
     'canvas.layoutHorizontal': () => arrangeNodes('horizontal'),
-    'canvas.layoutFocused': () => setFocusedLayout(!state.focusedLayout),
+    'canvas.layoutFocused': () => {
+      if (!state.focusedLayout) setFocusedNodeId(null); // Clear stale ID so auto-select works
+      setFocusedLayout(!state.focusedLayout);
+    },
 
     // Focused mode swap
     'canvas.swapNext': () => navigateList(1),

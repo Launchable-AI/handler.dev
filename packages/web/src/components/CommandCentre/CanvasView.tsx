@@ -645,7 +645,10 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
                     <Columns3 className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    onClick={() => setFocusedLayout(!state.focusedLayout)}
+                    onClick={() => {
+                      if (!state.focusedLayout) setFocusedNodeId(null); // Clear stale ID so auto-select works
+                      setFocusedLayout(!state.focusedLayout);
+                    }}
                     className={`p-1 rounded transition-colors ${
                       state.focusedLayout ? 'text-[hsl(var(--cyan))] bg-[hsl(var(--cyan)/0.1)]' : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--bg-overlay))]'
                     }`}
