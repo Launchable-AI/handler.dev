@@ -112,8 +112,16 @@ function CanvasViewInner({ className = '' }: CanvasViewProps) {
     if (state.focusedNodeId && visibleWorktreeNodes.some(n => n.id === state.focusedNodeId)) {
       return state.focusedNodeId;
     }
-    return visibleWorktreeNodes[0]?.id || null;
+    // Focused node was removed — exit focused mode instead of auto-selecting another
+    return null;
   }, [state.focusedLayout, state.focusedNodeId, visibleWorktreeNodes]);
+
+  // Exit focused mode when the focused node is gone
+  useEffect(() => {
+    if (state.focusedLayout && !effectiveFocusedId) {
+      setFocusedLayout(false);
+    }
+  }, [state.focusedLayout, effectiveFocusedId, setFocusedLayout]);
 
   // Sync context nodes into local state when not dragging
   // In focused mode, only show the focused node on the canvas
