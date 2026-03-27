@@ -68,6 +68,7 @@ export function TerminalInstance({
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [errorMessage, setErrorMessage] = useState<string>();
   const [isTmuxSession, setIsTmuxSession] = useState(false);
+  const [uploadToast, setUploadToast] = useState<{ message: string; type: 'info' | 'success' | 'error' } | null>(null);
   const tmuxSessionNameRef = useRef<string | undefined>(undefined);
   // URL bar state — commented out while bar is disabled
   // const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
@@ -251,20 +252,21 @@ export function TerminalInstance({
       const filename = `screenshot-${ts}.${ext}`;
       const renamedFile = new File([imageFile], filename, { type: imageFile.type });
 
-      // Show uploading feedback in terminal (local only, not sent to shell)
-      term.write(`\r\n\x1b[90m  Uploading ${filename}...\x1b[0m`);
+      setUploadToast({ message: `Uploading ${filename}...`, type: 'info' });
 
       const upload = uploadFileToSandbox(target.id, renamedFile, '/tmp');
       upload.promise.then(() => {
         const filePath = `/tmp/${filename}`;
-        // Show success in terminal (local only)
-        term.write(`\r\n\x1b[90m  Uploaded ${filePath}\x1b[0m\r\n`);
+        setUploadToast({ message: `Uploaded ${filePath}`, type: 'success' });
+        setTimeout(() => setUploadToast(null), 3000);
         // Write the path into the terminal input so the running process sees it
         if (currentWs?.readyState === WebSocket.OPEN) {
           currentWs.send(JSON.stringify({ type: 'input', data: filePath }));
         }
       }).catch((err) => {
-        term.write(`\r\n\x1b[31m  Upload failed: ${err instanceof Error ? err.message : 'unknown error'}\x1b[0m\r\n`);
+        const msg = err instanceof Error ? err.message : 'unknown error';
+        setUploadToast({ message: `Upload failed: ${msg}`, type: 'error' });
+        setTimeout(() => setUploadToast(null), 5000);
       });
     };
     // Listen on xterm's internal textarea — that's where paste events fire
@@ -722,8 +724,17 @@ export function TerminalInstance({
 
       {/* Terminal — outer div provides visual margin, inner div has zero padding
           so FitAddon measures the exact available height for rows */}
-      <div className="flex-1 min-h-0 px-1 pt-1 flex flex-col" style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}>
+      <div className="flex-1 min-h-0 px-1 pt-1 flex flex-col relative" style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}>
         <div ref={terminalRef} className="flex-1 min-h-0" />
+        {uploadToast && (
+          <div className={`absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded text-xs font-mono shadow-lg z-10 ${
+            uploadToast.type === 'error' ? 'bg-[hsl(var(--red)/0.9)] text-white' :
+            uploadToast.type === 'success' ? 'bg-[hsl(var(--green)/0.9)] text-white' :
+            'bg-[hsl(var(--bg-elevated)/0.95)] text-[hsl(var(--text-secondary))] border border-[hsl(var(--border))]'
+          }`}>
+            {uploadToast.message}
+          </div>
+        )}
       </div>
 
       {/* Detected URLs bar — disabled for now, too buggy
