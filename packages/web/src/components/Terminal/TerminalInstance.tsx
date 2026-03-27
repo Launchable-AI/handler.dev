@@ -8,7 +8,7 @@ import type { ShellPromptTheme } from '../../lib/prompt-themes';
 import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../../lib/terminal-themes';
 import { SHORTCUT_DEFINITIONS, getCombo, matchesCombo } from '../../lib/keyboard-shortcuts';
 import { useTheme } from '../../hooks/useTheme';
-import { getWsUrl as getWsUrlBase } from '@/api/client';
+import { getWsUrl as getWsUrlBase, uploadFileToSandbox } from '@/api/client';
 
 // Connection state type
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
@@ -223,6 +223,54 @@ export function TerminalInstance({
       });
     };
     containerEl.addEventListener('contextmenu', handleContextMenu);
+
+    // Intercept paste events to handle clipboard images (screenshots).
+    // When the clipboard contains an image, upload it to the sandbox and
+    // write the file path into the terminal so the running process can use it.
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      let imageFile: File | null = null;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          imageFile = item.getAsFile();
+          break;
+        }
+      }
+
+      if (!imageFile) return; // No image — let normal text paste proceed
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Generate timestamped filename
+      const now = new Date();
+      const ts = now.toISOString().replace(/[-:T]/g, '').replace(/\..+/, '').slice(0, 15);
+      const ext = imageFile.type === 'image/jpeg' ? 'jpg' : 'png';
+      const filename = `screenshot-${ts}.${ext}`;
+      const renamedFile = new File([imageFile], filename, { type: imageFile.type });
+
+      // Show uploading feedback in terminal (local only, not sent to shell)
+      term.write(`\r\n\x1b[90m  Uploading ${filename}...\x1b[0m`);
+
+      const upload = uploadFileToSandbox(target.id, renamedFile, '/tmp');
+      upload.promise.then(() => {
+        const filePath = `/tmp/${filename}`;
+        // Show success in terminal (local only)
+        term.write(`\r\n\x1b[90m  Uploaded ${filePath}\x1b[0m\r\n`);
+        // Write the path into the terminal input so the running process sees it
+        if (currentWs?.readyState === WebSocket.OPEN) {
+          currentWs.send(JSON.stringify({ type: 'input', data: filePath }));
+        }
+      }).catch((err) => {
+        term.write(`\r\n\x1b[31m  Upload failed: ${err instanceof Error ? err.message : 'unknown error'}\x1b[0m\r\n`);
+      });
+    };
+    // Listen on xterm's internal textarea — that's where paste events fire
+    // (the browser pastes into the focused element, which is xterm's hidden textarea)
+    const pasteTarget = term.textarea || containerEl;
+    pasteTarget.addEventListener('paste', handlePaste as EventListener);
 
     // Fix mouse coordinates when inside a CSS-transformed container (e.g. ReactFlow zoom).
     // xterm.js computes cell position as: ceil((clientX - rect.left) / cssCellWidth)
@@ -562,6 +610,7 @@ export function TerminalInstance({
       resizeObserver.disconnect();
       if (scanTimeout) clearTimeout(scanTimeout);
       containerEl.removeEventListener('contextmenu', handleContextMenu);
+      pasteTarget.removeEventListener('paste', handlePaste as EventListener);
       scrollDisposable.dispose();
       dataDisposable.dispose();
       oscDisposable.dispose();
