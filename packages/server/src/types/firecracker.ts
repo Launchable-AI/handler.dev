@@ -260,7 +260,7 @@ export interface FirecrackerVmState {
   /** Human-readable name */
   name: string;
   /** Current status */
-  status: 'creating' | 'booting' | 'running' | 'paused' | 'stopped' | 'error';
+  status: 'creating' | 'booting' | 'running' | 'stopping' | 'paused' | 'stopped' | 'error';
   /** Process ID of the Firecracker process */
   pid?: number;
   /** Path to API socket */

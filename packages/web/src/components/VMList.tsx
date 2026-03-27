@@ -30,6 +30,7 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
 
   const isRunning = vm.status === 'running';
   const isBooting = vm.status === 'booting' || vm.status === 'creating';
+  const isStopping = vm.status === 'stopping';
   const hasError = vm.status === 'error';
 
   // Use SSH command from server
@@ -249,14 +250,14 @@ function VMCardCompact({ vm }: { vm: VmInfo }) {
 
       {/* Actions */}
       <div className="flex items-center gap-1">
-        {isRunning || isBooting ? (
+        {isRunning || isBooting || isStopping ? (
           <button
             onClick={handleStop}
-            disabled={stopVm.isPending}
+            disabled={stopVm.isPending || isStopping}
             className="p-1.5 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] border border-[hsl(var(--red)/0.3)] disabled:opacity-50"
-            title={isBooting ? 'Kill' : 'Stop'}
+            title={isStopping ? 'Stopping...' : isBooting ? 'Kill' : 'Stop'}
           >
-            <Square className="h-3 w-3" />
+            {isStopping ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
           </button>
         ) : (
           <button
@@ -449,10 +450,11 @@ function VMListView({ vms }: { vms: VmInfo[] }) {
           {vms.map(vm => {
             const isRunning = vm.status === 'running';
             const isBooting = vm.status === 'booting' || vm.status === 'creating';
+            const isStopping = vm.status === 'stopping';
             const hasError = vm.status === 'error';
             const statusColor = isRunning
               ? 'text-[hsl(var(--green))]'
-              : isBooting
+              : isBooting || isStopping
               ? 'text-[hsl(var(--amber))]'
               : hasError
               ? 'text-[hsl(var(--red))]'
@@ -468,7 +470,7 @@ function VMListView({ vms }: { vms: VmInfo[] }) {
                 </td>
                 <td className="px-3 py-2">
                   <span className={`uppercase tracking-wider ${statusColor}`}>
-                    {isBooting && <Loader2 className="h-3 w-3 animate-spin inline mr-1" />}
+                    {(isBooting || isStopping) && <Loader2 className="h-3 w-3 animate-spin inline mr-1" />}
                     {vm.status}
                   </span>
                 </td>
@@ -477,14 +479,14 @@ function VMListView({ vms }: { vms: VmInfo[] }) {
                 <td className="px-3 py-2 text-[hsl(var(--text-secondary))] font-mono">{vm.guestIp || '-'}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center justify-end gap-1">
-                    {isRunning || isBooting ? (
+                    {isRunning || isBooting || isStopping ? (
                       <button
                         onClick={() => handleStop(vm.id)}
-                        disabled={stopVm.isPending}
+                        disabled={stopVm.isPending || isStopping}
                         className="p-1 text-[hsl(var(--red))] hover:bg-[hsl(var(--red)/0.1)] disabled:opacity-50"
-                        title={isBooting ? 'Kill' : 'Stop'}
+                        title={isStopping ? 'Stopping...' : isBooting ? 'Kill' : 'Stop'}
                       >
-                        <Square className="h-3.5 w-3.5" />
+                        {isStopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
                       </button>
                     ) : (
                       <button
@@ -657,6 +659,7 @@ function VMCard({ vm }: { vm: VmInfo }) {
     running: 'bg-[hsl(var(--green))]',
     booting: 'bg-[hsl(var(--yellow))]',
     creating: 'bg-[hsl(var(--yellow))]',
+    stopping: 'bg-[hsl(var(--yellow))]',
     stopped: 'bg-[hsl(var(--text-muted))]',
     paused: 'bg-[hsl(var(--cyan))]',
     error: 'bg-[hsl(var(--red))]',

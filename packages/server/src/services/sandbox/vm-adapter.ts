@@ -28,6 +28,8 @@ function mapVmStatus(status: VmStatus): SandboxStatus {
       return 'running';
     case 'paused':
       return 'paused';
+    case 'stopping':
+      return 'stopping';
     case 'stopped':
       return 'stopped';
     case 'error':
