@@ -67,7 +67,6 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
   const { data: metrics } = useSandboxMetrics(data.sandboxId, connState === 'connected');
   // Summary is fetched server-side via tmux capture — doesn't depend on WebSocket connection
   const { data: summaryData } = useTerminalSummary(data.sandboxId);
-  const prevHasUrlsRef = useRef(false);
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termWrapperRef = useRef<HTMLDivElement>(null);
   const focusTermContainerRef = useRef<HTMLDivElement>(null);
@@ -123,16 +122,24 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
     }
   }, [data.id, data.branch, data.cwd, data.inGitRepo, updateNode]);
 
+  const urlBarAddedRef = useRef(false);
+  const sizeRef = useRef(data.size);
+  sizeRef.current = data.size;
   const handleUrlsDetected = useCallback((urls: string[]) => {
     const has = urls.length > 0;
-    // Grow node height when URL bar first appears so it's visible without manual resize
-    if (has && !prevHasUrlsRef.current) {
-      updateSize(data.id, { width: data.size.width, height: data.size.height + 28 });
-    } else if (!has && prevHasUrlsRef.current) {
-      updateSize(data.id, { width: data.size.width, height: data.size.height - 28 });
+    // Grow node height when URL bar first appears so it's visible without manual resize.
+    // Use urlBarAddedRef (not prevHasUrls) to track whether the +28 adjustment is active,
+    // preventing compounding when URLs flicker during tmux window switches.
+    if (has && !urlBarAddedRef.current) {
+      urlBarAddedRef.current = true;
+      const s = sizeRef.current;
+      updateSize(data.id, { width: s.width, height: s.height + 28 });
+    } else if (!has && urlBarAddedRef.current) {
+      urlBarAddedRef.current = false;
+      const s = sizeRef.current;
+      updateSize(data.id, { width: s.width, height: s.height - 28 });
     }
-    prevHasUrlsRef.current = has;
-  }, [data.id, data.size.width, data.size.height, updateSize]);
+  }, [data.id, updateSize]);
 
   const getDefaultWorkspacePath = useCallback(() => {
     if (!data.backendType || data.backendType === 'docker') return '/home/dev/workspace';
@@ -894,7 +901,7 @@ function SandboxNodeComponent({ data, dragging }: NodeProps<WorktreeNode>) {
       {/* Terminal body - takes remaining space, clips overflow */}
       <div ref={termContainerRef} className="flex-1 min-h-0 overflow-hidden flex flex-col" onKeyDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
         {termReady && (
-          <div ref={termWrapperRef} className="flex-1 min-h-0 flex flex-col">
+          <div ref={termWrapperRef} className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <TerminalInstance
               target={{
                 type: data.backendType && data.backendType !== 'docker' ? 'vm' : 'container',

@@ -724,8 +724,8 @@ export function TerminalInstance({
 
       {/* Terminal — outer div provides visual margin, inner div has zero padding
           so FitAddon measures the exact available height for rows */}
-      <div className="flex-1 min-h-0 px-1 pt-1 flex flex-col relative" style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}>
-        <div ref={terminalRef} className="flex-1 min-h-0" />
+      <div className="flex-1 min-h-0 px-1 pt-1 flex flex-col relative overflow-hidden" style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}>
+        <div ref={terminalRef} className="flex-1 min-h-0 overflow-hidden" />
         {uploadToast && (
           <div className={`absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded text-xs font-mono shadow-lg z-10 ${
             uploadToast.type === 'error' ? 'bg-[hsl(var(--red)/0.9)] text-white' :
