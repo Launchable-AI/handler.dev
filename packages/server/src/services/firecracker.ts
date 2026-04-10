@@ -7,7 +7,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { spawn, ChildProcess, execSync, execFileSync } from 'child_process';
+import { spawn, ChildProcess, execSync, execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -886,47 +886,116 @@ export class FirecrackerService extends EventEmitter {
 
   /**
    * Inject boot optimizations into the overlay ext4 before the VM starts.
-   * Mounts the overlay, writes fixes into the upper layer, and unmounts.
-   * This runs on every boot so it works regardless of the base image's overlay-init version.
+   * Writes into the overlayfs upper layer so the changes override the base
+   * rootfs once the guest mounts everything.
+   *
+   * Uses debugfs (which can edit unmounted ext4 images) instead of mount,
+   * so this works as a regular user with no loop devices required.
+   *
+   * Fixes injected:
+   *   1. Symlink masking systemd-networkd-wait-online — that service blocks
+   *      network-online.target for ~2 min in DNS-less guests since networking
+   *      comes from the kernel ip= parameter, not networkd.
+   *   2. sshd_config.d snippet setting UseDNS no — without this the sshd
+   *      banner exchange hangs on reverse DNS lookup of the client IP.
+   *      (Ubuntu 22.04+ sshd_config has Include /etc/ssh/sshd_config.d/*.conf.)
+   *
+   * This is a host-side safety net for VMs whose base image has an older
+   * overlay-init that doesn't apply these fixes inside the guest.
    */
   private injectBootFixes(overlayPath: string): void {
-    const mountPoint = `/tmp/handler-overlay-${path.basename(overlayPath, '.ext4')}-${Date.now()}`;
     try {
-      fs.mkdirSync(mountPoint, { recursive: true });
-      execFileSync('mount', ['-t', 'ext4', '-o', 'noatime', overlayPath, mountPoint], { stdio: 'pipe' });
-
+      // Replay journal if needed — debugfs refuses to write to a dirty ext4.
+      // e2fsck exits non-zero when it makes corrections, which is expected here.
       try {
-        // The overlay's upper layer stores files that override the base rootfs.
-        // Mask systemd-networkd-wait-online — it blocks network-online.target for 2 minutes
-        // because networking is configured via kernel ip= parameter, not systemd-networkd.
-        const maskDir = path.join(mountPoint, 'upper/etc/systemd/system');
-        fs.mkdirSync(maskDir, { recursive: true });
-        const maskPath = path.join(maskDir, 'systemd-networkd-wait-online.service');
-        // Only create if not already masked (symlink to /dev/null)
-        if (!fs.existsSync(maskPath)) {
-          fs.symlinkSync('/dev/null', maskPath);
-          console.log(`[FirecrackerService] Masked systemd-networkd-wait-online in overlay`);
-        }
+        execFileSync('e2fsck', ['-p', '-f', overlayPath], { stdio: 'pipe' });
+      } catch {
+        // Preen made changes (or filesystem was already clean and we got 0). Either way, continue.
+      }
 
-        // Disable reverse DNS lookups in sshd to prevent banner exchange delays
-        const sshdDir = path.join(mountPoint, 'upper/etc/ssh');
-        const sshdConfig = path.join(sshdDir, 'sshd_config');
-        if (fs.existsSync(sshdConfig)) {
-          const content = fs.readFileSync(sshdConfig, 'utf-8');
-          if (!content.includes('\nUseDNS no')) {
-            fs.appendFileSync(sshdConfig, '\nUseDNS no\n');
-            console.log(`[FirecrackerService] Set UseDNS no in overlay sshd_config`);
-          }
+      // 1. Mask systemd-networkd-wait-online via symlink in overlayfs upper.
+      const maskPath = 'upper/etc/systemd/system/systemd-networkd-wait-online.service';
+      if (!this.debugfsPathExists(overlayPath, maskPath)) {
+        this.debugfsMkdirP(overlayPath, 'upper/etc/systemd/system');
+        this.runDebugfs(overlayPath, [`symlink ${maskPath} /dev/null`]);
+        if (!this.debugfsPathExists(overlayPath, maskPath)) {
+          throw new Error(`failed to create symlink ${maskPath}`);
         }
-      } finally {
-        execFileSync('umount', [mountPoint], { stdio: 'pipe' });
-        fs.rmdirSync(mountPoint);
+        console.log('[FirecrackerService] Masked systemd-networkd-wait-online in overlay');
+      }
+
+      // 2. Drop sshd snippet to disable reverse DNS lookup.
+      const sshdSnippet = 'upper/etc/ssh/sshd_config.d/99-handler.conf';
+      if (!this.debugfsPathExists(overlayPath, sshdSnippet)) {
+        this.debugfsMkdirP(overlayPath, 'upper/etc/ssh/sshd_config.d');
+        const tmpFile = path.join(os.tmpdir(), `handler-debugfs-${process.pid}-${Date.now()}.conf`);
+        fs.writeFileSync(tmpFile, 'UseDNS no\n');
+        try {
+          this.runDebugfs(overlayPath, [`write ${tmpFile} ${sshdSnippet}`]);
+        } finally {
+          try { fs.unlinkSync(tmpFile); } catch {}
+        }
+        if (!this.debugfsPathExists(overlayPath, sshdSnippet)) {
+          throw new Error(`failed to write ${sshdSnippet}`);
+        }
+        console.log('[FirecrackerService] Wrote sshd UseDNS no snippet to overlay');
       }
     } catch (error) {
-      // Non-fatal — VM will still boot, just slower
-      console.warn(`[FirecrackerService] Failed to inject boot fixes:`, error);
-      try { execFileSync('umount', [mountPoint], { stdio: 'pipe' }); } catch {}
-      try { fs.rmdirSync(mountPoint); } catch {}
+      // Non-fatal — VM will still try to boot. May be slow or fail SSH banner exchange
+      // if the base image's in-guest overlay-init doesn't apply these fixes itself.
+      console.warn(`[FirecrackerService] Failed to inject boot fixes: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Check if a path exists inside an unmounted ext4 image via debugfs.
+   * debugfs always exits 0, so we have to parse output for "File not found".
+   */
+  private debugfsPathExists(imagePath: string, p: string): boolean {
+    const result = spawnSync('debugfs', ['-R', `stat ${p}`, imagePath], {
+      encoding: 'utf-8',
+    });
+    const combined = (result.stdout || '') + (result.stderr || '');
+    return !combined.includes('File not found') && !combined.includes('No such');
+  }
+
+  /**
+   * mkdir -p equivalent for debugfs. Creates each missing path component.
+   */
+  private debugfsMkdirP(imagePath: string, dirPath: string): void {
+    const parts = dirPath.split('/').filter(Boolean);
+    const cmds: string[] = [];
+    for (let i = 1; i <= parts.length; i++) {
+      const sub = parts.slice(0, i).join('/');
+      if (!this.debugfsPathExists(imagePath, sub)) {
+        cmds.push(`mkdir ${sub}`);
+      }
+    }
+    if (cmds.length > 0) {
+      this.runDebugfs(imagePath, cmds);
+    }
+  }
+
+  /**
+   * Run a sequence of debugfs commands in a single -w invocation.
+   * debugfs exits 0 even on errors, so we parse output for unexpected failures.
+   * "already exists" messages are tolerated (idempotent).
+   */
+  private runDebugfs(imagePath: string, commands: string[]): void {
+    const script = commands.join('\n') + '\n';
+    const result = spawnSync('debugfs', ['-w', '-f', '-', imagePath], {
+      input: script,
+      encoding: 'utf-8',
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    const combined = (result.stdout || '') + (result.stderr || '');
+    for (const line of combined.split('\n')) {
+      if (line.includes('already exists')) continue;
+      if (/error|cannot|fail|invalid/i.test(line)) {
+        throw new Error(`debugfs: ${line.trim()}`);
+      }
     }
   }
 

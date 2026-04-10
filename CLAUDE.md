@@ -202,9 +202,10 @@ Key files:
 
 Two mechanisms ensure fast VM boot (< 5s to SSH ready):
 
-1. **Pre-boot overlay injection** (`injectBootFixes()` in `firecracker.ts`): Before each boot, the server mounts the VM's overlay ext4 and writes:
+1. **Pre-boot overlay injection** (`injectBootFixes()` in `firecracker.ts`): Before each boot, the server uses `debugfs -w` to write into the unmounted overlay ext4 — no `mount`, no loop device, no root required. Writes go to the overlayfs `upper/` so they override the base rootfs once the guest boots:
    - Symlink masking `systemd-networkd-wait-online.service` → `/dev/null` (the service blocks for 2 minutes because networking is configured via kernel `ip=` parameter, not systemd-networkd)
-   - `UseDNS no` in sshd_config (prevents reverse DNS lookup during SSH handshake)
+   - `UseDNS no` snippet at `/etc/ssh/sshd_config.d/99-handler.conf` (prevents reverse DNS lookup from hanging the SSH banner exchange in DNS-less guests; relies on Ubuntu 22.04+ default `Include /etc/ssh/sshd_config.d/*.conf`)
+   - Runs `e2fsck -p -f` first to replay the journal — debugfs refuses to write to a dirty filesystem.
 
 2. **Graceful shutdown** (`performGracefulShutdown()` in `firecracker.ts`): On stop, the server SSHs into the guest to run `sudo poweroff`, letting systemd cleanly stop Docker containers. This prevents containers with restart policies (`unless-stopped`) from auto-restarting on next boot, which would create veth interfaces that exacerbate the `systemd-networkd-wait-online` issue. The shutdown runs in the background — `stopVm()` sets status to `stopping` and returns immediately.
 
