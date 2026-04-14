@@ -1437,7 +1437,7 @@ export async function removePluginMarketplace(owner: string, repo: string): Prom
 
 // ============ Virtual Machines ============
 
-export type VmStatus = 'creating' | 'booting' | 'running' | 'paused' | 'stopped' | 'error';
+export type VmStatus = 'creating' | 'booting' | 'running' | 'stopping' | 'paused' | 'stopped' | 'error';
 
 export interface VmPortMapping {
   container: number;

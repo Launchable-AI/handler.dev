@@ -7,7 +7,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { spawn, ChildProcess, execSync, execFileSync } from 'child_process';
+import { spawn, ChildProcess, execSync, execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -224,6 +224,27 @@ export class FirecrackerService extends EventEmitter {
           vm.status = 'stopped';
           vm.pid = undefined;
           vm.stoppedAt = new Date().toISOString();
+          await this.saveVmState(vm);
+        }
+      } else if (vm.status === 'stopping') {
+        // Server restarted during a background shutdown — finish the job
+        if (vm.pid && this.isProcessRunning(vm.pid)) {
+          console.warn(`[FirecrackerService] VM ${id} was stopping — resuming shutdown`);
+          this.performGracefulShutdown(id).catch(err =>
+            console.error(`[FirecrackerService] Failed to finish shutdown for VM ${id}:`, err)
+          );
+        } else {
+          console.warn(`[FirecrackerService] VM ${id} was stopping and process is gone — marking stopped`);
+          vm.status = 'stopped';
+          vm.pid = undefined;
+          vm.stoppedAt = new Date().toISOString();
+          if (vm.networkConfig?.tapDevice) {
+            try { await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id); } catch {}
+            vm.networkConfig.tapDevice = undefined;
+            vm.networkConfig.guestIp = undefined;
+            vm.networkConfig.mode = 'none';
+            vm.guestIp = undefined;
+          }
           await this.saveVmState(vm);
         }
       } else if (vm.status === 'running' && vm.pid) {
@@ -696,6 +717,9 @@ export class FirecrackerService extends EventEmitter {
       // Prepare disk images (base read-only + overlay writable)
       const diskPaths = await this.prepareDiskImage(vm, vmDir);
 
+      // Inject boot optimizations into the overlay before the guest mounts it
+      this.injectBootFixes(diskPaths.overlayPath);
+
       // Spawn Firecracker process
       const logFd = fs.openSync(logFile, 'a');
 
@@ -861,8 +885,120 @@ export class FirecrackerService extends EventEmitter {
   }
 
   /**
-   * Inject SSH authorized_keys into the overlay filesystem
+   * Inject boot optimizations into the overlay ext4 before the VM starts.
+   * Writes into the overlayfs upper layer so the changes override the base
+   * rootfs once the guest mounts everything.
    *
+   * Uses debugfs (which can edit unmounted ext4 images) instead of mount,
+   * so this works as a regular user with no loop devices required.
+   *
+   * Fixes injected:
+   *   1. Symlink masking systemd-networkd-wait-online — that service blocks
+   *      network-online.target for ~2 min in DNS-less guests since networking
+   *      comes from the kernel ip= parameter, not networkd.
+   *   2. sshd_config.d snippet setting UseDNS no — without this the sshd
+   *      banner exchange hangs on reverse DNS lookup of the client IP.
+   *      (Ubuntu 22.04+ sshd_config has Include /etc/ssh/sshd_config.d/*.conf.)
+   *
+   * This is a host-side safety net for VMs whose base image has an older
+   * overlay-init that doesn't apply these fixes inside the guest.
+   */
+  private injectBootFixes(overlayPath: string): void {
+    try {
+      // Replay journal if needed — debugfs refuses to write to a dirty ext4.
+      // e2fsck exits non-zero when it makes corrections, which is expected here.
+      try {
+        execFileSync('e2fsck', ['-p', '-f', overlayPath], { stdio: 'pipe' });
+      } catch {
+        // Preen made changes (or filesystem was already clean and we got 0). Either way, continue.
+      }
+
+      // 1. Mask systemd-networkd-wait-online via symlink in overlayfs upper.
+      const maskPath = 'upper/etc/systemd/system/systemd-networkd-wait-online.service';
+      if (!this.debugfsPathExists(overlayPath, maskPath)) {
+        this.debugfsMkdirP(overlayPath, 'upper/etc/systemd/system');
+        this.runDebugfs(overlayPath, [`symlink ${maskPath} /dev/null`]);
+        if (!this.debugfsPathExists(overlayPath, maskPath)) {
+          throw new Error(`failed to create symlink ${maskPath}`);
+        }
+        console.log('[FirecrackerService] Masked systemd-networkd-wait-online in overlay');
+      }
+
+      // 2. Drop sshd snippet to disable reverse DNS lookup.
+      const sshdSnippet = 'upper/etc/ssh/sshd_config.d/99-handler.conf';
+      if (!this.debugfsPathExists(overlayPath, sshdSnippet)) {
+        this.debugfsMkdirP(overlayPath, 'upper/etc/ssh/sshd_config.d');
+        const tmpFile = path.join(os.tmpdir(), `handler-debugfs-${process.pid}-${Date.now()}.conf`);
+        fs.writeFileSync(tmpFile, 'UseDNS no\n');
+        try {
+          this.runDebugfs(overlayPath, [`write ${tmpFile} ${sshdSnippet}`]);
+        } finally {
+          try { fs.unlinkSync(tmpFile); } catch {}
+        }
+        if (!this.debugfsPathExists(overlayPath, sshdSnippet)) {
+          throw new Error(`failed to write ${sshdSnippet}`);
+        }
+        console.log('[FirecrackerService] Wrote sshd UseDNS no snippet to overlay');
+      }
+    } catch (error) {
+      // Non-fatal — VM will still try to boot. May be slow or fail SSH banner exchange
+      // if the base image's in-guest overlay-init doesn't apply these fixes itself.
+      console.warn(`[FirecrackerService] Failed to inject boot fixes: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Check if a path exists inside an unmounted ext4 image via debugfs.
+   * debugfs always exits 0, so we have to parse output for "File not found".
+   */
+  private debugfsPathExists(imagePath: string, p: string): boolean {
+    const result = spawnSync('debugfs', ['-R', `stat ${p}`, imagePath], {
+      encoding: 'utf-8',
+    });
+    const combined = (result.stdout || '') + (result.stderr || '');
+    return !combined.includes('File not found') && !combined.includes('No such');
+  }
+
+  /**
+   * mkdir -p equivalent for debugfs. Creates each missing path component.
+   */
+  private debugfsMkdirP(imagePath: string, dirPath: string): void {
+    const parts = dirPath.split('/').filter(Boolean);
+    const cmds: string[] = [];
+    for (let i = 1; i <= parts.length; i++) {
+      const sub = parts.slice(0, i).join('/');
+      if (!this.debugfsPathExists(imagePath, sub)) {
+        cmds.push(`mkdir ${sub}`);
+      }
+    }
+    if (cmds.length > 0) {
+      this.runDebugfs(imagePath, cmds);
+    }
+  }
+
+  /**
+   * Run a sequence of debugfs commands in a single -w invocation.
+   * debugfs exits 0 even on errors, so we parse output for unexpected failures.
+   * "already exists" messages are tolerated (idempotent).
+   */
+  private runDebugfs(imagePath: string, commands: string[]): void {
+    const script = commands.join('\n') + '\n';
+    const result = spawnSync('debugfs', ['-w', '-f', '-', imagePath], {
+      input: script,
+      encoding: 'utf-8',
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    const combined = (result.stdout || '') + (result.stderr || '');
+    for (const line of combined.split('\n')) {
+      if (line.includes('already exists')) continue;
+      if (/error|cannot|fail|invalid/i.test(line)) {
+        throw new Error(`debugfs: ${line.trim()}`);
+      }
+    }
+  }
+
   /**
    * Configure and start the VM via Firecracker API
    *
@@ -1503,24 +1639,70 @@ export class FirecrackerService extends EventEmitter {
 
     console.log(`[FirecrackerService] Stopping VM ${id}`);
 
+    // Set stopping immediately and return — run graceful shutdown in background
+    vm.status = 'stopping';
+    await this.saveVmState(vm);
+    const info = this.vmToInfo(vm);
+
+    this.performGracefulShutdown(id).catch(err =>
+      console.error(`[FirecrackerService] Background shutdown failed for VM ${id}:`, err)
+    );
+
+    return info;
+  }
+
+  /**
+   * Performs the actual VM shutdown sequence in the background.
+   * SSHs into the guest to run 'poweroff' so systemd stops services cleanly
+   * (Docker containers, containerd, etc.), then falls back to CtrlAltDel and SIGKILL.
+   */
+  private async performGracefulShutdown(id: string): Promise<void> {
+    const vm = this.vms.get(id);
+    if (!vm) return;
+
     try {
-      // Try graceful shutdown via API
-      if (vm.apiSocket && fs.existsSync(vm.apiSocket)) {
+      // Graceful shutdown via SSH — runs 'poweroff' inside the guest so systemd
+      // stops services in order (Docker containers, containerd, etc.).
+      // This prevents Docker containers with restart policies from auto-restarting on next boot.
+      if (vm.guestIp && vm.pid && this.isProcessRunning(vm.pid)) {
         try {
-          await this.sendApiRequest(vm.apiSocket, 'PUT', '/actions', {
-            action_type: 'SendCtrlAltDel',
-          });
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          const sshKeyPath = this.getSshKeyPath();
+          execFileSync('ssh', [
+            '-i', sshKeyPath,
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', 'UserKnownHostsFile=/dev/null',
+            '-o', 'ConnectTimeout=3',
+            '-o', 'BatchMode=yes',
+            '-o', 'IdentitiesOnly=yes',
+            `agent@${vm.guestIp}`,
+            'sudo', 'poweroff',
+          ], { timeout: 5000, stdio: 'ignore' });
         } catch {
-          // Guest may already be stopped
+          // SSH may fail (VM not fully booted, network down, etc.) — fall through to CtrlAltDel
+        }
+
+        // Wait for the guest to shut down cleanly (systemd stopping services)
+        await this.waitForProcessExit(vm.pid, 15000);
+      }
+
+      // Fallback: CtrlAltDel via Firecracker API if process is still running
+      if (vm.pid && this.isProcessRunning(vm.pid)) {
+        if (vm.apiSocket && fs.existsSync(vm.apiSocket)) {
+          try {
+            await this.sendApiRequest(vm.apiSocket, 'PUT', '/actions', {
+              action_type: 'SendCtrlAltDel',
+            });
+            await this.waitForProcessExit(vm.pid, 5000);
+          } catch {
+            // Guest may already be stopped
+          }
         }
       }
 
-      // Kill process if still running
+      // Kill process if still running after graceful attempts
       if (vm.pid && this.isProcessRunning(vm.pid)) {
         try { process.kill(vm.pid, 'SIGTERM'); } catch {}
         await this.waitForProcessExit(vm.pid, 3000);
-        // SIGKILL the process group if SIGTERM didn't work
         if (this.isProcessRunning(vm.pid)) {
           console.warn(`[FirecrackerService] VM ${id} did not exit after SIGTERM, sending SIGKILL to process group`);
           this.killProcessGroup(vm.pid);
@@ -1552,7 +1734,6 @@ export class FirecrackerService extends EventEmitter {
     }
 
     // Release TAP device so it can be reused by other VMs
-    // A new TAP will be allocated when the VM is started again
     if (vm.networkConfig.tapDevice) {
       console.log(`[FirecrackerService] Releasing TAP ${vm.networkConfig.tapDevice} for stopped VM ${id}`);
       await this.networkPool.releaseAsync(vm.networkConfig.tapDevice, id);
@@ -1575,8 +1756,6 @@ export class FirecrackerService extends EventEmitter {
     this.processes.delete(id);
     this.emit('vm:stopped', vm);
     console.log(`[FirecrackerService] VM ${id} stopped`);
-
-    return this.vmToInfo(vm);
   }
 
   /**

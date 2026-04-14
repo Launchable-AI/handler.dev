@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { DATA_DIR } from '../lib/paths.js';
 
-export type VmStatus = 'creating' | 'booting' | 'running' | 'paused' | 'stopped' | 'error';
+export type VmStatus = 'creating' | 'booting' | 'running' | 'stopping' | 'paused' | 'stopped' | 'error';
 
 export type NetworkMode = 'tap' | 'bridge' | 'user' | 'none';
 

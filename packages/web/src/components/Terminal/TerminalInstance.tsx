@@ -8,7 +8,7 @@ import type { ShellPromptTheme } from '../../lib/prompt-themes';
 import { getTerminalTheme, getTerminalBgColor, getStoredTerminalThemeMode, type TerminalThemeMode } from '../../lib/terminal-themes';
 import { SHORTCUT_DEFINITIONS, getCombo, matchesCombo } from '../../lib/keyboard-shortcuts';
 import { useTheme } from '../../hooks/useTheme';
-import { getWsUrl as getWsUrlBase } from '@/api/client';
+import { getWsUrl as getWsUrlBase, uploadFileToSandbox } from '@/api/client';
 
 // Connection state type
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error' | 'reconnecting';
@@ -68,6 +68,7 @@ export function TerminalInstance({
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [errorMessage, setErrorMessage] = useState<string>();
   const [isTmuxSession, setIsTmuxSession] = useState(false);
+  const [uploadToast, setUploadToast] = useState<{ message: string; type: 'info' | 'success' | 'error' } | null>(null);
   const tmuxSessionNameRef = useRef<string | undefined>(undefined);
   // URL bar state — commented out while bar is disabled
   // const [detectedUrls, setDetectedUrls] = useState<Array<{ url: string }>>([]);
@@ -223,6 +224,55 @@ export function TerminalInstance({
       });
     };
     containerEl.addEventListener('contextmenu', handleContextMenu);
+
+    // Intercept paste events to handle clipboard images (screenshots).
+    // When the clipboard contains an image, upload it to the sandbox and
+    // write the file path into the terminal so the running process can use it.
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      let imageFile: File | null = null;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          imageFile = item.getAsFile();
+          break;
+        }
+      }
+
+      if (!imageFile) return; // No image — let normal text paste proceed
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Generate timestamped filename
+      const now = new Date();
+      const ts = now.toISOString().replace(/[-:T]/g, '').replace(/\..+/, '').slice(0, 15);
+      const ext = imageFile.type === 'image/jpeg' ? 'jpg' : 'png';
+      const filename = `screenshot-${ts}.${ext}`;
+      const renamedFile = new File([imageFile], filename, { type: imageFile.type });
+
+      setUploadToast({ message: `Uploading ${filename}...`, type: 'info' });
+
+      const upload = uploadFileToSandbox(target.id, renamedFile, '/tmp');
+      upload.promise.then(() => {
+        const filePath = `/tmp/${filename}`;
+        setUploadToast({ message: `Uploaded ${filePath}`, type: 'success' });
+        setTimeout(() => setUploadToast(null), 3000);
+        // Write the path into the terminal input so the running process sees it
+        if (currentWs?.readyState === WebSocket.OPEN) {
+          currentWs.send(JSON.stringify({ type: 'input', data: filePath }));
+        }
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : 'unknown error';
+        setUploadToast({ message: `Upload failed: ${msg}`, type: 'error' });
+        setTimeout(() => setUploadToast(null), 5000);
+      });
+    };
+    // Listen on xterm's internal textarea — that's where paste events fire
+    // (the browser pastes into the focused element, which is xterm's hidden textarea)
+    const pasteTarget = term.textarea || containerEl;
+    pasteTarget.addEventListener('paste', handlePaste as EventListener);
 
     // Fix mouse coordinates when inside a CSS-transformed container (e.g. ReactFlow zoom).
     // xterm.js computes cell position as: ceil((clientX - rect.left) / cssCellWidth)
@@ -562,6 +612,7 @@ export function TerminalInstance({
       resizeObserver.disconnect();
       if (scanTimeout) clearTimeout(scanTimeout);
       containerEl.removeEventListener('contextmenu', handleContextMenu);
+      pasteTarget.removeEventListener('paste', handlePaste as EventListener);
       scrollDisposable.dispose();
       dataDisposable.dispose();
       oscDisposable.dispose();
@@ -673,8 +724,17 @@ export function TerminalInstance({
 
       {/* Terminal — outer div provides visual margin, inner div has zero padding
           so FitAddon measures the exact available height for rows */}
-      <div className="flex-1 min-h-0 px-1 pt-1 flex flex-col" style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}>
-        <div ref={terminalRef} className="flex-1 min-h-0" />
+      <div className="flex-1 min-h-0 px-1 pt-1 flex flex-col relative overflow-hidden" style={{ backgroundColor: getTerminalBgColor(terminalIsDark) }}>
+        <div ref={terminalRef} className="flex-1 min-h-0 overflow-hidden" />
+        {uploadToast && (
+          <div className={`absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded text-xs font-mono shadow-lg z-10 ${
+            uploadToast.type === 'error' ? 'bg-[hsl(var(--red)/0.9)] text-white' :
+            uploadToast.type === 'success' ? 'bg-[hsl(var(--green)/0.9)] text-white' :
+            'bg-[hsl(var(--bg-elevated)/0.95)] text-[hsl(var(--text-secondary))] border border-[hsl(var(--border))]'
+          }`}>
+            {uploadToast.message}
+          </div>
+        )}
       </div>
 
       {/* Detected URLs bar — disabled for now, too buggy
