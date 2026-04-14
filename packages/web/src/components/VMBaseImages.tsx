@@ -287,9 +287,7 @@ function ImportQcow2Form({ onClose, onBack }: FormProps) {
     setError(null);
 
     try {
-      // TODO: Implement API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      onClose();
+      throw new Error('Qcow2 import is not yet implemented. Use the Download option to pull a prebuilt image.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import image');
     } finally {
@@ -619,9 +617,7 @@ function SnapshotVmForm({ onClose, onBack, vms }: FormProps) {
     setProgress({ phase: 'Pausing VM...', percent: 10 });
 
     try {
-      // TODO: Implement API call with SSE progress
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      onClose();
+      throw new Error('VM snapshots are not yet implemented via the UI.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create snapshot');
     } finally {
