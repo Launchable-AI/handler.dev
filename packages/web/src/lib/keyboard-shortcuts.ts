@@ -208,7 +208,7 @@ export function matchesCombo(event: KeyboardEvent, combo: KeyCombo): boolean {
   // Also check event.code for Alt+key on Linux where Alt can produce special chars (Alt+l → ł)
   const comboKey = combo.key.toLowerCase();
   const eventKey = event.key.toLowerCase();
-  const codeKey = event.code.startsWith('Key') ? event.code.slice(3).toLowerCase() : '';
+  const codeKey = event.code?.startsWith('Key') ? event.code.slice(3).toLowerCase() : '';
   if (eventKey !== comboKey && codeKey !== comboKey) return false;
   if (!!combo.ctrl !== event.ctrlKey) return false;
   if (!!combo.shift !== event.shiftKey) return false;
