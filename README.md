@@ -19,6 +19,8 @@
 
 ---
 
+![Handler — sandbox control plane](assets/screenshots/hero-sandboxes-dark-1920w.png)
+
 ## Why
 
 AI coding agents want to execute code. Giving them a shell on your laptop is a bad idea; giving them an unbounded cloud API key is a worse one. What they actually need is a **sandbox** — fast to spawn, cheap to throw away, isolated from everything that matters.
@@ -59,6 +61,24 @@ A few things Handler does that are hard or tedious to do yourself:
 - **MCP server registry** — Register, configure, and deploy Model Context Protocol servers per sandbox.
 
 By the numbers: two hypervisor backends (Docker, Firecracker) + six cloud backends (AWS, GCP, Azure, DigitalOcean, Linode, Daytona), all behind one `SandboxAdapter` interface. ~100 server tests + ~43 web tests passing. TypeScript throughout, strict mode, zod validation at HTTP boundaries. MIT licensed, no phoning home.
+
+### A quick tour
+
+**Canvas workspace** — supervise many agents at once, with live terminal previews, AI-classified status, and keyboard-driven navigation.
+
+![Canvas workspace](assets/screenshots/command-centre-dark-1920w.png)
+
+**Terminals** — xterm.js + tmux, with reconnect-on-refresh and per-session theming.
+
+![Terminal view](assets/screenshots/terminal-dark-1920w.png)
+
+**Agent presets** — pre-bake API keys, MCP servers, and setup commands into reusable agent configs that get injected on sandbox creation.
+
+![Agent configuration](assets/screenshots/agent-config-dark-1920w.png)
+
+**MCP server registry** — browse, configure, and deploy Model Context Protocol servers into any sandbox.
+
+![MCP server registry](assets/screenshots/mcp-servers-dark-1920w.png)
 
 ## Firecracker setup (details)
 
