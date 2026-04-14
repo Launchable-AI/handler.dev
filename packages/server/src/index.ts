@@ -272,16 +272,6 @@ app.route('/api/quick-files', quickFileRoutes);
 app.route('/api/ssh-keys', sshKeyRoutes);
 app.route('/api/image-builder', imageBuilderRoutes);
 
-// SSE for real-time events (placeholder for now)
-app.get('/api/events', (c) => {
-  // TODO: Implement Docker event streaming
-  c.header('Content-Type', 'text/event-stream');
-  c.header('Cache-Control', 'no-cache');
-  c.header('Connection', 'keep-alive');
-
-  return c.body('data: {"type":"connected"}\n\n');
-});
-
 function setupWebSocketServer(server: ReturnType<typeof createServer>) {
   const wss = new WebSocketServer({ server, path: '/ws/terminal' });
 
