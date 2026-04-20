@@ -1,6 +1,6 @@
 # Individual Contributor License Agreement
 
-Thank you for your interest in contributing to Handler (the "Project"), owned by Launchable.ai ("Us"). This Contributor License Agreement ("Agreement") clarifies the intellectual property license granted with contributions from any person or entity ("You"). This is a legally binding document, so please read it carefully before agreeing.
+Thank you for your interest in contributing to Handler (the "Project"), owned by Launchable AI Inc ("Us"). This Contributor License Agreement ("Agreement") clarifies the intellectual property license granted with contributions from any person or entity ("You"). This is a legally binding document, so please read it carefully before agreeing.
 
 ## 1. Definitions
 

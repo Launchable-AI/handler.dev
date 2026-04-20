@@ -66,7 +66,7 @@ Use [GitHub Issues](https://github.com/Launchable-AI/handler.dev/issues) to repo
 
 All contributors must sign our [Contributor License Agreement (CLA)](./CLA.md) before their first PR can be merged. This is a one-time process — simply comment on your PR with the signature phrase and you're set for all future contributions.
 
-The CLA grants Launchable.ai the flexibility to adjust licensing terms as the project evolves, while ensuring you retain full ownership of your contributions.
+The CLA grants Launchable AI Inc the flexibility to adjust licensing terms as the project evolves, while ensuring you retain full ownership of your contributions.
 
 ## License
 
