@@ -297,7 +297,7 @@ export class VmVolumeAdapter {
         execSync(mkdirCmd, { stdio: 'pipe', timeout: 10000 });
 
         // Upload file via SCP
-        execFileSync('scp', ['-i', sshKeyPath, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=5', '-o', 'IdentitiesOnly=yes', tmpFile, `agent@${guestIp}:'${remotePath}'`], { stdio: 'pipe', timeout: 60000 });
+        execFileSync('scp', ['-i', sshKeyPath, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=5', '-o', 'IdentitiesOnly=yes', tmpFile, `agent@${guestIp}:${remotePath}`], { stdio: 'pipe', timeout: 60000 });
 
         console.log(`[VmVolumeAdapter] Uploaded ${filename} to VM ${fcVmId} at ${remotePath} via SSH`);
         return true;
@@ -367,7 +367,7 @@ export class VmVolumeAdapter {
 
       try {
         // Download file via SCP
-        execFileSync('scp', ['-i', sshKeyPath, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=5', '-o', 'IdentitiesOnly=yes', `agent@${guestIp}:'${remotePath}'`, tmpFile], { stdio: 'pipe', timeout: 60000 });
+        execFileSync('scp', ['-i', sshKeyPath, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=5', '-o', 'IdentitiesOnly=yes', `agent@${guestIp}:${remotePath}`, tmpFile], { stdio: 'pipe', timeout: 60000 });
 
         const content = fs.readFileSync(tmpFile);
         return content;
