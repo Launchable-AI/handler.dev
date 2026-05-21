@@ -1764,6 +1764,14 @@ sandboxes.get('/:id/terminal-summary', async (c) => {
       return c.json({ summary: null }, 400);
     }
 
+    // Optional per-session capture: ?session=handler-{vmId}-2 lets callers (e.g. the
+    // TUI's multi-tile mode) get a summary for one specific tmux pane rather than the
+    // most-recently-accessed one. Restrict to a safe character set as a belt-and-braces
+    // measure on top of the validation in captureTerminalContent().
+    const rawSession = c.req.query('session');
+    const tmuxSession =
+      rawSession && /^[a-zA-Z0-9_.-]+$/.test(rawSession) ? rawSession : undefined;
+
     const service = await ensureSandboxServiceInitialized();
     const sandbox = await service.get(id);
 
@@ -1771,7 +1779,7 @@ sandboxes.get('/:id/terminal-summary', async (c) => {
       return c.json({ summary: null });
     }
 
-    const result = await getTerminalSummary(sandbox);
+    const result = await getTerminalSummary(sandbox, tmuxSession);
     if (result) {
       return c.json({ status: result.status, summary: result.summary, updatedAt: result.updatedAt });
     }

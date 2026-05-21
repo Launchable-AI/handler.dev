@@ -19,7 +19,10 @@
     "lint": "pnpm --parallel run lint",
     "test": "pnpm --parallel run test",
     "test:watch": "pnpm --parallel run test:watch",
-    "test:coverage": "pnpm --parallel run test:coverage"
+    "test:coverage": "pnpm --parallel run test:coverage",
+    "tui": "cargo run --manifest-path helpers/handler-tui/Cargo.toml --release --",
+    "tui:dev": "cargo run --manifest-path helpers/handler-tui/Cargo.toml --",
+    "tui:build": "cargo build --manifest-path helpers/handler-tui/Cargo.toml --release"
   },
   "engines": {
     "node": ">=22.0.0"

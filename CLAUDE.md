@@ -24,9 +24,14 @@ pnpm build
 
 # Lint all
 pnpm lint
+
+# Terminal dashboard (read-only monitoring view; requires the server to be running)
+pnpm tui:dev      # cargo run -- (debug build)
+pnpm tui          # cargo run --release -- (release build)
+pnpm tui:build    # cargo build --release (no run)
 ```
 
-Requires Node 22+. Uses pnpm workspaces.
+Requires Node 22+. Uses pnpm workspaces. The TUI also needs a Rust toolchain (`rustup`).
 
 ## Testing
 
@@ -70,6 +75,7 @@ pnpm --filter web test
 - `packages/server/` — Hono (Node.js) backend API
 - `packages/web/` — React 19 + Vite frontend
 - `helpers/tap-helper/` — Rust TAP device helper for VM networking
+- `helpers/handler-tui/` — Rust terminal dashboard (ratatui), connects to the server over HTTP for live monitoring. See "Terminal Dashboard (TUI)" below and `TUI_PLAN.md` for the full design.
 - `scripts/` — VM image and setup scripts
   - `scripts/setup.sh`, `scripts/uninstall.sh`, `scripts/status.sh` — Top-level user entry points
   - `scripts/lib/` — Shared shell utilities (`os-utils.sh`)
@@ -433,6 +439,99 @@ A "focused window" layout mode for the canvas view. When active, only the focuse
 Key files:
 - `packages/web/src/context/CanvasContext.tsx` — `focusedLayout`/`focusedNodeId` state, `setFocusedLayout`/`setFocusedNodeId` actions
 - `packages/web/src/components/CommandCentre/CanvasView.tsx` — Node filtering, fitView effect, sidebar swap behavior
+
+### Terminal Dashboard (TUI)
+
+A standalone Rust + ratatui binary (`helpers/handler-tui/`) that connects to the running Handler server over its HTTP API and renders a live monitoring dashboard. Designed for users running many sandboxes who want a terminal-native "working view" alongside (not replacing) the web canvas.
+
+**Phase 1 (read-only dashboard) — shipped:**
+- Lists running sandboxes with backend, status, AI terminal-summary badge, CPU/mem/disk %, and agent badges.
+- Polls the same endpoints the React frontend uses, at the same cadences: `/api/sandboxes` (5s, 2s while any sandbox is transitioning), `/metrics` (5s), `/terminal-summary` (5s), `/agents` (30s).
+- Per-sandbox pollers are spawned/cancelled as sandboxes enter/leave the `running` state — the supervisor reconciles on each list update.
+- Connection errors (e.g., server not running) surface as a red banner in the status bar; the supervisor backs off to 10s polling on errors and returns to normal cadence on next success.
+- Dashboard keybindings: `j/k` or `↓/↑` to navigate, `g/G` to jump, `Enter` to attach, `?` for help overlay, `q` or `Ctrl-C` to quit.
+
+**Phase 2 (single-terminal attach) — shipped:**
+- Pressing `Enter` on a running sandbox opens a full-screen attach view connected to `/ws/terminal`.
+- Mirrors the frontend's WS protocol exactly. All backends supported: Docker (`start`), Firecracker (`start-vm`), Daytona (`start-daytona`), AWS/Azure/GCP/DigitalOcean/Linode (`start-{backend}` with `instanceId`/`publicIp`/`sshUser`).
+- PTY bytes are parsed by `vt100` into a grid and rendered cell-by-cell into the ratatui buffer (preserving fg/bg colors, bold/italic/underline/inverse). Wide-character continuation cells are skipped to avoid double-rendering.
+- Cursor is rendered by `Frame::set_cursor_position` based on the vt100 screen state; hidden when the inner program hides the cursor.
+- Keyboard input is encoded by `pty::keys::encode_key` — printable chars as UTF-8, Enter as `\r`, Backspace as `\x7f`, Tab as `\t`, arrows with DECCKM awareness (the local PtyGrid tracks application-cursor mode), full F1–F12 / Home / End / PageUp / PageDown / Insert / Delete table, Ctrl-letter as 0x01–0x1A, Alt-prefixed sequences.
+- Detach is via **`Ctrl-A` prefix** (screen-style). `Ctrl-A d` → detach back to dashboard. `Ctrl-A Ctrl-A` → send literal Ctrl-A. Any other key after the prefix cancels it. `Esc` and `q` pass through to the remote terminal, so vim / less / tmux work normally.
+- Resizes are debounced 150ms on the writer task; PTY grid is resized to the rendered area on every draw (cheap if size unchanged).
+- Header bar shows sandbox name, backend, connection state (`connecting` / `live` / `tmux` / `tmux (detached)` / `no tmux` / `error` / `disconnected` / `exited`), tmux session name, and exit code or error if any.
+
+**Phase 3 (tiled multi-terminal view) — shipped:**
+- Dashboard now has a tile-selection set. `space` toggles the cursor sandbox in/out (visible as `▣` / `·` in the leftmost column); `c` clears the selection; the title shows "N tiles selected" when non-empty.
+- `Enter` builds a session from the selection (or just the cursor sandbox if nothing is selected). Hard cap of 8 tiles per session.
+- All tiles connect in parallel — each gets its own `WsSession` and `PtyGrid`. Server-side per-sandbox metrics/summary pollers continue running while attached.
+- Layout is hardcoded to optimal aspect ratios: 1→1×1, 2→2×1, 3→3×1, 4→2×2, 5–6→3×2, 7–8→4×2.
+- Each tile has a header (name · `[backend]` · state) and a colored border. The **focused** tile gets a thick cyan/bold border; unfocused tiles get a dim dark-gray border. The cursor is only rendered on the focused tile.
+- Keystrokes go to the focused tile's PTY only. `Ctrl-A` prefix sub-commands (now session-wide):
+  - `Ctrl-A d` — detach all (close every tile, back to dashboard)
+  - `Ctrl-A z` — toggle focused-fullscreen (zoom in/out)
+  - `Ctrl-A k` or `Ctrl-A x` — close the focused tile (back to dashboard if last)
+  - `Ctrl-A Tab` — focus next tile
+  - `Ctrl-A ⇧Tab` — focus previous tile
+  - `Ctrl-A Ctrl-A` — send literal `Ctrl-A`
+  - `Ctrl-A ?` — show help
+- A single-tile session (pressing `Enter` with no selection) auto-starts in fullscreen mode and renders via the same Phase 2 `attach::render`. Multi-tile sessions render via `ui::tiled::render`.
+- Each tile's `PtyGrid` is resized to its rendered sub-area on every draw, with the WS `resize` message debounced 150ms.
+
+**Phase 4 (notifications) — shipped:**
+- `NotificationCenter` tracks the last-seen `TerminalStatus` per sandbox and detects edge transitions from `working`/`done`/`idle`/none into `needs_input`/`error`. Only the **edge** raises an alert (steady-state alert sandboxes don't re-fire on every 5s poll).
+- Four mechanisms fire on each new alert (all layered):
+  1. **Terminal bell** (`\x07`) written directly to stdout — safe under alternate-screen since BEL doesn't move the cursor.
+  2. **3-second toast** in the status bar, color-coded by status (yellow `needs_input`, red `error`), replacing the normal hint text.
+  3. **Persistent row indicator** on the dashboard: leftmost column shows `●` (bold, status-colored) for unacknowledged alerts, `○` (dim) once acknowledged, `▣` (cyan) for tile-selected, `·` otherwise. Title shows "`N new alerts`" when any are unack'd.
+  4. **Desktop notification** via `notify-rust` — compile-time gated behind `--features notify` and runtime-gated behind `--desktop-notify` / `HANDLER_TUI_DESKTOP_NOTIFY=1`. No-op by default.
+- Acknowledgment happens when the user moves the cursor onto the alerting row (any of `j`/`k`/`g`/`G`/`↓`/`↑`/`Home`/`End`), or when they attach to that sandbox. Status returning to non-alert clears the alert entirely.
+- Toast auto-dismiss: when an alert is raised, a deferred `Tick` event is sent 3s later to trigger one more redraw after the toast window expires.
+
+Key files:
+- `helpers/handler-tui/src/notify.rs` — `NotificationCenter` (state machine + `on_status_update`/`acknowledge`/`retain_ids`/`active_alert`/`current_toast`), `ring_bell()`, and `fire_desktop_notification()` (cfg-gated).
+- `helpers/handler-tui/src/ui/status_bar.rs` — Renders the active toast in priority order (toast > API error > default hint).
+- `helpers/handler-tui/src/ui/dashboard.rs` — Priority dot in the leftmost column; alert count in the title.
+
+**Persistent running-sandboxes sidebar (session mode) — shipped:**
+- A 22-col left rail that's visible in `Mode::Session` (both fullscreen attach and tiled) showing **all running sandboxes**, not just the ones you have tiled. Lets you keep tabs on the rest of your fleet while you're working in a terminal.
+- Each row shows: marker glyph (alert > attached > default), AI status mini-badge (using `TerminalStatus::glyph()`), name (truncated). Rows for sandboxes that currently have at least one open tile are bolded; if the sandbox has multiple tiles, "×N" is appended.
+- Marker priority: unacknowledged alert `●` (yellow/red) > acknowledged alert `○` > attached `◆` (cyan) > default `·`.
+- Auto-hidden if the terminal is too narrow to leave a usable PTY area (< 62 cols total). Toggle manually with **`Ctrl-A b`**.
+- Hidden in dashboard mode (the dashboard table already shows all this).
+- Render path: `ui/sidebar.rs`; `app::draw()` splits the session area horizontally when `state.show_sidebar` is on.
+
+**Phase 5 (multi-terminal per VM, per-tile summaries, sandbox start/stop) — shipped:**
+- **Per-tile IDs**: Every `SessionTile` now has a `tile_id` (`tui-{millis}-{counter}`) separate from `sandbox_id`. The tile_id is sent as `sessionKey` in the `start-vm` WebSocket message, which causes the server to allocate an independent tmux session per tile (`handler-{vmId}-2`, `-3`, etc.). Multiple tiles can therefore point to the same VM and each get its own shell.
+- **WS event routing** is keyed off `tile_id`, not `sandbox_id`. All `AppEvent::Ws*` variants carry `tile_id`. The sandbox-level events (`SandboxesUpdated`, `MetricsUpdated`, `AgentsUpdated`, `SummaryUpdated`) stay keyed by `sandbox_id` since they're sandbox-scoped concepts shared by all tiles for that VM.
+- **`Ctrl-A n` from inside a session** spawns a fresh terminal in the focused tile's sandbox: new `tile_id`, new `sessionKey`, hence a new tmux session inside the same VM. Subject to `MAX_TILES = 8`. Auto-disables fullscreen if it was on.
+- **Per-tile AI summary**: server endpoint `GET /api/sandboxes/:id/terminal-summary` now accepts `?session={tmuxSessionName}` to capture from a specific tmux pane instead of the most-recently-active one. The cache key includes the session name so per-session results don't clobber each other (`services/terminal-summary.ts`). The TUI spawns a 5s polling task per tile once it knows its tmux session name (via the `WsConnected` event), aborts the task when the tile closes, and stores results on `SessionTile.summary`. The tiled view uses per-tile summaries for the tile border color (yellow `needs_input`, red `error`) and shows the AI summary text in the tile header.
+- **Start/stop sandboxes**: `s` on the dashboard toggles start/stop for the cursor sandbox via `POST /api/sandboxes/:id/start` and `/:id/stop`. Fire-and-forget — the existing 2s adaptive polling cadence updates the row as it transitions through `creating`/`starting`/`stopping`. `stopped`, `archived`, and `paused` start; `running` stops; transient states show a "wait for current operation" error.
+
+Key Phase 5 files (delta):
+- `helpers/handler-tui/src/event.rs` — `TileId` type alias, `new_tile_id()` generator, `Ws*` variants now carry `TileId`, new `TileSummaryUpdated(TileId, _)` variant.
+- `helpers/handler-tui/src/api/client.rs` — `start_sandbox(id)`, `stop_sandbox(id)`, `get_terminal_summary(id, Option<&str>)` (session-aware).
+- `helpers/handler-tui/src/ws/session.rs` — `WsSession::connect` takes a `tile_id`; passes it as `sessionKey` in `start-vm` messages; reader/writer tasks emit events keyed by tile_id.
+- `helpers/handler-tui/src/app.rs` — `SessionTile.tile_id` field; per-tile `summary_poller` JoinHandle that's spawned on `WsConnected` (when `tmux_session` is known) and aborted on tile close.
+- `packages/server/src/services/terminal-summary.ts` — `getTerminalSummary(sandbox, tmuxSession?)`; per-session cache key; safe-name validation on the override session.
+- `packages/server/src/routes/sandboxes.ts` — `?session=` query param parsing with the same alnum-plus-`-_.` whitelist.
+
+The server binds to `127.0.0.1` only, so the TUI must run on the Handler host (locally or via SSH).
+
+Key files:
+- `helpers/handler-tui/src/main.rs` — clap CLI, tokio runtime, terminal raw-mode setup/teardown, panic hook for clean restore
+- `helpers/handler-tui/src/api/types.rs` — serde mirrors of the server's `Sandbox`, `GuestMetrics`, `AgentInfo`, `TerminalSummaryResponse` types; permissive parsing (every nullable field is `Option`)
+- `helpers/handler-tui/src/api/client.rs` — reqwest wrapper for `list_sandboxes`, `get_metrics`, `get_agents`, `get_terminal_summary`
+- `helpers/handler-tui/src/api/poller.rs` — supervisor with adaptive cadence and per-sandbox poller lifecycle
+- `helpers/handler-tui/src/ws/protocol.rs` — serde enums for the `/ws/terminal` WebSocket: `ClientMsg` (Start/StartVm/StartAws/.../Input/Resize/Ping) and `ServerMsg` (Connected/Output/Scrollback/SessionUpdate/SessionNotFound/Exit/Error/Pong)
+- `helpers/handler-tui/src/ws/session.rs` — `WsSession`: splits the socket into reader+writer tasks; the reader emits `AppEvent::Ws*` variants; the writer coalesces resize events with a 150ms debounce
+- `helpers/handler-tui/src/pty/grid.rs` — `PtyGrid` wraps `vt100::Parser`, renders the cell grid into a ratatui `Buffer` with full color/attribute fidelity
+- `helpers/handler-tui/src/pty/keys.rs` — `encode_key()` maps crossterm `KeyEvent` → PTY byte sequences (DECCKM-aware arrows, Ctrl/Alt prefixes, F-keys, etc.)
+- `helpers/handler-tui/src/app.rs` — `AppState`, `Mode::{Dashboard,Help,Session}`, `SessionTile` (one per attached sandbox), `Vec<SessionTile>` + `focused_session` + `focused_fullscreen` + `prefix_pending` + `selected_for_tile`, event loop, input dispatch, redraw coalescing (only events relevant to the current mode trigger redraws), `tile_grid_dims()` layout chooser, hard cap `MAX_TILES = 8`
+- `helpers/handler-tui/src/ui/` — `dashboard.rs` (table with tile-selection markers), `attach.rs` (single-fullscreen render), `tiled.rs` (multi-tile grid render with per-tile borders/headers), status bar, help overlay, theme/color mapping
+- `TUI_PLAN.md` — full design plan (all four phases, file-level)
+
+Run with `pnpm tui` (release) or `pnpm tui:dev` (debug). Logs go to `$XDG_CACHE_HOME/handler-tui/handler-tui.log` (override with `--log-file` or `HANDLER_TUI_LOG`). Override server URL with `--server` or `HANDLER_SERVER`.
 
 ### Key tech choices
 

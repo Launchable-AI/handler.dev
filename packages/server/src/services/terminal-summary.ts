@@ -68,9 +68,14 @@ idle|shell prompt`;
  * Get a cached summary for a sandbox, or generate a new one.
  * Always returns the last successful result while refreshing in the background.
  * The TTL only controls when to *attempt* a refresh, never when to *discard*.
+ *
+ * When `tmuxSession` is provided, captures from that specific tmux pane and caches
+ * the result independently (per-session caching). Otherwise the auto-detect path
+ * (most-recently-accessed session) is used and cached at the sandbox level.
  */
 export async function getTerminalSummary(
-  sandbox: { id: string; backend: string; guestIp?: string }
+  sandbox: { id: string; backend: string; guestIp?: string },
+  tmuxSession?: string
 ): Promise<CachedSummary | null> {
   // Check if feature is enabled
   const config = await getConfig();
@@ -79,14 +84,16 @@ export async function getTerminalSummary(
   const apiKey = getOpenRouterApiKey();
   if (!apiKey) return null;
 
+  const cacheKey = tmuxSession ? `${sandbox.id}#${tmuxSession}` : sandbox.id;
+
   // Always return cached data if fresh enough
-  const cached = cache.get(sandbox.id);
+  const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.updatedAt < CACHE_TTL_MS) {
     return cached;
   }
 
   // TTL expired — attempt refresh, but never discard the old value on failure
-  const content = await captureTerminalContent(sandbox);
+  const content = await captureTerminalContent(sandbox, tmuxSession);
   if (!content || content.trim().length === 0) {
     // Capture failed — return stale cache (better than nothing)
     return cached || null;
@@ -96,8 +103,9 @@ export async function getTerminalSummary(
     const result = await classifyWithHaiku(apiKey, content);
     if (result) {
       const entry: CachedSummary = { ...result, updatedAt: Date.now() };
-      cache.set(sandbox.id, entry);
-      console.log(`[TerminalSummary] ${sandbox.id}: [${result.status}] ${result.summary}`);
+      cache.set(cacheKey, entry);
+      const tag = tmuxSession ? `${sandbox.id}@${tmuxSession}` : sandbox.id;
+      console.log(`[TerminalSummary] ${tag}: [${result.status}] ${result.summary}`);
       return entry;
     }
     // AI returned null (malformed response) — keep stale cache
@@ -111,15 +119,16 @@ export async function getTerminalSummary(
 
 /**
  * Capture recent terminal output from a sandbox's tmux session.
+ * If `overrideSession` is supplied, captures from that exact tmux pane (used by
+ * per-tile callers that want session-scoped summaries).
  */
 async function captureTerminalContent(
-  sandbox: { id: string; backend: string; guestIp?: string }
+  sandbox: { id: string; backend: string; guestIp?: string },
+  overrideSession?: string
 ): Promise<string | null> {
   try {
-    // Find the most recent tmux session for this sandbox
-    const tmuxSession = findActiveTmuxSession(sandbox);
+    const tmuxSession = overrideSession ?? findActiveTmuxSession(sandbox);
     if (!tmuxSession) {
-      // Fall back to running tmux list + capture inside the sandbox
       const fallback = await captureViaExecInSandbox(sandbox);
       if (!fallback) {
         console.log(`[TerminalSummary] No tmux session found for ${sandbox.id} (backend: ${sandbox.backend})`);
@@ -135,7 +144,13 @@ async function captureTerminalContent(
       ], { timeout: 5000 });
     }
 
-    // VM backends — capture via execInSandbox
+    // VM backends — capture via execInSandbox. Validate the session name to keep
+    // it shell-safe (tmux session names from our session store are alnum + - _ ., but
+    // a malicious client could pass arbitrary strings through the query param).
+    if (!/^[a-zA-Z0-9_.-]+$/.test(tmuxSession)) {
+      console.warn(`[TerminalSummary] Rejecting unsafe tmux session name: ${tmuxSession}`);
+      return null;
+    }
     return await execInSandbox(
       sandbox,
       `tmux capture-pane -t ${tmuxSession} -p -S -${CAPTURE_LINES} 2>/dev/null`,
