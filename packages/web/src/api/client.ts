@@ -490,6 +490,7 @@ export interface AppConfig {
   tmuxEnabled?: boolean; // Enable/disable tmux for terminal sessions (default: true)
   tmuxStatusBar?: boolean; // Show/hide tmux status bar at bottom of terminal (default: false)
   terminalSummaryEnabled?: boolean; // Enable/disable AI terminal activity summaries (default: true)
+  vmDiskCompactionEnabled?: boolean; // Run zerofree+fallocate on VM stop to reclaim sparse disk space (default: false — can be very slow on large/full disks)
 }
 
 export interface DataDirScanResult {

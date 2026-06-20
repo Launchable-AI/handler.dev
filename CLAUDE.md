@@ -219,12 +219,12 @@ VM status lifecycle: `creating` → `booting` → `running` → `stopping` → `
 
 ### VM Disk Compaction
 
-Firecracker's virtio-blk doesn't support DISCARD, so deleted files inside a VM don't reclaim space on the host's sparse ext4 backing files (`overlay.ext4`, `docker-volume.ext4`). On VM stop, `compactVmDisks()` runs in the background (fire-and-forget) to reclaim space:
+Firecracker's virtio-blk doesn't support DISCARD, so deleted files inside a VM don't reclaim space on the host's sparse ext4 backing files (`overlay.ext4`, `docker-volume.ext4`). When `vmDiskCompactionEnabled` is true in config (default: **false** — `zerofree` can take minutes on large or full disks), `compactVmDisks()` runs in the background (fire-and-forget) on VM stop to reclaim space:
 
 1. `zerofree <file>` — zeros free blocks in the unmounted ext4 image (no root needed)
 2. `fallocate --dig-holes <file>` — converts zero-filled regions to sparse holes
 
-Before/after actual sizes are logged. Failures are warned but never block the stop flow. Requires `zerofree` on the host (installed by `scripts/setup.sh`).
+Before/after actual sizes are logged. Failures are warned but never block the stop flow. Requires `zerofree` on the host (installed by `scripts/setup.sh`). Toggle via Settings > General > VM Disk Compaction.
 
 ### Security Hardening
 

@@ -1743,10 +1743,16 @@ export class FirecrackerService extends EventEmitter {
       vm.guestIp = undefined;
     }
 
-    // Compact disks in background (fire-and-forget) to reclaim sparse file space
-    this.compactVmDisks(id).catch(err =>
-      console.warn(`[FirecrackerService] Disk compaction failed for VM ${id}:`, err)
-    );
+    // Compact disks in background (fire-and-forget) to reclaim sparse file space.
+    // Disabled by default — zerofree can take minutes on large/full disks and blocks
+    // nothing useful when skipped (the sparse file just stays at its current size on
+    // host). Enable via vmDiskCompactionEnabled in config when host disk is tight.
+    const appConfig = await getConfig();
+    if (appConfig.vmDiskCompactionEnabled === true) {
+      this.compactVmDisks(id).catch(err =>
+        console.warn(`[FirecrackerService] Disk compaction failed for VM ${id}:`, err)
+      );
+    }
 
     vm.status = 'stopped';
     vm.pid = undefined;

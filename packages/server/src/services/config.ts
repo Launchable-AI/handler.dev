@@ -129,6 +129,7 @@ export interface AppConfig {
   tmuxStatusBar?: boolean; // Show/hide tmux status bar at bottom of terminal (default: false)
   defaultFirecrackerImage?: string; // Override default base image for Firecracker/CH VMs (falls back to hardcoded default)
   terminalSummaryEnabled?: boolean; // Enable/disable AI terminal activity summaries (default: true)
+  vmDiskCompactionEnabled?: boolean; // Run zerofree+fallocate on VM stop to reclaim sparse disk space (default: false — can be very slow on large/full disks)
 }
 
 const DEFAULT_CONFIG: AppConfig = {

@@ -29,6 +29,7 @@ export function Settings() {
   const [tmuxEnabled, setTmuxEnabled] = useState(true);
   const [tmuxStatusBar, setTmuxStatusBar] = useState(false);
   const [terminalSummaryEnabled, setTerminalSummaryEnabled] = useState(true);
+  const [vmDiskCompactionEnabled, setVmDiskCompactionEnabled] = useState(false);
   const [showDataDirPicker, setShowDataDirPicker] = useState(false);
 
   // SSH Key management state
@@ -90,6 +91,7 @@ export function Settings() {
       setTmuxEnabled(config.tmuxEnabled !== false);
       setTmuxStatusBar(config.tmuxStatusBar === true);
       setTerminalSummaryEnabled(config.terminalSummaryEnabled !== false);
+      setVmDiskCompactionEnabled(config.vmDiskCompactionEnabled === true);
     }
   }, [config]);
 
@@ -467,6 +469,37 @@ export function Settings() {
                   </button>
                   <span className="text-xs text-[hsl(var(--text-secondary))]">
                     {terminalSummaryEnabled ? 'Enabled' : 'Disabled'} — {terminalSummaryEnabled ? 'terminal sessions are classified and summarized via AI' : 'no AI status updates on canvas'}
+                  </span>
+                </div>
+              </div>
+
+              {/* VM Disk Compaction */}
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--text-primary))] mb-2">
+                  VM Disk Compaction
+                </label>
+                <p className="text-[10px] text-[hsl(var(--text-muted))] mb-3">
+                  On VM stop, run <code>zerofree</code> + <code>fallocate --dig-holes</code> to reclaim sparse host disk space freed inside the guest. Disabled by default — can take minutes on large or full disks and is only useful when host disk is tight.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const newVal = !vmDiskCompactionEnabled;
+                      setVmDiskCompactionEnabled(newVal);
+                      updateMutation.mutate({ vmDiskCompactionEnabled: newVal });
+                    }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                      vmDiskCompactionEnabled ? 'bg-[hsl(var(--cyan))]' : 'bg-[hsl(var(--text-muted)/0.3)]'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                        vmDiskCompactionEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                  <span className="text-xs text-[hsl(var(--text-secondary))]">
+                    {vmDiskCompactionEnabled ? 'Enabled' : 'Disabled'} — {vmDiskCompactionEnabled ? 'sparse disk space reclaimed on VM stop' : 'VM stop returns immediately'}
                   </span>
                 </div>
               </div>
